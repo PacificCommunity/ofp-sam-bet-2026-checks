@@ -83,24 +83,25 @@ check_jitter_slots <- function() {
 }
 
 resolve_selftest_runner <- function(runner) {
+  if (!nzchar(runner)) runner <- env("CHECK_SELFTEST_SCRIPT", "")
   if (!nzchar(runner)) return("")
   if (file.exists(runner)) {
     out <- normalize_loose(runner)
-    runner_work_dir <- env("SELFTEST_RUNNER_WORK_DIR", "")
+    runner_work_dir <- env("SELFTEST_RUNNER_WORK_DIR", env("CHECK_SELFTEST_WORK_DIR", ""))
     if (nzchar(runner_work_dir)) attr(out, "runner_work_dir") <- normalize_loose(runner_work_dir)
     return(out)
   }
-  repo <- env("SELFTEST_RUNNER_REPO", "")
+  repo <- env("SELFTEST_RUNNER_REPO", env("CHECK_SELFTEST_REPO", ""))
   if (!nzchar(repo)) return(runner)
-  ref <- env("SELFTEST_RUNNER_REF", "main")
-  runner_root <- env("SELFTEST_RUNNER_ROOT", "")
+  ref <- env("SELFTEST_RUNNER_REF", env("CHECK_SELFTEST_REF", "main"))
+  runner_root <- env("SELFTEST_RUNNER_ROOT", env("CHECK_SELFTEST_ROOT", ""))
   if (!nzchar(runner_root)) {
     runner_root <- git_clone_repo(repo, ref, file.path(env("WORK_DIR", "work"), "selftest-runner-source"))
   }
   candidate <- if (is_absolute_path(runner)) runner else file.path(runner_root, runner)
   if (file.exists(candidate)) {
     out <- normalize_loose(candidate)
-    attr(out, "runner_work_dir") <- normalize_loose(env("SELFTEST_RUNNER_WORK_DIR", runner_root))
+    attr(out, "runner_work_dir") <- normalize_loose(env("SELFTEST_RUNNER_WORK_DIR", env("CHECK_SELFTEST_WORK_DIR", runner_root)))
     out
   } else {
     runner
@@ -495,16 +496,22 @@ if (identical(check_type, "jitter")) {
   peels <- as.integer(split_numbers(env("RETRO_PEELS", env("RETRO_PEEL", "1")), default = 1))
   n_mixing_periods <- as.integer(split_numbers(env("N_MIXING_PERIODS", "2"), default = 2)[[1L]])
   write_run_manifest(list(retro_peels = paste(peels, collapse = " "), n_mixing_periods = n_mixing_periods))
-  result <- mfk_run_retro(
-    backend,
+  retro_command <- split_values(env("RETRO_COMMAND", ""))
+  retro_args <- list(
+    backend = backend,
     input_dir = prepared$case_dir,
     model_dir = model_dir,
     peel = peels,
     n_mixing_periods = n_mixing_periods,
     allow_new_ini_version_write = truthy(env("RETRO_ALLOW_NEW_INI_VERSION_WRITE", "false"), FALSE),
-    command = mfcl_command(output_par = "retro.par"),
     run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
   )
+  if (length(retro_command)) {
+    retro_args$command <- retro_command
+  } else if (!truthy(env("RETRO_USE_DOITALL", "true"), TRUE)) {
+    retro_args$command <- mfcl_command(output_par = "retro.par")
+  }
+  result <- do.call(mfk_run_retro, retro_args)
   saveRDS(result, file.path(model_dir, "retro_runs.rds"), compress = "xz")
 
 } else if (identical(check_type, "hessian")) {
@@ -603,7 +610,7 @@ if (identical(check_type, "jitter")) {
   if (!nzchar(runner) || !file.exists(runner)) {
     stop("Native MFCL selftest requires SELFTEST_RUNNER. This is case-specific and intentionally not hardcoded.", call. = FALSE)
   }
-  runner_work_dir <- env("SELFTEST_RUNNER_WORK_DIR", attr(runner, "runner_work_dir") %||% "")
+  runner_work_dir <- env("SELFTEST_RUNNER_WORK_DIR", env("CHECK_SELFTEST_WORK_DIR", attr(runner, "runner_work_dir") %||% ""))
   reps <- as.integer(split_numbers(env("SELFTEST_REPS", env("SELFTEST_REP", "1")), default = 1))
   seed <- as.integer(split_numbers(env("SELFTEST_SEED", "20260519"), default = 20260519)[[1L]])
   write_run_manifest(list(
