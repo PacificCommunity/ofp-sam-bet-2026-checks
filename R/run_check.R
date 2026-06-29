@@ -82,6 +82,19 @@ check_jitter_slots <- function() {
   if (length(slots)) slots else default_jitter_slots()
 }
 
+resolve_selftest_runner <- function(runner) {
+  if (file.exists(runner)) return(normalize_loose(runner))
+  repo <- env("SELFTEST_RUNNER_REPO", "")
+  if (!nzchar(repo)) return(runner)
+  ref <- env("SELFTEST_RUNNER_REF", "main")
+  runner_root <- env("SELFTEST_RUNNER_ROOT", "")
+  if (!nzchar(runner_root)) {
+    runner_root <- git_clone_repo(repo, ref, file.path(env("WORK_DIR", "work"), "selftest-runner-source"))
+  }
+  candidate <- if (is_absolute_path(runner)) runner else file.path(runner_root, runner)
+  if (file.exists(candidate)) normalize_loose(candidate) else runner
+}
+
 copy_if_exists <- function(from, to_dir, to_name = basename(from)) {
   if (!file.exists(from)) return(FALSE)
   dir.create(to_dir, recursive = TRUE, showWarnings = FALSE)
@@ -573,7 +586,7 @@ if (identical(check_type, "jitter")) {
   }
 
 } else if (identical(check_type, "selftest")) {
-  runner <- env("SELFTEST_RUNNER", "")
+  runner <- resolve_selftest_runner(env("SELFTEST_RUNNER", ""))
   if (!nzchar(runner) || !file.exists(runner)) {
     stop("Native MFCL selftest requires SELFTEST_RUNNER. This is case-specific and intentionally not hardcoded.", call. = FALSE)
   }
