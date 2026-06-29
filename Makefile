@@ -15,6 +15,23 @@ KFLOW_INPUT_JOBS ?=
 FLOW_GROUP ?= bet-2026-checks
 JOB_TITLE ?=
 JOB_DESCRIPTION ?=
+KFLOW_PARALLEL_UNITS ?= true
+JITTER_SEEDS ?=
+JITTER_SEED ?=
+RETRO_PEELS ?=
+RETRO_PEEL ?=
+SELFTEST_REPS ?=
+SELFTEST_REP ?=
+PROFILE_VALUES ?=
+PROFILE_NAME ?=
+MFK_SCALAR ?=
+HESSIAN_NSPLIT ?=
+HESSIAN_PARTS ?=
+HESSIAN_PART ?=
+NSPLIT ?=
+
+export JITTER_SEEDS JITTER_SEED RETRO_PEELS RETRO_PEEL SELFTEST_REPS SELFTEST_REP
+export PROFILE_VALUES PROFILE_NAME MFK_SCALAR HESSIAN_NSPLIT HESSIAN_PARTS HESSIAN_PART NSPLIT
 
 .PHONY: help local clean kflow-register kflow kflow-batch
 
@@ -29,7 +46,10 @@ help:
 	  '  Submit one independent check job.' \
 	  '' \
 	  'make kflow-batch CHECK_TYPES="jitter retro hessian" MODEL_SELECTORS="08-RegionalCPUE 15-DataWeighting" KFLOW_INPUT_JOBS=603' \
-	  '  Submit check x model jobs; Kflow/Condor runs them independently.' \
+	  '  Submit check x model jobs; seed/peel/rep/profile/hessian units split by default.' \
+	  '' \
+	  'KFLOW_PARALLEL_UNITS=false make kflow CHECK_TYPE=jitter JITTER_SEEDS="1 2 3"' \
+	  '  Keep multiple check units in one Kflow job instead of splitting them.' \
 	  '' \
 	  'make local CHECK_TYPE=jitter MODEL_INPUT_ROOT=/path/to/output MODEL_SELECTOR=08-RegionalCPUE'
 
@@ -65,6 +85,7 @@ kflow:
 	  --model-source-ref '$(MODEL_SOURCE_REF)' \
 	  --model-source-path '$(MODEL_SOURCE_PATH)' \
 	  --program-path '$(PROGRAM_PATH)' \
+	  --parallel-units '$(KFLOW_PARALLEL_UNITS)' \
 	  --job-title '$(JOB_TITLE)' \
 	  --job-description '$(JOB_DESCRIPTION)'
 
@@ -81,5 +102,6 @@ kflow-batch:
 	  --model-source-ref '$(MODEL_SOURCE_REF)' \
 	  --model-source-path '$(MODEL_SOURCE_PATH)' \
 	  --program-path '$(PROGRAM_PATH)' \
+	  --parallel-units '$(KFLOW_PARALLEL_UNITS)' \
 	  --job-title '$(JOB_TITLE)' \
 	  --job-description '$(JOB_DESCRIPTION)'

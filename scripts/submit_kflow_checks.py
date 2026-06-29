@@ -16,6 +16,94 @@ def split_values(raw: str) -> list[str]:
     return [part for part in re.split(r"[,\s]+", raw.strip()) if part]
 
 
+def truthy(raw: str, default: bool = False) -> bool:
+    text = str(raw or "").strip().lower()
+    if not text:
+        return default
+    return text in {"1", "true", "yes", "y", "on", "always"}
+
+
+def env_first(*names: str) -> str:
+    for name in names:
+        value = os.environ.get(name, "")
+        if str(value).strip():
+            return str(value)
+    return ""
+
+
+def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
+    if not parallel_units:
+        return [{"label": "", "env": {}, "metadata": {}}]
+
+    check_key = check.replace("_", "-").lower()
+    if check_key == "jitter":
+        seeds = split_values(env_first("JITTER_SEEDS", "JITTER_SEED"))
+        return [
+            {
+                "label": f"seed {seed}",
+                "env": {"JITTER_SEEDS": seed, "JITTER_SEED": seed},
+                "metadata": {"check_unit_type": "seed", "check_unit": seed},
+            }
+            for seed in seeds
+        ] or [{"label": "", "env": {}, "metadata": {}}]
+
+    if check_key == "retro":
+        peels = split_values(env_first("RETRO_PEELS", "RETRO_PEEL"))
+        return [
+            {
+                "label": f"peel {peel}",
+                "env": {"RETRO_PEELS": peel, "RETRO_PEEL": peel},
+                "metadata": {"check_unit_type": "peel", "check_unit": peel},
+            }
+            for peel in peels
+        ] or [{"label": "", "env": {}, "metadata": {}}]
+
+    if check_key == "selftest":
+        reps = split_values(env_first("SELFTEST_REPS", "SELFTEST_REP"))
+        return [
+            {
+                "label": f"rep {rep}",
+                "env": {"SELFTEST_REPS": rep, "SELFTEST_REP": rep},
+                "metadata": {"check_unit_type": "replicate", "check_unit": rep},
+            }
+            for rep in reps
+        ] or [{"label": "", "env": {}, "metadata": {}}]
+
+    if check_key == "profile":
+        values = split_values(env_first("PROFILE_VALUES", "MFK_SCALAR"))
+        profile_name = os.environ.get("PROFILE_NAME", "profile")
+        label_name = profile_name if profile_name and profile_name != "profile" else "scalar"
+        return [
+            {
+                "label": f"{label_name} {value}",
+                "env": {"PROFILE_VALUES": value, "MFK_SCALAR": value},
+                "metadata": {"check_unit_type": "profile_scalar", "check_unit": value},
+            }
+            for value in values
+        ] or [{"label": "", "env": {}, "metadata": {}}]
+
+    if check_key == "hessian":
+        parts = split_values(env_first("HESSIAN_PARTS", "HESSIAN_PART"))
+        nsplit = env_first("HESSIAN_NSPLIT", "NSPLIT")
+        if not parts and nsplit:
+            try:
+                n = int(nsplit)
+            except ValueError as exc:
+                raise SystemExit(f"HESSIAN_NSPLIT must be an integer, got {nsplit!r}.") from exc
+            if n > 1:
+                parts = [str(i) for i in range(1, n + 1)]
+        return [
+            {
+                "label": f"part {part}/{nsplit or '?'}",
+                "env": {"HESSIAN_PARTS": part, "HESSIAN_PART": part, **({"HESSIAN_NSPLIT": nsplit} if nsplit else {})},
+                "metadata": {"check_unit_type": "hessian_part", "check_unit": part, **({"hessian_nsplit": nsplit} if nsplit else {})},
+            }
+            for part in parts
+        ] or [{"label": "", "env": {}, "metadata": {}}]
+
+    return [{"label": "", "env": {}, "metadata": {}}]
+
+
 def api_json(method: str, url: str, token: str, payload: dict[str, Any]) -> dict[str, Any]:
     body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
@@ -47,6 +135,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--program-path", default=os.environ.get("PROGRAM_PATH", "/home/mfcl/mfclo64"))
     parser.add_argument("--job-title", default=os.environ.get("JOB_TITLE", ""))
     parser.add_argument("--job-description", default=os.environ.get("JOB_DESCRIPTION", ""))
+    parser.add_argument("--parallel-units", default=os.environ.get("KFLOW_PARALLEL_UNITS", "true"))
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
@@ -65,67 +154,93 @@ def main() -> int:
         raise SystemExit("No models selected. Set MODEL_SELECTOR or MODEL_SELECTORS.")
     input_jobs = [job.lstrip("#") for job in split_values(args.input_jobs)]
     base_url = args.kflow_url.rstrip("/")
+    parallel_units = truthy(args.parallel_units, default=True)
 
     for check in checks:
         for model in models:
-            task = f"{args.task_prefix}-{check}"
-            title = args.job_title or f"{check}: {model}"
-            description = args.job_description or f"Run {check} check for {model}."
-            env = {
-                "CHECK_TYPE": check,
-                "MODEL_SELECTOR": model,
-                "KFLOW_JOB_TITLE": title,
-                "KFLOW_JOB_DESCRIPTION": description,
-                "MODEL_SOURCE_REPO": args.model_source_repo,
-                "MODEL_SOURCE_REF": args.model_source_ref,
-                "MODEL_SOURCE_PATH": args.model_source_path,
-                "PROGRAM_PATH": args.program_path,
-                "FLOW_GROUP": args.flow_group,
-                "KFLOW_RUNTIME_UPDATE": os.environ.get("KFLOW_RUNTIME_UPDATE", "always"),
-                "TUNA_FLOW_RUNTIME_UPDATE": os.environ.get("TUNA_FLOW_RUNTIME_UPDATE", "always"),
-                "KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS": os.environ.get("KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS", "0"),
-                "KFLOW_RUNTIME_PACKAGES": os.environ.get("KFLOW_RUNTIME_PACKAGES", "mfclkit=PacificCommunity/ofp-sam-mfclkit@main,mfclshiny=PacificCommunity/mfclshiny@main"),
-                "KFLOW_REPO_RUNTIME_PACKAGES": os.environ.get("KFLOW_REPO_RUNTIME_PACKAGES", "none"),
-                "KFLOW_REPO_RUNTIME_UPDATE": os.environ.get("KFLOW_REPO_RUNTIME_UPDATE", "always"),
-                "KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES": os.environ.get("KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES", "true"),
-                "KFLOW_RUNTIME_GITHUB_AUTH": os.environ.get("KFLOW_RUNTIME_GITHUB_AUTH", "true"),
-                "KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME": os.environ.get("KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME", "true"),
-            }
-            env_prefixes = (
-                "BET_", "JITTER_", "RETRO_", "HESSIAN_", "PROFILE_",
-                "SELFTEST_", "MFK_", "CHECK_", "selftest_",
-            )
-            for key, value in os.environ.items():
-                if key.startswith(env_prefixes) or key == "program_path":
-                    env[key] = value
-            env = {key: value for key, value in env.items() if value not in (None, "")}
-            payload: dict[str, Any] = {
-                "env": env,
-                "title": title,
-                "description": description,
-                "input_jobs": input_jobs,
-                "metadata": {
-                    "flow_group": args.flow_group,
-                    "job_title": title,
-                    "job_description": description,
-                    "check_type": check,
-                    "model_selector": model,
-                    "input_jobs": input_jobs,
-                },
-                "tags": {
+            unit_specs = check_unit_specs(check, parallel_units)
+            for unit in unit_specs:
+                task = f"{args.task_prefix}-{check}"
+                unit_label = str(unit.get("label") or "").strip()
+                title = args.job_title or (
+                    f"{check} {unit_label}: {model}" if unit_label else f"{check}: {model}"
+                )
+                description = args.job_description or (
+                    f"Run {check} {unit_label} check for {model}."
+                    if unit_label else
+                    f"Run {check} check for {model}."
+                )
+                env = {
+                    "CHECK_TYPE": check,
+                    "MODEL_SELECTOR": model,
+                    "KFLOW_JOB_TITLE": title,
+                    "KFLOW_JOB_DESCRIPTION": description,
+                    "MODEL_SOURCE_REPO": args.model_source_repo,
+                    "MODEL_SOURCE_REF": args.model_source_ref,
+                    "MODEL_SOURCE_PATH": args.model_source_path,
+                    "PROGRAM_PATH": args.program_path,
+                    "FLOW_GROUP": args.flow_group,
+                    "KFLOW_RUNTIME_UPDATE": os.environ.get("KFLOW_RUNTIME_UPDATE", "always"),
+                    "TUNA_FLOW_RUNTIME_UPDATE": os.environ.get("TUNA_FLOW_RUNTIME_UPDATE", "always"),
+                    "KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS": os.environ.get("KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS", "0"),
+                    "KFLOW_RUNTIME_PACKAGES": os.environ.get("KFLOW_RUNTIME_PACKAGES", "mfclkit=PacificCommunity/ofp-sam-mfclkit@main,mfclshiny=PacificCommunity/mfclshiny@main"),
+                    "KFLOW_REPO_RUNTIME_PACKAGES": os.environ.get("KFLOW_REPO_RUNTIME_PACKAGES", "none"),
+                    "KFLOW_REPO_RUNTIME_UPDATE": os.environ.get("KFLOW_REPO_RUNTIME_UPDATE", "always"),
+                    "KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES": os.environ.get("KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES", "true"),
+                    "KFLOW_RUNTIME_GITHUB_AUTH": os.environ.get("KFLOW_RUNTIME_GITHUB_AUTH", "true"),
+                    "KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME": os.environ.get("KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME", "true"),
+                }
+                env_prefixes = (
+                    "BET_", "JITTER_", "RETRO_", "HESSIAN_", "PROFILE_",
+                    "SELFTEST_", "MFK_", "CHECK_", "selftest_",
+                )
+                protected_env = {
+                    "CHECK_TYPE",
+                    "MODEL_SELECTOR",
+                    "KFLOW_JOB_TITLE",
+                    "KFLOW_JOB_DESCRIPTION",
+                }
+                for key, value in os.environ.items():
+                    if key in protected_env:
+                        continue
+                    if key.startswith(env_prefixes) or key == "program_path":
+                        env[key] = value
+                env.update(unit.get("env", {}))
+                env = {key: value for key, value in env.items() if value not in (None, "")}
+                unit_metadata = unit.get("metadata", {})
+                check_unit = str(unit_metadata.get("check_unit") or "")
+                tags = {
                     "stage": "checks",
                     "flow": args.flow_group,
                     "check_type": check,
                     "model": model,
-                },
-            }
-            if args.dry_run:
-                print(json.dumps({"task": task, "payload": payload}, indent=2, sort_keys=True))
-                continue
-            response = api_json("POST", f"{base_url}/api/job/{task}", token, payload)
-            job = response.get("job", response)
-            code = job.get("code") or job.get("id") or "?"
-            print(f"submitted {task} {model}: job {code}")
+                }
+                if check_unit:
+                    tags["check_unit"] = check_unit
+                payload: dict[str, Any] = {
+                    "env": env,
+                    "title": title,
+                    "description": description,
+                    "input_jobs": input_jobs,
+                    "metadata": {
+                        "flow_group": args.flow_group,
+                        "job_title": title,
+                        "job_description": description,
+                        "check_type": check,
+                        "model_selector": model,
+                        "input_jobs": input_jobs,
+                        "parallel_units": parallel_units,
+                        **unit_metadata,
+                    },
+                    "tags": tags,
+                }
+                if args.dry_run:
+                    print(json.dumps({"task": task, "payload": payload}, indent=2, sort_keys=True))
+                    continue
+                response = api_json("POST", f"{base_url}/api/job/{task}", token, payload)
+                job = response.get("job", response)
+                code = job.get("code") or job.get("id") or "?"
+                print(f"submitted {task} {model}: job {code}")
     return 0
 
 
