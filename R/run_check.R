@@ -27,6 +27,270 @@ mfcl_command <- function(input_par = start_par_name, output_par = "check.par", e
   c(program_token, frq_name, input_par, output_par, extra)
 }
 
+copy_if_exists <- function(from, to_dir, to_name = basename(from)) {
+  if (!file.exists(from)) return(FALSE)
+  dir.create(to_dir, recursive = TRUE, showWarnings = FALSE)
+  isTRUE(file.copy(from, file.path(to_dir, to_name), overwrite = TRUE, copy.date = TRUE))
+}
+
+relative_to <- function(path, root = output_dir) {
+  path <- normalize_loose(path)
+  root <- normalize_loose(root)
+  prefix <- paste0(root, "/")
+  if (identical(path, root)) return(".")
+  if (startsWith(path, prefix)) substring(path, nchar(prefix) + 1L) else path
+}
+
+df_value <- function(df, name, i, default = "") {
+  if (!is.data.frame(df) || !name %in% names(df) || i > nrow(df)) return(default)
+  df[[name]][[i]] %||% default
+}
+
+check_model_index_row <- function() {
+  compact_dir <- as.character(prepared$manifest$compact_dir[[1L]] %||% "")
+  row <- prepared$row
+  data.frame(
+    check_type = check_type,
+    model_key = model_key,
+    parent_model_key = model_key,
+    model_label = as.character(row$model_label %||% model_key),
+    step_id = as.character(row$step_id %||% model_key),
+    model_dir = basename(model_dir),
+    model_folder = basename(model_dir),
+    check_model_dir = normalize_loose(model_dir),
+    check_model_relative_dir = relative_to(model_dir),
+    model_source = as.character(row$model_source %||% ""),
+    input_compact_dir = compact_dir,
+    payload_role = "check_model_root",
+    stringsAsFactors = FALSE
+  )
+}
+
+write_check_model_indices <- function(index) {
+  model_root <- dirname(model_dir)
+  write.csv(index, file.path(model_root, "model-index.csv"), row.names = FALSE)
+  write.csv(index, file.path(model_root, "check-model-index.csv"), row.names = FALSE)
+  write.csv(index, file.path(output_dir, "checks-index.csv"), row.names = FALSE)
+  invisible(index)
+}
+
+payload_text <- function(x, default = "") {
+  value <- tryCatch(as.character(x), error = function(e) character())
+  if (!length(value) || is.na(value[[1L]]) || !nzchar(value[[1L]])) default else value[[1L]]
+}
+
+payload_number <- function(x) {
+  value <- suppressWarnings(as.numeric(x))
+  if (!length(value) || !is.finite(value[[1L]])) NA_real_ else value[[1L]]
+}
+
+write_basic_payload_manifest <- function(payload, folder, payload_file) {
+  info <- tryCatch(payload$data$info, error = function(e) NULL)
+  registry <- tryCatch(info$registry, error = function(e) NULL)
+  model_label <- payload_text(tryCatch(registry$plot_label, error = function(e) NULL),
+    payload_text(tryCatch(registry$model_label, error = function(e) NULL),
+      payload_text(tryCatch(registry$model_token, error = function(e) NULL),
+        payload_text(tryCatch(info$plot_label, error = function(e) NULL),
+          payload_text(tryCatch(info$model_label, error = function(e) NULL),
+            payload_text(tryCatch(info$model_token, error = function(e) NULL), basename(folder))
+          )
+        )
+      )
+    )
+  )
+  manifest <- data.frame(
+    schema = "mfclshiny.model_payload_manifest.v1",
+    created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+    model_label = model_label,
+    model_folder = normalize_loose(folder),
+    payload_file = normalize_loose(payload_file),
+    payload_bytes = suppressWarnings(as.numeric(file.info(payload_file)$size)),
+    obj_fun = payload_number(tryCatch(payload$obj_fun, error = function(e) NA_real_)),
+    max_grad = payload_number(tryCatch(payload$max_grad, error = function(e) NA_real_)),
+    has_par = !is.null(tryCatch(payload$data$ParOut, error = function(e) NULL)),
+    has_rep = !is.null(tryCatch(payload$data$RepOut, error = function(e) NULL)),
+    has_lf = !is.null(tryCatch(payload$data$LengOut, error = function(e) NULL)),
+    has_wf = !is.null(tryCatch(payload$data$WeightOut, error = function(e) NULL)),
+    has_tags = !is.null(tryCatch(payload$data$TagOut, error = function(e) NULL)) ||
+      !is.null(tryCatch(payload$data$TagTempOut, error = function(e) NULL)),
+    has_caal = !is.null(tryCatch(payload$data$AgeOut, error = function(e) NULL)),
+    has_diagnostics = !is.null(tryCatch(payload$data$Diagnostics, error = function(e) NULL)),
+    stringsAsFactors = FALSE
+  )
+  write.csv(manifest, file.path(folder, "model_payload_manifest.csv"), row.names = FALSE)
+  if (requireNamespace("jsonlite", quietly = TRUE)) {
+    jsonlite::write_json(
+      manifest,
+      file.path(folder, "model_payload_manifest.json"),
+      dataframe = "rows",
+      auto_unbox = TRUE,
+      pretty = TRUE,
+      null = "null"
+    )
+  }
+  invisible(manifest)
+}
+
+augment_base_payload_manifest <- function(index) {
+  base_payload <- file.path(model_dir, "model_payload.rds")
+  csv_file <- file.path(model_dir, "model_payload_manifest.csv")
+  json_file <- file.path(model_dir, "model_payload_manifest.json")
+  if (file.exists(base_payload) && !file.exists(csv_file) && !file.exists(json_file)) {
+    payload <- tryCatch(readRDS(base_payload), error = function(e) NULL)
+    if (!is.null(payload)) {
+      err <- tryCatch({
+        write_basic_payload_manifest(payload = payload, folder = model_dir, payload_file = base_payload)
+        NULL
+      }, error = function(e) e)
+      if (!is.null(err)) {
+        warning("base payload manifest build failed: ", conditionMessage(err), call. = FALSE)
+      }
+    }
+  }
+  manifest <- NULL
+  if (file.exists(csv_file)) {
+    manifest <- tryCatch(read.csv(csv_file, stringsAsFactors = FALSE), error = function(e) NULL)
+  }
+  if (is.null(manifest) && file.exists(json_file) && requireNamespace("jsonlite", quietly = TRUE)) {
+    manifest <- tryCatch(as.data.frame(jsonlite::read_json(json_file, simplifyVector = TRUE), stringsAsFactors = FALSE), error = function(e) NULL)
+  }
+  if (is.null(manifest) || !nrow(manifest)) return(invisible(NULL))
+
+  manifest$payload_role <- "base_model"
+  manifest$check_type <- check_type
+  manifest$parent_model_key <- model_key
+  manifest$check_model_dir <- normalize_loose(model_dir)
+  manifest$check_model_relative_dir <- relative_to(model_dir)
+  for (name in intersect(names(index), c("model_label", "step_id", "model_source", "input_compact_dir"))) {
+    manifest[[paste0("source_", name)]] <- as.character(index[[name]][[1L]])
+  }
+  write.csv(manifest, csv_file, row.names = FALSE)
+  if (requireNamespace("jsonlite", quietly = TRUE)) {
+    jsonlite::write_json(manifest, json_file, dataframe = "rows", auto_unbox = TRUE, pretty = TRUE, null = "null")
+  }
+  invisible(manifest)
+}
+
+stage_report_model_payload <- function() {
+  compact_dir <- as.character(prepared$manifest$compact_dir[[1L]] %||% "")
+  for (name in c(
+    "model_payload.rds", "model_payload_manifest.json", "model_payload_manifest.csv",
+    "fishery_map.R", "tag_rep_map.R", "bet.region_map.geojson", "bet.reg_scaling"
+  )) {
+    copy_if_exists(file.path(compact_dir, name), model_dir)
+  }
+  copy_if_exists(prepared$start_par, model_dir, basename(prepared$start_par))
+
+  index <- check_model_index_row()
+  write_check_model_indices(index)
+  augment_base_payload_manifest(index)
+  invisible(index)
+}
+
+write_check_payload_index <- function(payload_index = data.frame()) {
+  check_index <- check_model_index_row()
+  rows <- list()
+  base_payload <- file.path(model_dir, "model_payload.rds")
+  if (file.exists(base_payload)) {
+    rows[[length(rows) + 1L]] <- data.frame(
+      check_type = check_type,
+      parent_model_key = model_key,
+      model_label = check_index$model_label[[1L]],
+      payload_role = "base_model",
+      payload_folder = normalize_loose(model_dir),
+      payload_relative_folder = relative_to(model_dir),
+      payload_file = normalize_loose(base_payload),
+      payload_relative_file = relative_to(base_payload),
+      manifest_file = normalize_loose(file.path(model_dir, "model_payload_manifest.json")),
+      stringsAsFactors = FALSE
+    )
+  }
+  if (is.data.frame(payload_index) && nrow(payload_index)) {
+    for (i in seq_len(nrow(payload_index))) {
+      folder <- as.character(df_value(payload_index, "folder", i, ""))
+      payload <- as.character(df_value(payload_index, "payload", i, ""))
+      if (!nzchar(folder)) next
+      if (identical(normalize_loose(folder), normalize_loose(model_dir))) next
+      rows[[length(rows) + 1L]] <- data.frame(
+        check_type = check_type,
+        parent_model_key = model_key,
+        model_label = check_index$model_label[[1L]],
+        payload_role = "check_output",
+        payload_folder = normalize_loose(folder),
+        payload_relative_folder = relative_to(folder),
+        payload_file = normalize_loose(payload),
+        payload_relative_file = relative_to(payload),
+        manifest_file = normalize_loose(as.character(df_value(payload_index, "manifest", i, file.path(folder, "model_payload_manifest.json")))),
+        payload_ok = isTRUE(df_value(payload_index, "ok", i, FALSE)),
+        payload_message = as.character(df_value(payload_index, "message", i, "")),
+        stringsAsFactors = FALSE
+      )
+    }
+  }
+  out <- bind_rows_fill(rows)
+  write.csv(out, file.path(model_dir, "check-payload-index.csv"), row.names = FALSE)
+  write.csv(out, file.path(dirname(model_dir), "check-payload-index.csv"), row.names = FALSE)
+  invisible(out)
+}
+
+build_report_payloads <- function() {
+  if (!requireNamespace("mfclshiny", quietly = TRUE)) {
+    warning("mfclshiny is not installed; skipping report-ready payload build.", call. = FALSE)
+    return(invisible(data.frame()))
+  }
+  payload_index <- tryCatch(
+    mfclshiny::build_model_payloads(model_dir, recursive = TRUE, overwrite = TRUE),
+    error = function(e) {
+      warning("mfclshiny payload build failed: ", conditionMessage(e), call. = FALSE)
+      data.frame()
+    }
+  )
+  if (is.data.frame(payload_index)) {
+    write.csv(payload_index, file.path(model_dir, "payload-build-index.csv"), row.names = FALSE)
+  }
+  invisible(payload_index)
+}
+
+build_report_ready_figures <- function() {
+  if (!truthy(env("CHECK_BUILD_REPORT_FIGURES", "true"), TRUE)) return(invisible(NULL))
+  if (!requireNamespace("mfclshiny", quietly = TRUE) ||
+      !"build_app_report_figures" %in% getNamespaceExports("mfclshiny")) {
+    warning("mfclshiny::build_app_report_figures is not available; skipping report-ready figures.", call. = FALSE)
+    return(invisible(NULL))
+  }
+  out <- file.path(output_dir, "report-ready-checks", check_type, model_key)
+  dir.create(out, recursive = TRUE, showWarnings = FALSE)
+  result <- tryCatch(
+    mfclshiny::build_app_report_figures(
+      model_dir = dirname(model_dir),
+      folders = model_dir,
+      output_dir = out,
+      title = paste("BET 2026", check_type, "check figures"),
+      formats = "png",
+      build_payloads = FALSE,
+      overwrite = TRUE,
+      render_html = truthy(env("CHECK_RENDER_REVIEW_HTML", "false"), FALSE),
+      qmd_file = "check-report.qmd",
+      html_file = "check-report.html",
+      figure_dir = "figures",
+      table_dir = "tables",
+      copy_legacy_root = FALSE,
+      species_code = env("FLOW_SPECIES", "BET"),
+      species_label = env("FLOW_SPECIES_LABEL", "bigeye tuna"),
+      assessment_year = env("FLOW_ASSESSMENT_YEAR", "2026"),
+      max_fisheries = as.integer(split_numbers(env("PLOT_MAX_FISHERIES", "18"), default = 18)[[1L]])
+    ),
+    error = function(e) {
+      warning("mfclshiny report-ready figure build failed: ", conditionMessage(e), call. = FALSE)
+      NULL
+    }
+  )
+  if (!is.null(result) && is.data.frame(result$figures)) {
+    write.csv(result$figures, file.path(out, "figure-index.csv"), row.names = FALSE)
+  }
+  invisible(result)
+}
+
 write_run_manifest <- function(extra = list()) {
   manifest <- c(
     list(
@@ -45,11 +309,14 @@ write_run_manifest <- function(extra = list()) {
   invisible(manifest)
 }
 
+stage_report_model_payload()
+
 if (truthy(env("CHECK_DRY_RUN", env("CHECK_SMOKE_ONLY", "false")), FALSE)) {
   write_run_manifest(list(
     dry_run = TRUE,
     reason = "staged input model and skipped MFCL execution"
   ))
+  write_check_payload_index()
   message("[checks] dry run complete; staged ", prepared$case_dir)
   quit(save = "no", status = 0)
 }
@@ -205,4 +472,7 @@ if (identical(check_type, "jitter")) {
 }
 
 try(mfclkit::mfk_collect_diagnostics(model_dir, write_index = TRUE), silent = TRUE)
+payload_index <- build_report_payloads()
+write_check_payload_index(payload_index)
+build_report_ready_figures()
 message("[checks] wrote outputs under ", model_dir)

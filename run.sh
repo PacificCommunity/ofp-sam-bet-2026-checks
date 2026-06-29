@@ -13,7 +13,7 @@ export CHECK_TYPE
 export OUTPUT_DIR="${OUTPUT_DIR:-outputs}"
 export WORK_DIR="${WORK_DIR:-work}"
 export PROGRAM_PATH="${PROGRAM_PATH:-/home/mfcl/mfclo64}"
-export KFLOW_REPO_RUNTIME_PACKAGES="${KFLOW_REPO_RUNTIME_PACKAGES:-mfclkit=PacificCommunity/ofp-sam-mfclkit@main}"
+export KFLOW_REPO_RUNTIME_PACKAGES="${KFLOW_REPO_RUNTIME_PACKAGES:-mfclkit=PacificCommunity/ofp-sam-mfclkit@main,mfclshiny=PacificCommunity/mfclshiny@main}"
 export KFLOW_REPO_RUNTIME_UPDATE="${KFLOW_REPO_RUNTIME_UPDATE:-auto}"
 
 truthy() {
@@ -104,4 +104,3 @@ install_runtime_repos
 
 mkdir -p "$OUTPUT_DIR" "$WORK_DIR"
 Rscript R/run_check.R "$CHECK_TYPE"
-

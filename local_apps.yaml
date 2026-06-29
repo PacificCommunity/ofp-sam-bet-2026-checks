@@ -1,0 +1,224 @@
+local_apps:
+  - key: mfclshiny
+    label: MFCL Shiny
+    icon: chart-no-axes-combined
+    runner: local-docker-ssh
+    memory: 8g
+    archive_sources:
+      - outputs
+    container_port: 3838
+    env:
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      VECLIB_MAXIMUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+      R_REMOTES_NO_ERRORS_FROM_WARNINGS: "true"
+      MFCLSHINY_GITHUB_REF: main
+      MFCLKIT_GITHUB_REF: main
+      MFCLSHINY_AUTO_LOAD: "true"
+      MFCLSHINY_REPORT_DPI: "96"
+      MFCLSHINY_OPTIMIZE_FIGURES: "true"
+      MFCLSHINY_PREVIEW_DPI: "48"
+      MFCLSHINY_PREVIEW_MAX_WIDTH: "980"
+      MFCLSHINY_PREVIEW_MAX_HEIGHT: "980"
+      MFCLSHINY_REPORT_CARD_LIMIT: "60"
+    command: |
+      Rscript - <<'RS'
+      Sys.setenv(
+        OMP_NUM_THREADS = "1",
+        OPENBLAS_NUM_THREADS = "1",
+        MKL_NUM_THREADS = "1",
+        VECLIB_MAXIMUM_THREADS = "1",
+        NUMEXPR_NUM_THREADS = "1",
+        MFCLSHINY_EXPORT_DIR = "/kflow/work/export",
+        R_REMOTES_NO_ERRORS_FROM_WARNINGS = "true"
+      )
+      options(bitmapType = "cairo", Ncpus = max(1L, parallel::detectCores() - 2L))
+
+      lib <- Sys.getenv("KFLOW_LOCAL_APP_R_LIBS", "/kflow/package-cache/R-library")
+      dir.create(lib, recursive = TRUE, showWarnings = FALSE)
+      .libPaths(unique(c(lib, .libPaths())))
+
+      desc_field <- function(desc, name) {
+        value <- tryCatch(desc[[name]], error = function(e) "")
+        if (is.null(value) || !length(value) || is.na(value[[1L]])) "" else as.character(value[[1L]])
+      }
+      ref_matches <- function(desc, ref) {
+        if (is.null(desc)) return(FALSE)
+        sha <- desc_field(desc, "RemoteSha")
+        remote_ref <- desc_field(desc, "RemoteRef")
+        ref_is_sha <- grepl("^[0-9a-f]{7,40}$", ref, ignore.case = TRUE)
+        if (isTRUE(ref_is_sha)) {
+          nzchar(sha) && startsWith(tolower(sha), tolower(ref))
+        } else {
+          identical(remote_ref, ref)
+        }
+      }
+      install_github_package <- function(package, repo, ref) {
+        desc <- tryCatch(suppressWarnings(utils::packageDescription(package, lib.loc = lib)), error = function(e) NULL)
+        if (!is.null(desc) && length(desc) == 1L && is.na(desc[[1L]])) desc <- NULL
+        if (ref_matches(desc, ref) && requireNamespace(package, quietly = TRUE)) return(invisible(TRUE))
+
+        git <- Sys.which("git")
+        if (!nzchar(git)) stop("git is required to install ", package, ".", call. = FALSE)
+        token <- Sys.getenv("GITHUB_PAT", Sys.getenv("GITHUB_TOKEN", ""))
+        source_dir <- tempfile(paste0(package, "-src-"))
+        askpass <- tempfile(paste0(package, "-askpass-"))
+        git_env <- "GIT_TERMINAL_PROMPT=0"
+        if (nzchar(token)) {
+          writeLines(c(
+            "#!/bin/sh",
+            "case \"$1\" in",
+            "  *Username*) printf '%s\\n' x-access-token ;;",
+            "  *) printf '%s\\n' \"$KFLOW_GIT_ASKPASS_TOKEN\" ;;",
+            "esac"
+          ), askpass)
+          Sys.chmod(askpass, mode = "0700")
+          git_env <- c(
+            git_env,
+            paste0("GIT_ASKPASS=", askpass),
+            paste0("KFLOW_GIT_ASKPASS_TOKEN=", token)
+          )
+        }
+        on.exit(unlink(c(source_dir, askpass), recursive = TRUE, force = TRUE), add = TRUE)
+        run_git <- function(args) {
+          identical(as.integer(system2(git, args, env = git_env, stdout = FALSE, stderr = FALSE)), 0L)
+        }
+        url <- paste0("https://github.com/", repo, ".git")
+        if (!run_git(c("clone", "--quiet", "--depth", "50", url, source_dir))) {
+          stop("git clone failed for ", repo, ".", call. = FALSE)
+        }
+        if (!run_git(c("-C", source_dir, "checkout", "--quiet", ref))) {
+          if (!run_git(c("-C", source_dir, "fetch", "--quiet", "--depth", "1", "origin", ref)) ||
+              !run_git(c("-C", source_dir, "checkout", "--quiet", "FETCH_HEAD"))) {
+            stop("git checkout failed for ", repo, "@", ref, call. = FALSE)
+          }
+        }
+        install_output <- system2(
+          file.path(R.home("bin"), "R"),
+          c("CMD", "INSTALL", "-l", lib, source_dir),
+          stdout = TRUE,
+          stderr = TRUE
+        )
+        status <- attr(install_output, "status")
+        if (is.null(status)) status <- 0L
+        if (!identical(as.integer(status), 0L)) {
+          detail <- paste(tail(as.character(install_output), 30), collapse = "\n")
+          stop("R CMD INSTALL failed for ", package, "\n", detail, call. = FALSE)
+        }
+        desc_path <- system.file("DESCRIPTION", package = package, lib.loc = lib)
+        if (nzchar(desc_path) && file.exists(desc_path)) {
+          remote <- list(
+            RemoteType = "github",
+            RemoteHost = "api.github.com",
+            RemoteUsername = sub("/.*$", "", repo),
+            RemoteRepo = sub("^.*/", "", repo),
+            RemoteRef = ref,
+            RemoteSha = ref
+          )
+          fields <- as.list(read.dcf(desc_path)[1, ])
+          fields[names(remote)] <- remote
+          write.dcf(as.data.frame(fields, stringsAsFactors = FALSE, check.names = FALSE), desc_path)
+          meta_path <- system.file("Meta", "package.rds", package = package, lib.loc = lib)
+          if (file.exists(meta_path)) {
+            meta <- readRDS(meta_path)
+            meta[["DESCRIPTION"]][names(remote)] <- unlist(remote)
+            saveRDS(meta, meta_path)
+          }
+        }
+        invisible(TRUE)
+      }
+
+      install_github_package("mfclkit", "PacificCommunity/ofp-sam-mfclkit", Sys.getenv("MFCLKIT_GITHUB_REF", "main"))
+      install_github_package("mfclshiny", "PacificCommunity/mfclshiny", Sys.getenv("MFCLSHINY_GITHUB_REF", "main"))
+      library(mfclshiny)
+
+      normalize_loose <- function(path) normalizePath(path, winslash = "/", mustWork = FALSE)
+      link_or_copy <- function(from, to) {
+        unlink(to, recursive = TRUE, force = TRUE)
+        ok <- tryCatch(file.symlink(from, to), warning = function(w) FALSE, error = function(e) FALSE)
+        if (!isTRUE(ok)) ok <- file.copy(from, to, recursive = TRUE, overwrite = TRUE, copy.date = TRUE)
+        if (!isTRUE(ok)) stop("Failed to stage local app input: ", from, call. = FALSE)
+        invisible(to)
+      }
+      topmost_dirs <- function(paths) {
+        paths <- normalize_loose(unique(paths[file.exists(file.path(paths, "model_payload.rds"))]))
+        if (!length(paths)) return(paths)
+        keep <- vapply(paths, function(path) {
+          !any(vapply(setdiff(paths, path), function(parent) startsWith(path, paste0(parent, "/")), logical(1)))
+        }, logical(1))
+        paths[keep]
+      }
+      discover_model_dirs <- function(...) {
+        roots <- normalize_loose(unique(c(...)))
+        roots <- roots[dir.exists(roots)]
+        manifest_dirs <- unique(unlist(lapply(roots, function(root) {
+          dirname(list.files(
+            root,
+            pattern = "^check_manifest[.](rds|csv)$",
+            recursive = TRUE,
+            full.names = TRUE
+          ))
+        }), use.names = FALSE))
+        manifest_dirs <- manifest_dirs[file.exists(file.path(manifest_dirs, "model_payload.rds"))]
+        if (length(manifest_dirs)) return(normalize_loose(manifest_dirs))
+
+        payload_dirs <- unique(unlist(lapply(roots, function(root) {
+          dirname(list.files(
+            root,
+            pattern = "^model_payload[.]rds$",
+            recursive = TRUE,
+            full.names = TRUE
+          ))
+        }), use.names = FALSE))
+        topmost_dirs(payload_dirs)
+      }
+      write_combined_model_index <- function(model_dirs, staging_root) {
+        rows <- list()
+        for (source_parent in unique(dirname(model_dirs))) {
+          index_file <- file.path(source_parent, "model-index.csv")
+          if (!file.exists(index_file)) next
+          dat <- tryCatch(utils::read.csv(index_file, stringsAsFactors = FALSE), error = function(e) data.frame())
+          if (!nrow(dat)) next
+          dat$source_index_file <- normalize_loose(index_file)
+          rows[[length(rows) + 1L]] <- dat
+        }
+        if (!length(rows)) return(invisible(NULL))
+        cols <- unique(unlist(lapply(rows, names), use.names = FALSE))
+        rows <- lapply(rows, function(x) {
+          missing <- setdiff(cols, names(x))
+          for (name in missing) x[[name]] <- NA
+          x[, cols, drop = FALSE]
+        })
+        utils::write.csv(do.call(rbind, rows), file.path(staging_root, "model-index.csv"), row.names = FALSE)
+        invisible(TRUE)
+      }
+
+      roots <- c(
+        Sys.getenv("KFLOW_LOCAL_APP_INPUT_DIR", "/kflow/inputs"),
+        Sys.getenv("KFLOW_LOCAL_APP_OUTPUT_DIR", "/kflow/outputs")
+      )
+      model_dirs <- discover_model_dirs(roots)
+      if (!length(model_dirs)) {
+        stop("No check model_payload.rds files found under local app inputs.", call. = FALSE)
+      }
+
+      staging_root <- "/kflow/work/model-root"
+      unlink(staging_root, recursive = TRUE, force = TRUE)
+      dir.create(staging_root, recursive = TRUE, showWarnings = FALSE)
+      staged_names <- make.unique(basename(model_dirs), sep = "-")
+      for (i in seq_along(model_dirs)) {
+        link_or_copy(model_dirs[[i]], file.path(staging_root, staged_names[[i]]))
+      }
+      write_combined_model_index(model_dirs, staging_root)
+
+      mfclshiny::run_mfclshiny(
+        model_dir = staging_root,
+        export_dir = "/kflow/work/export",
+        report_ready_export = TRUE,
+        host = "0.0.0.0",
+        port = as.integer(Sys.getenv("PORT", "3838")),
+        launch.browser = FALSE
+      )
+      RS

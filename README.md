@@ -31,6 +31,33 @@ all feed the same checks as long as they expose the same contract.
 - `CHECK_START_PAR_NAME`: staged start par filename. Default is `final.par`.
 - `CHECK_DRY_RUN`: set `true` for a fast smoke test that stages the model and
   exits before running MFCL.
+- `CHECK_BUILD_REPORT_FIGURES`: build mfclshiny report-ready figures after the
+  check. Default is `true`.
+- `CHECK_RENDER_REVIEW_HTML`: render a small HTML review for check figures.
+  Default is `false`.
+
+## Output contract
+
+Each check writes one mfclshiny-compatible model folder:
+
+```text
+outputs/
+  checks/<check_type>/<model_key>/
+    model_payload.rds
+    model_payload_manifest.{json,csv}
+    check_manifest.{rds,csv}
+    check-payload-index.csv
+    jitter/ | retro/ | hessian/ | profile/ | selftest/
+  checks/<check_type>/model-index.csv
+  checks-index.csv
+  report-ready-checks/<check_type>/<model_key>/
+```
+
+The copied `model_payload.rds` is the fitted parent model. The check-specific
+subdirectories follow the structure mfclshiny already reads for likelihood
+profiles, jitter, Hessian, retrospective, and self-test diagnostics. This lets a
+Kflow job open MFCL Shiny directly, and lets downstream results/report jobs scan
+the same payload folders later without needing stepwise-specific assumptions.
 
 ## Check-specific fields
 
@@ -80,6 +107,10 @@ Register all five tasks:
 ```sh
 make kflow-register
 ```
+
+Registered tasks include the same MFCL Shiny local app launcher used by the
+stepwise/results jobs. Open it from the Kflow job page after a check job has an
+output archive.
 
 Launch independent jobs. Kflow/Condor will schedule the model checks in
 parallel:

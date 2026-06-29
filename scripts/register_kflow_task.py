@@ -84,6 +84,15 @@ def first_present(*values: Any) -> Any:
     return None
 
 
+def shared_local_apps() -> list[dict[str, Any]] | None:
+    path = ROOT / "local_apps.yaml"
+    if not path.exists():
+        return None
+    data = read_yaml(path)
+    apps = data.get("local_apps")
+    return apps if isinstance(apps, list) else None
+
+
 def build_payload(config: dict[str, Any], repo_root: Path, existing: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
     task_name = args.task_name or config.get("name")
     if not task_name:
@@ -92,6 +101,11 @@ def build_payload(config: dict[str, Any], repo_root: Path, existing: dict[str, A
     metadata = dict(config.get("metadata") or {})
     if config.get("job_config") is not None:
         metadata["job_config"] = config["job_config"]
+    local_apps = config.get("local_apps", None)
+    if local_apps is None:
+        local_apps = shared_local_apps()
+    if local_apps is not None:
+        metadata["local_apps"] = local_apps
 
     payload: dict[str, Any] = {
         "name": task_name,
@@ -156,4 +170,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
