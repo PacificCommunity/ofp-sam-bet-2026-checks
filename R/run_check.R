@@ -27,6 +27,24 @@ mfcl_command <- function(input_par = start_par_name, output_par = "check.par", e
   c(program_token, frq_name, input_par, output_par, extra)
 }
 
+check_doitall_command <- function(script_name = "doitall.check.sh") {
+  source_script <- file.path(prepared$case_dir, "doitall.sh")
+  if (!file.exists(source_script)) return(NULL)
+
+  lines <- readLines(source_script, warn = FALSE)
+  makepar <- grepl("(^|[[:space:]])-makepar([[:space:]]|$)", lines)
+  if (any(makepar)) {
+    first_makepar <- which(makepar)[[1L]]
+    skipped <- gsub('"', '\\"', lines[[first_makepar]], fixed = TRUE)
+    lines[[first_makepar]] <- paste0('echo "[checks] skipping makepar for check start par: ', skipped, '"')
+  }
+
+  out <- file.path(prepared$case_dir, script_name)
+  writeLines(lines, out)
+  Sys.chmod(out, mode = "0755")
+  c("sh", script_name)
+}
+
 copy_if_exists <- function(from, to_dir, to_name = basename(from)) {
   if (!file.exists(from)) return(FALSE)
   dir.create(to_dir, recursive = TRUE, showWarnings = FALSE)
@@ -335,7 +353,7 @@ if (identical(check_type, "jitter")) {
     cv = cv,
     par = prepared$start_par,
     start_par_name = "00.par",
-    command = mfcl_command(input_par = "00.par", output_par = "jitter.par"),
+    command = check_doitall_command() %||% mfcl_command(input_par = "00.par", output_par = "jitter.par"),
     run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
   )
   saveRDS(result, file.path(model_dir, "jitter_runs.rds"), compress = "xz")
