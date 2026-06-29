@@ -86,7 +86,8 @@ the same payload folders later without needing stepwise-specific assumptions.
   to read it from the staged fitted output.
 - `PROFILE_APPLY_SCRIPT`: required for `PROFILE_TYPE=fixed_parameter`; this is a
   project-specific R script that edits copied MFCL inputs for each profile point.
-- `SELFTEST_RUNNER`: required for native MFCL self-test.
+- `SELFTEST_RUNNER`: optional override for native MFCL self-test. If unset,
+  checks use the native self-test runner bundled with `mfclkit`.
 
 ## Local examples
 

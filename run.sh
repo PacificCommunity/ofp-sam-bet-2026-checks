@@ -133,11 +133,21 @@ ASKPASS
 install_runtime_repos
 
 if [[ "$CHECK_TYPE" == "selftest" ]]; then
-  export SELFTEST_RUNNER="${SELFTEST_RUNNER:-${CHECK_SELFTEST_SCRIPT:-runners/run_selftest.R}}"
-  export SELFTEST_RUNNER_REPO="${SELFTEST_RUNNER_REPO:-${CHECK_SELFTEST_REPO:-PacificCommunity/ofp-sam-2026-BET}}"
-  export SELFTEST_RUNNER_REF="${SELFTEST_RUNNER_REF:-${CHECK_SELFTEST_REF:-4R_sim}}"
+  if [[ -z "${SELFTEST_RUNNER:-}" && -n "${CHECK_SELFTEST_SCRIPT:-}" ]]; then
+    export SELFTEST_RUNNER="$CHECK_SELFTEST_SCRIPT"
+  fi
+  if [[ -z "${SELFTEST_RUNNER_REPO:-}" && -n "${CHECK_SELFTEST_REPO:-}" ]]; then
+    export SELFTEST_RUNNER_REPO="$CHECK_SELFTEST_REPO"
+  fi
+  if [[ -z "${SELFTEST_RUNNER_REF:-}" && -n "${CHECK_SELFTEST_REF:-}" ]]; then
+    export SELFTEST_RUNNER_REF="$CHECK_SELFTEST_REF"
+  fi
   export SELFTEST_RUN_REFIT="${SELFTEST_RUN_REFIT:-${CHECK_SELFTEST_RUN_REFIT:-false}}"
-  echo "[checks] selftest runner: ${SELFTEST_RUNNER} (${SELFTEST_RUNNER_REPO}@${SELFTEST_RUNNER_REF})"
+  if [[ -n "${SELFTEST_RUNNER:-}" ]]; then
+    echo "[checks] selftest runner override: ${SELFTEST_RUNNER} (${SELFTEST_RUNNER_REPO:-local}@${SELFTEST_RUNNER_REF:-})"
+  else
+    echo "[checks] selftest runner: mfclkit bundled native runner"
+  fi
 fi
 
 mkdir -p "$OUTPUT_DIR" "$WORK_DIR"

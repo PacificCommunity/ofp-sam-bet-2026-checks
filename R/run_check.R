@@ -607,10 +607,7 @@ if (identical(check_type, "jitter")) {
 
 } else if (identical(check_type, "selftest")) {
   runner <- resolve_selftest_runner(env("SELFTEST_RUNNER", ""))
-  if (!nzchar(runner)) {
-    stop("Native MFCL selftest requires SELFTEST_RUNNER or CHECK_SELFTEST_SCRIPT.", call. = FALSE)
-  }
-  if (!file.exists(runner)) {
+  if (nzchar(runner) && !file.exists(runner)) {
     stop(
       "Native MFCL selftest runner was not found: ", runner,
       ". SELFTEST_RUNNER_REPO=", env("SELFTEST_RUNNER_REPO", env("CHECK_SELFTEST_REPO", "")),
@@ -624,20 +621,21 @@ if (identical(check_type, "jitter")) {
   write_run_manifest(list(
     selftest_reps = paste(reps, collapse = " "),
     selftest_seed = seed,
-    selftest_runner = runner,
+    selftest_runner = if (nzchar(runner)) runner else "mfclkit::mfk_selftest_runner_path()",
     selftest_runner_work_dir = runner_work_dir
   ))
-  result <- mfk_run_selftest(
-    backend,
+  args <- list(
+    backend = backend,
     input_dir = prepared$case_dir,
     model_dir = model_dir,
     reps = reps,
     seed = seed,
     par = prepared$start_par,
-    runner = runner,
-    runner_work_dir = runner_work_dir,
     run_refit = truthy(env("SELFTEST_RUN_REFIT", "true"), TRUE)
   )
+  if (nzchar(runner)) args$runner <- runner
+  if (nzchar(runner_work_dir)) args$runner_work_dir <- runner_work_dir
+  result <- do.call(mfk_run_selftest, args)
   saveRDS(result, file.path(model_dir, "selftest_runs.rds"), compress = "xz")
 
 } else {
