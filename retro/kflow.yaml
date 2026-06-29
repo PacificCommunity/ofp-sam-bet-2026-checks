@@ -1,0 +1,50 @@
+name: ofp-sam-bet-2026-check-retro
+description: Run mfclkit retrospective checks on a fitted MFCL model output.
+command: bash run.sh
+target_folder: retro
+docker_image: ghcr.io/pacificcommunity/tuna-flow:v2.0
+resources:
+  cpus: 2
+  memory: 12GB
+  disk: 10GB
+env:
+  CHECK_TYPE: retro
+  MODEL_SOURCE_REPO: PacificCommunity/ofp-sam-bet-2026-stepwise
+  MODEL_SOURCE_REF: main
+  PROGRAM_PATH: /home/mfcl/mfclo64
+  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@main
+  KFLOW_REPO_RUNTIME_UPDATE: auto
+  KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
+  KFLOW_RUNTIME_GITHUB_AUTH: "true"
+  KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME: "true"
+  RETRO_PEELS: "1"
+  N_MIXING_PERIODS: "2"
+output_patterns:
+  - outputs/**
+metadata:
+  job_config:
+    optional:
+      - CHECK_TYPE
+      - MODEL_SELECTOR
+      - MODEL_INPUT_ROOT
+      - MODEL_SOURCE_REPO
+      - MODEL_SOURCE_REF
+      - MODEL_SOURCE_PATH
+      - MODEL_SOURCE_ROOT
+      - MODEL_FINAL_PAR
+      - CHECK_START_PAR_NAME
+      - PROGRAM_PATH
+      - FLOW_GROUP
+      - RETRO_PEELS
+      - RETRO_PEEL
+      - N_MIXING_PERIODS
+      - MFK_RUN_MESSAGES
+      - KFLOW_REPO_RUNTIME_PACKAGES
+      - KFLOW_REPO_RUNTIME_UPDATE
+      - KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES
+      - KFLOW_RUNTIME_GITHUB_AUTH
+      - KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME
+tags:
+  stage: checks
+  check_type: retro
+

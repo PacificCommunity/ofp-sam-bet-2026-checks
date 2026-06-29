@@ -1,0 +1,10 @@
+outputs/
+work/
+.R-library/
+.kflow-runtime-cache/
+.docker-home/
+.Rproj.user/
+.DS_Store
+*.log
+__pycache__/
+*.pyc
