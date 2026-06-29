@@ -52,7 +52,8 @@ local_apps:
         if (isTRUE(ref_is_sha)) {
           nzchar(sha) && startsWith(tolower(sha), tolower(ref))
         } else {
-          identical(remote_ref, ref)
+          update <- tolower(trimws(Sys.getenv("KFLOW_LOCAL_APP_PACKAGE_UPDATE", "auto")))
+          identical(remote_ref, ref) && update %in% c("never", "false", "0", "off", "no")
         }
       }
       install_github_package <- function(package, repo, ref) {
