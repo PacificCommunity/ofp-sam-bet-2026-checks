@@ -37,6 +37,8 @@ metadata:
       - CHECK_START_PAR_NAME
       - PROGRAM_PATH
       - FLOW_GROUP
+      - CHECK_DRY_RUN
+      - CHECK_SMOKE_ONLY
       - PROFILE_TYPE
       - PROFILE_NAME
       - PROFILE_LABEL
@@ -61,4 +63,3 @@ metadata:
 tags:
   stage: checks
   check_type: profile
-

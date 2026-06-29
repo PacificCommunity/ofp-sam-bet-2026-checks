@@ -35,6 +35,8 @@ metadata:
       - CHECK_START_PAR_NAME
       - PROGRAM_PATH
       - FLOW_GROUP
+      - CHECK_DRY_RUN
+      - CHECK_SMOKE_ONLY
       - SELFTEST_REPS
       - SELFTEST_REP
       - SELFTEST_SEED
@@ -49,4 +51,3 @@ metadata:
 tags:
   stage: checks
   check_type: selftest
-

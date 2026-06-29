@@ -29,6 +29,8 @@ all feed the same checks as long as they expose the same contract.
   `model-index.csv` row supplies `model_source`.
 - `PROGRAM_PATH`: MFCL executable path inside the Docker image.
 - `CHECK_START_PAR_NAME`: staged start par filename. Default is `final.par`.
+- `CHECK_DRY_RUN`: set `true` for a fast smoke test that stages the model and
+  exits before running MFCL.
 
 ## Check-specific fields
 
@@ -90,3 +92,9 @@ make kflow-batch CHECK_TYPES="jitter retro hessian" MODEL_SELECTORS="08-Regional
 For all 15 stepwise models, pass all 15 upstream model jobs and all 15
 selectors. The submit helper creates one Kflow job for each check/model
 combination, so Condor can schedule them in parallel.
+
+Fast smoke test:
+
+```sh
+CHECK_DRY_RUN=true make kflow CHECK_TYPE=jitter MODEL_SELECTOR=04-NewStructure KFLOW_INPUT_JOBS=592
+```

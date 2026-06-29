@@ -34,6 +34,8 @@ metadata:
       - CHECK_START_PAR_NAME
       - PROGRAM_PATH
       - FLOW_GROUP
+      - CHECK_DRY_RUN
+      - CHECK_SMOKE_ONLY
       - HESSIAN_NSPLIT
       - NSPLIT
       - HESSIAN_PARTS
@@ -48,4 +50,3 @@ metadata:
 tags:
   stage: checks
   check_type: hessian
-

@@ -45,6 +45,15 @@ write_run_manifest <- function(extra = list()) {
   invisible(manifest)
 }
 
+if (truthy(env("CHECK_DRY_RUN", env("CHECK_SMOKE_ONLY", "false")), FALSE)) {
+  write_run_manifest(list(
+    dry_run = TRUE,
+    reason = "staged input model and skipped MFCL execution"
+  ))
+  message("[checks] dry run complete; staged ", prepared$case_dir)
+  quit(save = "no", status = 0)
+}
+
 message("[checks] running ", check_type, " for ", model_key)
 
 if (identical(check_type, "jitter")) {

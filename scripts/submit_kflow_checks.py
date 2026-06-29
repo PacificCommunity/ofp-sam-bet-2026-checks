@@ -86,7 +86,7 @@ def main() -> int:
                 "KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME": os.environ.get("KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME", "true"),
             }
             for key, value in os.environ.items():
-                if key.startswith(("JITTER_", "RETRO_", "HESSIAN_", "PROFILE_", "SELFTEST_", "MFK_")):
+                if key.startswith(("JITTER_", "RETRO_", "HESSIAN_", "PROFILE_", "SELFTEST_", "MFK_", "CHECK_")):
                     env[key] = value
             env = {key: value for key, value in env.items() if value not in (None, "")}
             payload: dict[str, Any] = {
@@ -119,4 +119,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
