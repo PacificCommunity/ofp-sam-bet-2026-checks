@@ -21,6 +21,7 @@ env:
   JITTER_SEEDS: "1"
   JITTER_CV: "0.2"
   JITTER_SLOTS: ""
+  BET_JITTER_MAX_EVALS: "5000"
 output_patterns:
   - outputs/**
 metadata:
@@ -45,6 +46,8 @@ metadata:
       - JITTER_SEED
       - JITTER_CV
       - JITTER_SLOTS
+      - BET_JITTER_MAX_EVALS
+      - BET_PHASE10_11_CONVERGENCE
       - MFK_RUN_MESSAGES
       - KFLOW_RUNTIME_PACKAGES
       - KFLOW_REPO_RUNTIME_PACKAGES

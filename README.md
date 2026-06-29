@@ -67,6 +67,8 @@ the same payload folders later without needing stepwise-specific assumptions.
   unset, the runner uses a conservative set of continuous dev/coefficient slots
   and leaves structural, tag-reporting, maturity, movement, and fishery metadata
   untouched.
+- `BET_JITTER_MAX_EVALS`: maximum evaluations for the final-phase jitter fit,
+  default `5000`. Use a smaller value for quick smoke tests.
 - `RETRO_PEELS`: comma/space list of peels, default `1`.
 - `N_MIXING_PERIODS`: MFCL retrospective mixing periods, default `2`.
 - `HESSIAN_NSPLIT`: number of Hessian parts, default `1`.
