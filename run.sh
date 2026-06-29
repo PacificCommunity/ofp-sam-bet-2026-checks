@@ -13,6 +13,9 @@ export CHECK_TYPE
 export OUTPUT_DIR="${OUTPUT_DIR:-outputs}"
 export WORK_DIR="${WORK_DIR:-work}"
 export PROGRAM_PATH="${PROGRAM_PATH:-/home/mfcl/mfclo64}"
+export KFLOW_RUNTIME_UPDATE="${KFLOW_RUNTIME_UPDATE:-always}"
+export TUNA_FLOW_RUNTIME_UPDATE="${TUNA_FLOW_RUNTIME_UPDATE:-always}"
+export KFLOW_RUNTIME_PACKAGES="${KFLOW_RUNTIME_PACKAGES:-none}"
 export KFLOW_REPO_RUNTIME_PACKAGES="${KFLOW_REPO_RUNTIME_PACKAGES:-mfclkit=PacificCommunity/ofp-sam-mfclkit@main,mfclshiny=PacificCommunity/mfclshiny@main}"
 export KFLOW_REPO_RUNTIME_UPDATE="${KFLOW_REPO_RUNTIME_UPDATE:-always}"
 
@@ -41,6 +44,10 @@ first_token() {
   return 1
 }
 
+drop_runtime_tokens() {
+  unset GIT_PAT GITHUB_PAT GITHUB_TOKEN GH_TOKEN KFLOW_GITHUB_TOKEN KFLOW_PERSONAL_TOKEN
+}
+
 install_runtime_repos() {
   local specs="${KFLOW_REPO_RUNTIME_PACKAGES:-}"
   case "$specs" in
@@ -51,7 +58,7 @@ install_runtime_repos() {
   mkdir -p "$R_LIBS_USER" "${SCRIPT_DIR}/.kflow-runtime-cache"
 
   IFS=',' read -r -a parts <<< "$specs"
-  local spec package repo_ref repo ref src token askpass status
+  local spec package repo_ref repo ref src token askpass status resolved_sha
   token="$(first_token || true)"
 
   for spec in "${parts[@]}"; do
@@ -68,7 +75,7 @@ install_runtime_repos() {
 
     if runtime_updates_disabled; then
       if Rscript -e "quit(save='no', status=ifelse(requireNamespace('${package}', quietly=TRUE), 0L, 1L))"; then
-        echo "[checks-runtime] using installed ${package}; KFLOW_REPO_RUNTIME_UPDATE=never"
+        echo "[kflow-runtime-update] Using installed ${package}; KFLOW_REPO_RUNTIME_UPDATE=never."
         continue
       fi
     fi
@@ -76,6 +83,7 @@ install_runtime_repos() {
     src="${SCRIPT_DIR}/.kflow-runtime-cache/${package}-src"
     rm -rf "$src"
     askpass=""
+    echo "[kflow-runtime-update] Installing/updating runtime package ${package} from ${repo}@${ref}."
     if [[ -n "$token" ]]; then
       askpass="$(mktemp)"
       cat > "$askpass" <<'ASKPASS'
@@ -86,7 +94,6 @@ case "$1" in
 esac
 ASKPASS
       chmod 700 "$askpass"
-      echo "[checks-runtime] installing ${package} from ${repo}@${ref}"
       GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 KFLOW_GIT_ASKPASS_TOKEN="$token" \
         git clone --quiet --depth 50 "https://github.com/${repo}.git" "$src" || {
           status=$?
@@ -102,7 +109,6 @@ ASKPASS
         }
       rm -f "$askpass"
     else
-      echo "[checks-runtime] installing ${package} from ${repo}@${ref}"
       git clone --quiet --depth 50 "https://github.com/${repo}.git" "$src"
       git -C "$src" checkout --quiet "$ref" || {
         git -C "$src" fetch --quiet --depth 1 origin "$ref"
@@ -110,8 +116,18 @@ ASKPASS
       }
     fi
 
+    resolved_sha="$(git -C "$src" rev-parse HEAD 2>/dev/null || true)"
+    if [[ -n "$resolved_sha" ]]; then
+      echo "[kflow-runtime-update] Resolved ${repo}@${ref} to ${resolved_sha:0:12}."
+    fi
     R CMD INSTALL -l "$R_LIBS_USER" "$src"
+    if [[ -n "$resolved_sha" ]]; then
+      echo "[kflow-runtime-update] Installed ${package} at ${resolved_sha:0:12}."
+    else
+      echo "[kflow-runtime-update] Installed ${package}."
+    fi
   done
+  drop_runtime_tokens
 }
 
 install_runtime_repos
