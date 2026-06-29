@@ -1,16 +1,15 @@
-name: ofp-sam-bet-2026-check-selftest
-description: Run mfclkit self-test checks on a fitted MFCL model output.
+name: ofp-sam-bet-2026-check-hessian-merge
+description: Merge split mfclkit Hessian parts after parallel Hessian jobs complete.
 command: bash run.sh
-target_folder: selftest
+target_folder: hessian-merge
 docker_image: ghcr.io/pacificcommunity/tuna-flow:v2.0
 resources:
   cpus: 2
   memory: 12GB
   disk: 10GB
 env:
-  CHECK_TYPE: selftest
-  MODEL_SOURCE_REPO: PacificCommunity/ofp-sam-bet-2026-stepwise
-  MODEL_SOURCE_REF: main
+  CHECK_TYPE: hessian_merge
+  MODEL_SELECTOR: ""
   PROGRAM_PATH: /home/mfcl/mfclo64
   KFLOW_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@main,mfclshiny=PacificCommunity/mfclshiny@main
   KFLOW_REPO_RUNTIME_PACKAGES: none
@@ -21,8 +20,9 @@ env:
   KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS: "0"
   KFLOW_RUNTIME_GITHUB_AUTH: "true"
   KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME: "true"
-  SELFTEST_REPS: "1"
-  SELFTEST_SEED: "20260519"
+  HESSIAN_NSPLIT: ""
+  HESSIAN_MERGE_RUN: "true"
+  HESSIAN_MERGE_EIGEN: "true"
 output_patterns:
   - outputs/**
 metadata:
@@ -31,28 +31,11 @@ metadata:
       - CHECK_TYPE
       - MODEL_SELECTOR
       - MODEL_INPUT_ROOT
-      - MODEL_SOURCE_REPO
-      - MODEL_SOURCE_REF
-      - MODEL_SOURCE_PATH
-      - MODEL_SOURCE_ROOT
-      - MODEL_FINAL_PAR
-      - CHECK_START_PAR_NAME
       - PROGRAM_PATH
       - FLOW_GROUP
-      - CHECK_DRY_RUN
-      - CHECK_SMOKE_ONLY
-      - CHECK_BUILD_REPORT_FIGURES
-      - CHECK_REPORT_FIGURE_KEYS
-      - CHECK_RENDER_REVIEW_HTML
-      - SELFTEST_REPS
-      - SELFTEST_REP
-      - SELFTEST_SEED
-      - SELFTEST_RUNNER
-      - SELFTEST_RUNNER_REPO
-      - SELFTEST_RUNNER_REF
-      - SELFTEST_RUNNER_ROOT
-      - SELFTEST_RUNNER_WORK_DIR
-      - SELFTEST_RUN_REFIT
+      - HESSIAN_NSPLIT
+      - HESSIAN_MERGE_RUN
+      - HESSIAN_MERGE_EIGEN
       - MFK_RUN_MESSAGES
       - KFLOW_RUNTIME_UPDATE
       - TUNA_FLOW_RUNTIME_UPDATE
@@ -65,4 +48,4 @@ metadata:
       - KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME
 tags:
   stage: checks
-  check_type: selftest
+  check_type: hessian-merge

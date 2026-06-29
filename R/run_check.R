@@ -83,7 +83,13 @@ check_jitter_slots <- function() {
 }
 
 resolve_selftest_runner <- function(runner) {
-  if (file.exists(runner)) return(normalize_loose(runner))
+  if (!nzchar(runner)) return("")
+  if (file.exists(runner)) {
+    out <- normalize_loose(runner)
+    runner_work_dir <- env("SELFTEST_RUNNER_WORK_DIR", "")
+    if (nzchar(runner_work_dir)) attr(out, "runner_work_dir") <- normalize_loose(runner_work_dir)
+    return(out)
+  }
   repo <- env("SELFTEST_RUNNER_REPO", "")
   if (!nzchar(repo)) return(runner)
   ref <- env("SELFTEST_RUNNER_REF", "main")
@@ -92,7 +98,13 @@ resolve_selftest_runner <- function(runner) {
     runner_root <- git_clone_repo(repo, ref, file.path(env("WORK_DIR", "work"), "selftest-runner-source"))
   }
   candidate <- if (is_absolute_path(runner)) runner else file.path(runner_root, runner)
-  if (file.exists(candidate)) normalize_loose(candidate) else runner
+  if (file.exists(candidate)) {
+    out <- normalize_loose(candidate)
+    attr(out, "runner_work_dir") <- normalize_loose(env("SELFTEST_RUNNER_WORK_DIR", runner_root))
+    out
+  } else {
+    runner
+  }
 }
 
 copy_if_exists <- function(from, to_dir, to_name = basename(from)) {
@@ -591,9 +603,15 @@ if (identical(check_type, "jitter")) {
   if (!nzchar(runner) || !file.exists(runner)) {
     stop("Native MFCL selftest requires SELFTEST_RUNNER. This is case-specific and intentionally not hardcoded.", call. = FALSE)
   }
+  runner_work_dir <- env("SELFTEST_RUNNER_WORK_DIR", attr(runner, "runner_work_dir") %||% "")
   reps <- as.integer(split_numbers(env("SELFTEST_REPS", env("SELFTEST_REP", "1")), default = 1))
   seed <- as.integer(split_numbers(env("SELFTEST_SEED", "20260519"), default = 20260519)[[1L]])
-  write_run_manifest(list(selftest_reps = paste(reps, collapse = " "), selftest_seed = seed, selftest_runner = runner))
+  write_run_manifest(list(
+    selftest_reps = paste(reps, collapse = " "),
+    selftest_seed = seed,
+    selftest_runner = runner,
+    selftest_runner_work_dir = runner_work_dir
+  ))
   result <- mfk_run_selftest(
     backend,
     input_dir = prepared$case_dir,
@@ -602,6 +620,7 @@ if (identical(check_type, "jitter")) {
     seed = seed,
     par = prepared$start_par,
     runner = runner,
+    runner_work_dir = runner_work_dir,
     run_refit = truthy(env("SELFTEST_RUN_REFIT", "true"), TRUE)
   )
   saveRDS(result, file.path(model_dir, "selftest_runs.rds"), compress = "xz")

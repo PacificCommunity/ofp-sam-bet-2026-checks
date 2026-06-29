@@ -1,6 +1,6 @@
 SHELL := /usr/bin/env bash
 
-CHECK_TYPES ?= profile jitter hessian retro selftest
+CHECK_TYPES ?= profile jitter hessian hessian-merge retro selftest
 CHECK_TYPE ?= jitter
 MODEL_SELECTOR ?=
 MODEL_SELECTORS ?= $(MODEL_SELECTOR)
@@ -23,7 +23,7 @@ help:
 	  'BET 2026 MFCL checks' \
 	  '' \
 	  'make kflow-register' \
-	  '  Register profile, jitter, hessian, retro, and selftest Kflow tasks.' \
+	  '  Register profile, jitter, hessian, hessian-merge, retro, and selftest Kflow tasks.' \
 	  '' \
 	  'make kflow CHECK_TYPE=jitter MODEL_SELECTOR=08-RegionalCPUE KFLOW_INPUT_JOBS=603' \
 	  '  Submit one independent check job.' \
@@ -44,7 +44,7 @@ local:
 	bash run.sh '$(CHECK_TYPE)'
 
 clean:
-	rm -rf outputs work profile/outputs profile/work jitter/outputs jitter/work hessian/outputs hessian/work retro/outputs retro/work selftest/outputs selftest/work .R-library .kflow-runtime-cache .docker-home
+	rm -rf outputs work profile/outputs profile/work jitter/outputs jitter/work hessian/outputs hessian/work hessian-merge/outputs hessian-merge/work retro/outputs retro/work selftest/outputs selftest/work .R-library .kflow-runtime-cache .docker-home
 
 kflow-register:
 	@test -n "$${KFLOW_API_TOKEN:-}" || { echo 'Set KFLOW_API_TOKEN before running make kflow-register.' >&2; exit 2; }
@@ -83,4 +83,3 @@ kflow-batch:
 	  --program-path '$(PROGRAM_PATH)' \
 	  --job-title '$(JOB_TITLE)' \
 	  --job-description '$(JOB_DESCRIPTION)'
-

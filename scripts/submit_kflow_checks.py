@@ -91,8 +91,12 @@ def main() -> int:
                 "KFLOW_RUNTIME_GITHUB_AUTH": os.environ.get("KFLOW_RUNTIME_GITHUB_AUTH", "true"),
                 "KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME": os.environ.get("KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME", "true"),
             }
+            env_prefixes = (
+                "BET_", "JITTER_", "RETRO_", "HESSIAN_", "PROFILE_",
+                "SELFTEST_", "MFK_", "CHECK_", "selftest_",
+            )
             for key, value in os.environ.items():
-                if key.startswith(("BET_", "JITTER_", "RETRO_", "HESSIAN_", "PROFILE_", "SELFTEST_", "MFK_", "CHECK_")):
+                if key.startswith(env_prefixes) or key == "program_path":
                     env[key] = value
             env = {key: value for key, value in env.items() if value not in (None, "")}
             payload: dict[str, Any] = {
