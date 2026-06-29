@@ -94,6 +94,23 @@ for (name in c(
   copy_file_if_exists(file.path(base_model_dir, name), model_dir)
 }
 
+case_files <- unique(unlist(lapply(c(
+  "[.]frq$",
+  "[.]ini$",
+  "[.]tag$",
+  "[.]age_length$",
+  "[.]dep$",
+  "[.]dp2$",
+  "^mfcl[.]cfg$",
+  "^depgrad[.]rpt$",
+  "^Hess[.]rpt$"
+), function(pattern) {
+  list.files(base_model_dir, pattern = pattern, full.names = TRUE, ignore.case = TRUE)
+}), use.names = FALSE))
+for (case_file in case_files) {
+  copy_file_if_exists(case_file, model_dir)
+}
+
 part_sources <- unique(unlist(lapply(source_model_dirs, function(src) {
   list.dirs(file.path(src, "hessian"), recursive = FALSE, full.names = TRUE)
 }), use.names = FALSE))

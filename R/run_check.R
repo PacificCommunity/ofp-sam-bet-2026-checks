@@ -268,6 +268,26 @@ stage_report_model_payload <- function() {
   invisible(index)
 }
 
+stage_hessian_stitch_inputs <- function() {
+  patterns <- c(
+    "[.]frq$",
+    "[.]ini$",
+    "[.]tag$",
+    "[.]age_length$",
+    "[.]dep$",
+    "[.]dp2$",
+    "^mfcl[.]cfg$",
+    "^depgrad[.]rpt$",
+    "^Hess[.]rpt$"
+  )
+  files <- unique(unlist(lapply(patterns, function(pattern) {
+    list.files(prepared$case_dir, pattern = pattern, full.names = TRUE, ignore.case = TRUE)
+  }), use.names = FALSE))
+  copied <- vapply(files, copy_if_exists, logical(1), to_dir = model_dir)
+  names(copied) <- basename(files)
+  copied
+}
+
 write_check_payload_index <- function(payload_index = data.frame()) {
   check_index <- check_model_index_row()
   rows <- list()
@@ -518,7 +538,12 @@ if (identical(check_type, "jitter")) {
   nsplit <- as.integer(split_numbers(env("HESSIAN_NSPLIT", env("NSPLIT", "1")), default = 1)[[1L]])
   part_values <- split_numbers(env("HESSIAN_PARTS", env("HESSIAN_PART", "")), default = seq_len(nsplit))
   parts <- as.integer(part_values)
-  write_run_manifest(list(hessian_nsplit = nsplit, hessian_parts = paste(parts, collapse = " ")))
+  stitch_inputs <- stage_hessian_stitch_inputs()
+  write_run_manifest(list(
+    hessian_nsplit = nsplit,
+    hessian_parts = paste(parts, collapse = " "),
+    hessian_stitch_inputs = paste(names(stitch_inputs)[stitch_inputs], collapse = " ")
+  ))
   result <- lapply(parts, function(part) {
     mfk_run_hessian_part(
       backend,
