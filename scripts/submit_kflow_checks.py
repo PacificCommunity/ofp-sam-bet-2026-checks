@@ -79,6 +79,7 @@ def main() -> int:
                 "MODEL_SOURCE_PATH": args.model_source_path,
                 "PROGRAM_PATH": args.program_path,
                 "FLOW_GROUP": args.flow_group,
+                "KFLOW_RUNTIME_PACKAGES": os.environ.get("KFLOW_RUNTIME_PACKAGES", "mfclkit=PacificCommunity/ofp-sam-mfclkit@main,mfclshiny=PacificCommunity/mfclshiny@main"),
                 "KFLOW_REPO_RUNTIME_PACKAGES": os.environ.get("KFLOW_REPO_RUNTIME_PACKAGES", "mfclkit=PacificCommunity/ofp-sam-mfclkit@main,mfclshiny=PacificCommunity/mfclshiny@main"),
                 "KFLOW_REPO_RUNTIME_UPDATE": os.environ.get("KFLOW_REPO_RUNTIME_UPDATE", "auto"),
                 "KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES": os.environ.get("KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES", "true"),
@@ -86,7 +87,7 @@ def main() -> int:
                 "KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME": os.environ.get("KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME", "true"),
             }
             for key, value in os.environ.items():
-                if key.startswith(("JITTER_", "RETRO_", "HESSIAN_", "PROFILE_", "SELFTEST_", "MFK_", "CHECK_")):
+                if key.startswith(("BET_", "JITTER_", "RETRO_", "HESSIAN_", "PROFILE_", "SELFTEST_", "MFK_", "CHECK_")):
                     env[key] = value
             env = {key: value for key, value in env.items() if value not in (None, "")}
             payload: dict[str, Any] = {
