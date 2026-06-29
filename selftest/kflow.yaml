@@ -25,7 +25,7 @@ env:
   SELFTEST_SEED: "20260519"
   SELFTEST_RUNNER: runners/run_selftest.R
   SELFTEST_RUNNER_REPO: PacificCommunity/ofp-sam-2026-BET
-  SELFTEST_RUNNER_REF: main
+  SELFTEST_RUNNER_REF: 4R_sim
   SELFTEST_RUN_REFIT: "false"
 output_patterns:
   - outputs/**
