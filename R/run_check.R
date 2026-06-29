@@ -27,19 +27,23 @@ mfcl_command <- function(input_par = start_par_name, output_par = "check.par", e
   c(program_token, frq_name, input_par, output_par, extra)
 }
 
-check_doitall_command <- function(script_name = "doitall.check.sh") {
-  source_script <- file.path(prepared$case_dir, "doitall.sh")
-  if (!file.exists(source_script)) return(NULL)
-
-  lines <- readLines(source_script, warn = FALSE)
-  makepar <- grepl("(^|[[:space:]])-makepar([[:space:]]|$)", lines)
-  if (any(makepar)) {
-    first_makepar <- which(makepar)[[1L]]
-    skipped <- gsub('"', '\\"', lines[[first_makepar]], fixed = TRUE)
-    lines[[first_makepar]] <- paste0('echo "[checks] skipping makepar for check start par: ', skipped, '"')
-  }
-
+check_final_phase_command <- function(script_name = "jitter.final.sh") {
   out <- file.path(prepared$case_dir, script_name)
+  lines <- c(
+    "#!/bin/sh",
+    "set -eu",
+    "",
+    "program_path=${PROGRAM_PATH:-mfclo64}",
+    "phase10_11_convergence=${BET_PHASE10_11_CONVERGENCE:--3}",
+    "echo \"[checks] jitter final phase convergence criterion: $phase10_11_convergence\"",
+    "",
+    "$program_path bet.frq 00.par jitter.par -file - <<JITTER_FINAL",
+    "  1 1 5000",
+    "  1 50 $phase10_11_convergence",
+    "  1 190 1",
+    "  1 246 1",
+    "JITTER_FINAL"
+  )
   writeLines(lines, out)
   Sys.chmod(out, mode = "0755")
   c("sh", script_name)
@@ -344,7 +348,7 @@ message("[checks] running ", check_type, " for ", model_key)
 if (identical(check_type, "jitter")) {
   seeds <- as.integer(split_numbers(env("JITTER_SEEDS", env("JITTER_SEED", "1")), default = 1))
   cv <- split_numbers(env("JITTER_CV", "0.2"), default = 0.2)[[1L]]
-  jitter_command <- check_doitall_command() %||% mfcl_command(input_par = "00.par", output_par = "jitter.par")
+  jitter_command <- check_final_phase_command()
   write_run_manifest(list(jitter_seeds = paste(seeds, collapse = " "), jitter_cv = cv))
   result <- mfk_run_jitter(
     backend,
