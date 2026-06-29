@@ -33,6 +33,9 @@ all feed the same checks as long as they expose the same contract.
   exits before running MFCL.
 - `CHECK_BUILD_REPORT_FIGURES`: build mfclshiny report-ready figures after the
   check. Default is `true`.
+- `CHECK_REPORT_FIGURE_KEYS`: optional comma/space list of report-ready item keys
+  such as `figure:jitter-diagnostics`. If unset, jitter/retro/selftest checks
+  export only their matching diagnostic figures instead of the full app bundle.
 - `CHECK_RENDER_REVIEW_HTML`: render a small HTML review for check figures.
   Default is `false`.
 

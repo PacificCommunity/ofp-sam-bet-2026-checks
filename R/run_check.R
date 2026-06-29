@@ -288,6 +288,67 @@ write_check_payload_index <- function(payload_index = data.frame()) {
   invisible(out)
 }
 
+check_report_figure_keys <- function() {
+  override <- split_values(env("CHECK_REPORT_FIGURE_KEYS", ""))
+  if (length(override)) return(override)
+  switch(
+    check_type,
+    jitter = c(
+      "figure:jitter-diagnostics",
+      "figure:jitter-parameters",
+      "figure:jitter-derived-quantities"
+    ),
+    retro = "figure:retrospective-diagnostics",
+    selftest = c(
+      "figure:selftest-recovery",
+      "figure:selftest-simulation",
+      "figure:selftest-parameter-recovery"
+    ),
+    character()
+  )
+}
+
+write_check_report_selection <- function(output_dir) {
+  keys <- check_report_figure_keys()
+  if (!length(keys) || !requireNamespace("jsonlite", quietly = TRUE)) {
+    return(NULL)
+  }
+  figure_ids <- sub("^figure:", "", keys)
+  labels <- gsub("-", " ", figure_ids, fixed = TRUE)
+  labels <- tools::toTitleCase(labels)
+  section <- switch(
+    check_type,
+    jitter = "Jitter",
+    retro = "Retro",
+    selftest = "Self-test",
+    "Checks"
+  )
+  items <- data.frame(
+    item_key = keys,
+    type = "figure",
+    id = figure_ids,
+    label = labels,
+    section = section,
+    placement = "auto",
+    include = TRUE,
+    caption = "",
+    input_state = "",
+    stringsAsFactors = FALSE
+  )
+  selection <- list(
+    schema = "mfclshiny.report_selection.v1",
+    created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+    source = paste0("ofp-sam-bet-2026-checks:", check_type),
+    analysis = list(),
+    inputs = list(),
+    items = items
+  )
+  path <- file.path(output_dir, "check-report-selection.json")
+  jsonlite::write_json(selection, path, dataframe = "rows", auto_unbox = TRUE, pretty = TRUE, null = "null")
+  write.csv(items, sub("[.]json$", ".csv", path), row.names = FALSE)
+  path
+}
+
 build_report_payloads <- function() {
   if (!requireNamespace("mfclshiny", quietly = TRUE)) {
     warning("mfclshiny is not installed; skipping report-ready payload build.", call. = FALSE)
@@ -315,6 +376,7 @@ build_report_ready_figures <- function() {
   }
   out <- file.path(output_dir, "report-ready-checks", check_type, model_key)
   dir.create(out, recursive = TRUE, showWarnings = FALSE)
+  selection_file <- write_check_report_selection(out)
   result <- tryCatch(
     mfclshiny::build_app_report_figures(
       model_dir = dirname(model_dir),
@@ -333,7 +395,8 @@ build_report_ready_figures <- function() {
       species_code = env("FLOW_SPECIES", "BET"),
       species_label = env("FLOW_SPECIES_LABEL", "bigeye tuna"),
       assessment_year = env("FLOW_ASSESSMENT_YEAR", "2026"),
-      max_fisheries = as.integer(split_numbers(env("PLOT_MAX_FISHERIES", "18"), default = 18)[[1L]])
+      max_fisheries = as.integer(split_numbers(env("PLOT_MAX_FISHERIES", "18"), default = 18)[[1L]]),
+      selection_file = selection_file
     ),
     error = function(e) {
       warning("mfclshiny report-ready figure build failed: ", conditionMessage(e), call. = FALSE)
