@@ -14,7 +14,7 @@ export OUTPUT_DIR="${OUTPUT_DIR:-outputs}"
 export WORK_DIR="${WORK_DIR:-work}"
 export PROGRAM_PATH="${PROGRAM_PATH:-/home/mfcl/mfclo64}"
 export KFLOW_REPO_RUNTIME_PACKAGES="${KFLOW_REPO_RUNTIME_PACKAGES:-mfclkit=PacificCommunity/ofp-sam-mfclkit@main,mfclshiny=PacificCommunity/mfclshiny@main}"
-export KFLOW_REPO_RUNTIME_UPDATE="${KFLOW_REPO_RUNTIME_UPDATE:-auto}"
+export KFLOW_REPO_RUNTIME_UPDATE="${KFLOW_REPO_RUNTIME_UPDATE:-always}"
 
 truthy() {
   case "${1:-}" in
@@ -25,7 +25,7 @@ truthy() {
 
 runtime_updates_disabled() {
   case "${KFLOW_REPO_RUNTIME_UPDATE:-auto}" in
-    0|false|FALSE|no|NO|off|OFF|none|NONE|skip|SKIP|never|NEVER) return 0 ;;
+    never|NEVER) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -68,6 +68,7 @@ install_runtime_repos() {
 
     if runtime_updates_disabled; then
       if Rscript -e "quit(save='no', status=ifelse(requireNamespace('${package}', quietly=TRUE), 0L, 1L))"; then
+        echo "[checks-runtime] using installed ${package}; KFLOW_REPO_RUNTIME_UPDATE=never"
         continue
       fi
     fi
@@ -85,15 +86,28 @@ case "$1" in
 esac
 ASKPASS
       chmod 700 "$askpass"
+      echo "[checks-runtime] installing ${package} from ${repo}@${ref}"
       GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 KFLOW_GIT_ASKPASS_TOKEN="$token" \
-        git clone --quiet --depth 1 --branch "$ref" "https://github.com/${repo}.git" "$src" || {
+        git clone --quiet --depth 50 "https://github.com/${repo}.git" "$src" || {
           status=$?
           rm -f "$askpass"
           return "$status"
         }
+      GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 KFLOW_GIT_ASKPASS_TOKEN="$token" \
+        git -C "$src" checkout --quiet "$ref" || {
+          GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 KFLOW_GIT_ASKPASS_TOKEN="$token" \
+            git -C "$src" fetch --quiet --depth 1 origin "$ref"
+          GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 KFLOW_GIT_ASKPASS_TOKEN="$token" \
+            git -C "$src" checkout --quiet FETCH_HEAD
+        }
       rm -f "$askpass"
     else
-      git clone --quiet --depth 1 --branch "$ref" "https://github.com/${repo}.git" "$src"
+      echo "[checks-runtime] installing ${package} from ${repo}@${ref}"
+      git clone --quiet --depth 50 "https://github.com/${repo}.git" "$src"
+      git -C "$src" checkout --quiet "$ref" || {
+        git -C "$src" fetch --quiet --depth 1 origin "$ref"
+        git -C "$src" checkout --quiet FETCH_HEAD
+      }
     fi
 
     R CMD INSTALL -l "$R_LIBS_USER" "$src"
