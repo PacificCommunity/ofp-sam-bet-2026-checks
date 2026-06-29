@@ -344,6 +344,7 @@ message("[checks] running ", check_type, " for ", model_key)
 if (identical(check_type, "jitter")) {
   seeds <- as.integer(split_numbers(env("JITTER_SEEDS", env("JITTER_SEED", "1")), default = 1))
   cv <- split_numbers(env("JITTER_CV", "0.2"), default = 0.2)[[1L]]
+  jitter_command <- check_doitall_command() %||% mfcl_command(input_par = "00.par", output_par = "jitter.par")
   write_run_manifest(list(jitter_seeds = paste(seeds, collapse = " "), jitter_cv = cv))
   result <- mfk_run_jitter(
     backend,
@@ -353,7 +354,7 @@ if (identical(check_type, "jitter")) {
     cv = cv,
     par = prepared$start_par,
     start_par_name = "00.par",
-    command = check_doitall_command() %||% mfcl_command(input_par = "00.par", output_par = "jitter.par"),
+    command = jitter_command,
     run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
   )
   saveRDS(result, file.path(model_dir, "jitter_runs.rds"), compress = "xz")
