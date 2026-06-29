@@ -49,6 +49,37 @@ check_final_phase_command <- function(script_name = "jitter.final.sh") {
   c("sh", script_name)
 }
 
+default_jitter_slots <- function() {
+  c(
+    "rep_rate_dev_coffs",
+    "rel_rec",
+    "tot_pop",
+    "tot_pop_implicit",
+    "rec_standard",
+    "rec_orthogonal",
+    "orth_coffs",
+    "new_orth_coffs",
+    "annual_rel_rec_coffs",
+    "region_pars",
+    "availability_coffs",
+    "av_q_coffs",
+    "ini_q_coffs",
+    "q_dev_coffs",
+    "effort_dev_coffs",
+    "catch_dev_coffs",
+    "sel_dev_corr",
+    "sel_dev_coffs",
+    "sel_dev_coffs2",
+    "season_q_pars",
+    "fm_level_regression_pars"
+  )
+}
+
+check_jitter_slots <- function() {
+  slots <- split_values(env("JITTER_SLOTS", ""))
+  if (length(slots)) slots else default_jitter_slots()
+}
+
 copy_if_exists <- function(from, to_dir, to_name = basename(from)) {
   if (!file.exists(from)) return(FALSE)
   dir.create(to_dir, recursive = TRUE, showWarnings = FALSE)
@@ -348,14 +379,20 @@ message("[checks] running ", check_type, " for ", model_key)
 if (identical(check_type, "jitter")) {
   seeds <- as.integer(split_numbers(env("JITTER_SEEDS", env("JITTER_SEED", "1")), default = 1))
   cv <- split_numbers(env("JITTER_CV", "0.2"), default = 0.2)[[1L]]
+  slots <- check_jitter_slots()
   jitter_command <- check_final_phase_command()
-  write_run_manifest(list(jitter_seeds = paste(seeds, collapse = " "), jitter_cv = cv))
+  write_run_manifest(list(
+    jitter_seeds = paste(seeds, collapse = " "),
+    jitter_cv = cv,
+    jitter_slots = paste(slots, collapse = " ")
+  ))
   result <- mfk_run_jitter(
     backend,
     input_dir = prepared$case_dir,
     model_dir = model_dir,
     seeds = seeds,
     cv = cv,
+    jitter_args = list(include_slots = slots),
     par = prepared$start_par,
     start_par_name = "00.par",
     command = jitter_command,

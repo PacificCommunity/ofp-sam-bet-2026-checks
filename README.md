@@ -63,6 +63,10 @@ the same payload folders later without needing stepwise-specific assumptions.
 
 - `JITTER_SEEDS`: comma/space list of seeds, default `1`.
 - `JITTER_CV`: jitter CV, default `0.2`.
+- `JITTER_SLOTS`: optional comma/space list of `MFCLPar` slots to perturb. If
+  unset, the runner uses a conservative set of continuous dev/coefficient slots
+  and leaves structural, tag-reporting, maturity, movement, and fishery metadata
+  untouched.
 - `RETRO_PEELS`: comma/space list of peels, default `1`.
 - `N_MIXING_PERIODS`: MFCL retrospective mixing periods, default `2`.
 - `HESSIAN_NSPLIT`: number of Hessian parts, default `1`.
