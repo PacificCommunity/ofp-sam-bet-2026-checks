@@ -607,8 +607,16 @@ if (identical(check_type, "jitter")) {
 
 } else if (identical(check_type, "selftest")) {
   runner <- resolve_selftest_runner(env("SELFTEST_RUNNER", ""))
-  if (!nzchar(runner) || !file.exists(runner)) {
-    stop("Native MFCL selftest requires SELFTEST_RUNNER. This is case-specific and intentionally not hardcoded.", call. = FALSE)
+  if (!nzchar(runner)) {
+    stop("Native MFCL selftest requires SELFTEST_RUNNER or CHECK_SELFTEST_SCRIPT.", call. = FALSE)
+  }
+  if (!file.exists(runner)) {
+    stop(
+      "Native MFCL selftest runner was not found: ", runner,
+      ". SELFTEST_RUNNER_REPO=", env("SELFTEST_RUNNER_REPO", env("CHECK_SELFTEST_REPO", "")),
+      ", SELFTEST_RUNNER_REF=", env("SELFTEST_RUNNER_REF", env("CHECK_SELFTEST_REF", "")),
+      call. = FALSE
+    )
   }
   runner_work_dir <- env("SELFTEST_RUNNER_WORK_DIR", env("CHECK_SELFTEST_WORK_DIR", attr(runner, "runner_work_dir") %||% ""))
   reps <- as.integer(split_numbers(env("SELFTEST_REPS", env("SELFTEST_REP", "1")), default = 1))

@@ -132,5 +132,13 @@ ASKPASS
 
 install_runtime_repos
 
+if [[ "$CHECK_TYPE" == "selftest" ]]; then
+  export SELFTEST_RUNNER="${SELFTEST_RUNNER:-${CHECK_SELFTEST_SCRIPT:-runners/run_selftest.R}}"
+  export SELFTEST_RUNNER_REPO="${SELFTEST_RUNNER_REPO:-${CHECK_SELFTEST_REPO:-PacificCommunity/ofp-sam-2026-BET}}"
+  export SELFTEST_RUNNER_REF="${SELFTEST_RUNNER_REF:-${CHECK_SELFTEST_REF:-main}}"
+  export SELFTEST_RUN_REFIT="${SELFTEST_RUN_REFIT:-${CHECK_SELFTEST_RUN_REFIT:-false}}"
+  echo "[checks] selftest runner: ${SELFTEST_RUNNER} (${SELFTEST_RUNNER_REPO}@${SELFTEST_RUNNER_REF})"
+fi
+
 mkdir -p "$OUTPUT_DIR" "$WORK_DIR"
 Rscript R/run_check.R "$CHECK_TYPE"
