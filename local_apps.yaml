@@ -142,8 +142,45 @@ local_apps:
         if (!isTRUE(ok)) stop("Failed to stage local app input: ", from, call. = FALSE)
         invisible(to)
       }
+      path_parts <- function(path) strsplit(normalize_loose(path), "/", fixed = TRUE)[[1L]]
+      path_from_parts <- function(parts) {
+        parts <- as.character(parts)
+        if (!length(parts)) return("")
+        if (identical(parts[[1L]], "")) paste0("/", paste(parts[-1L], collapse = "/")) else do.call(file.path, as.list(parts))
+      }
+      diagnostic_anchor <- function(folder) {
+        parts <- path_parts(folder)
+        n <- length(parts)
+        if (n < 2L) return(NA_integer_)
+        for (i in seq_len(n - 1L)) {
+          current <- parts[[i]]
+          next_part <- parts[[i + 1L]]
+          if (identical(current, "jitter") && grepl("^jitter_seed_[0-9]+$", next_part)) return(i)
+          if (identical(current, "retro") && grepl("^peel_[0-9]+$", next_part)) return(i)
+          if (identical(current, "hessian") && grepl("^part_[0-9]+$", next_part)) return(i)
+          if (identical(current, "profile") && i + 2L <= n && grepl("^scalar_", parts[[i + 2L]])) return(i)
+          if (identical(current, "selftest") && next_part %in% c("refit", "sim", "truth", "truth_eval", "inputs", "recovery")) return(i)
+        }
+        NA_integer_
+      }
+      parent_model_dir <- function(folder) {
+        anchor <- diagnostic_anchor(folder)
+        if (!is.finite(anchor) || anchor <= 1L) return(normalize_loose(folder))
+        normalize_loose(path_from_parts(path_parts(folder)[seq_len(anchor - 1L)]))
+      }
+      canonical_model_dir <- function(folder) {
+        folder <- normalize_loose(folder)
+        parent <- parent_model_dir(folder)
+        if (!identical(parent, folder)) return(parent)
+        if (basename(folder) %in% c("jitter", "retro", "hessian", "profile", "selftest") &&
+            file.exists(file.path(dirname(folder), "model_payload.rds"))) {
+          return(normalize_loose(dirname(folder)))
+        }
+        folder
+      }
       topmost_dirs <- function(paths) {
-        paths <- normalize_loose(unique(paths[file.exists(file.path(paths, "model_payload.rds"))]))
+        paths <- normalize_loose(unique(vapply(paths, canonical_model_dir, character(1L), USE.NAMES = FALSE)))
+        paths <- paths[file.exists(file.path(paths, "model_payload.rds"))]
         if (!length(paths)) return(paths)
         keep <- vapply(paths, function(path) {
           !any(vapply(setdiff(paths, path), function(parent) startsWith(path, paste0(parent, "/")), logical(1)))

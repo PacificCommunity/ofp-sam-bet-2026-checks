@@ -74,6 +74,8 @@ def main() -> int:
             env = {
                 "CHECK_TYPE": check,
                 "MODEL_SELECTOR": model,
+                "KFLOW_JOB_TITLE": title,
+                "KFLOW_JOB_DESCRIPTION": description,
                 "MODEL_SOURCE_REPO": args.model_source_repo,
                 "MODEL_SOURCE_REF": args.model_source_ref,
                 "MODEL_SOURCE_PATH": args.model_source_path,
@@ -97,6 +99,8 @@ def main() -> int:
                 "input_jobs": input_jobs,
                 "metadata": {
                     "flow_group": args.flow_group,
+                    "job_title": title,
+                    "job_description": description,
                     "check_type": check,
                     "model_selector": model,
                     "input_jobs": input_jobs,
