@@ -23,6 +23,7 @@ env:
   KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME: "true"
   RETRO_PEELS: "1"
   N_MIXING_PERIODS: "2"
+  RETRO_ALLOW_NEW_INI_VERSION_WRITE: "true"
 output_patterns:
   - outputs/**
 metadata:
@@ -47,6 +48,7 @@ metadata:
       - RETRO_PEELS
       - RETRO_PEEL
       - N_MIXING_PERIODS
+      - RETRO_ALLOW_NEW_INI_VERSION_WRITE
       - MFK_RUN_MESSAGES
       - KFLOW_RUNTIME_UPDATE
       - TUNA_FLOW_RUNTIME_UPDATE

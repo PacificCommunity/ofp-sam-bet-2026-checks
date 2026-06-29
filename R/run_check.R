@@ -489,6 +489,7 @@ if (identical(check_type, "jitter")) {
     model_dir = model_dir,
     peel = peels,
     n_mixing_periods = n_mixing_periods,
+    allow_new_ini_version_write = truthy(env("RETRO_ALLOW_NEW_INI_VERSION_WRITE", "false"), FALSE),
     command = mfcl_command(output_par = "retro.par"),
     run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
   )
