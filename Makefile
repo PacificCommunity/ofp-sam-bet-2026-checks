@@ -1,7 +1,7 @@
 SHELL := /usr/bin/env bash
 
 CHECK_TYPES ?= profile jitter hessian retro selftest aspm
-KFLOW_REGISTER_CHECK_TYPES ?= profile jitter hessian hessian-merge jitter-merge profile-merge retro-merge selftest-merge retro selftest aspm
+KFLOW_REGISTER_CHECK_TYPES ?= profile jitter hessian hessian-merge jitter-merge profile-merge retro-merge selftest-merge retro selftest aspm attach-checks
 CHECK_TYPE ?= jitter
 MODEL_SELECTOR ?=
 MODEL_SELECTORS ?= $(MODEL_SELECTOR)
@@ -79,7 +79,7 @@ local:
 	bash run.sh '$(CHECK_TYPE)'
 
 clean:
-	rm -rf outputs work profile/outputs profile/work jitter/outputs jitter/work hessian/outputs hessian/work hessian-merge/outputs hessian-merge/work jitter-merge/outputs jitter-merge/work profile-merge/outputs profile-merge/work retro-merge/outputs retro-merge/work selftest-merge/outputs selftest-merge/work retro/outputs retro/work selftest/outputs selftest/work aspm/outputs aspm/work .R-library .kflow-runtime-cache .docker-home
+	rm -rf outputs work profile/outputs profile/work jitter/outputs jitter/work hessian/outputs hessian/work hessian-merge/outputs hessian-merge/work jitter-merge/outputs jitter-merge/work profile-merge/outputs profile-merge/work retro-merge/outputs retro-merge/work selftest-merge/outputs selftest-merge/work retro/outputs retro/work selftest/outputs selftest/work aspm/outputs aspm/work attach-checks/outputs attach-checks/work .R-library .kflow-runtime-cache .docker-home
 
 kflow-register:
 	@test -n "$${KFLOW_API_TOKEN:-}" || { echo 'Set KFLOW_API_TOKEN before running make kflow-register.' >&2; exit 2; }

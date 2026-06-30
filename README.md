@@ -92,6 +92,12 @@ model bundle as the input to the next check or merge job. For example,
 `retro-merge` can use that output as its input and add
 `outputs/models/<model>/retro`.
 
+When checks were run independently, use the `attach-checks` Kflow task to build
+a final compact model bundle from one base model output plus completed check
+outputs. Set `MODEL_BASE_INPUT_JOB` to the fitted model job, `CHECK_INPUT_JOBS`
+to the completed check/merge jobs, and optionally `ATTACH_CHECK_TYPES` to limit
+which diagnostic folders are copied.
+
 ## Check-specific fields
 
 - `JITTER_SEEDS`: comma/space list of seeds, default `1`.

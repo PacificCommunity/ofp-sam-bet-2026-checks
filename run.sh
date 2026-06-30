@@ -151,4 +151,11 @@ if [[ "$CHECK_TYPE" == "selftest" ]]; then
 fi
 
 mkdir -p "$OUTPUT_DIR" "$WORK_DIR"
-Rscript R/run_check.R "$CHECK_TYPE"
+case "$CHECK_TYPE" in
+  attach|attach_checks|attach-checks)
+    Rscript R/attach_checks.R
+    ;;
+  *)
+    Rscript R/run_check.R "$CHECK_TYPE"
+    ;;
+esac

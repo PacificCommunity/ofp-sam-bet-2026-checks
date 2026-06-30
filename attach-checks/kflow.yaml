@@ -1,0 +1,49 @@
+name: ofp-sam-bet-2026-check-attach
+description: Attach completed check outputs back onto a compact fitted model output bundle.
+command: bash run.sh
+target_folder: attach-checks
+docker_image: ghcr.io/pacificcommunity/tuna-flow:v2.0
+resources:
+  cpus: 1
+  memory: 4GB
+  disk: 10GB
+env:
+  CHECK_TYPE: attach_checks
+  MODEL_SELECTOR: ""
+  MODEL_BASE_INPUT_JOB: ""
+  CHECK_INPUT_JOBS: ""
+  ATTACH_CHECK_TYPES: ""
+  KFLOW_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@main,mfclshiny=PacificCommunity/mfclshiny@main
+  KFLOW_REPO_RUNTIME_PACKAGES: none
+  KFLOW_REPO_RUNTIME_UPDATE: always
+  KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
+  KFLOW_RUNTIME_UPDATE: always
+  TUNA_FLOW_RUNTIME_UPDATE: always
+  KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS: "0"
+  KFLOW_RUNTIME_GITHUB_AUTH: "true"
+  KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME: "true"
+output_patterns:
+  - outputs/**
+metadata:
+  job_config:
+    optional:
+      - CHECK_TYPE
+      - MODEL_SELECTOR
+      - MODEL_INPUT_ROOT
+      - MODEL_BASE_INPUT_JOB
+      - BASE_MODEL_JOB
+      - CHECK_INPUT_JOBS
+      - ATTACH_CHECK_TYPES
+      - FLOW_GROUP
+      - KFLOW_RUNTIME_UPDATE
+      - TUNA_FLOW_RUNTIME_UPDATE
+      - KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS
+      - KFLOW_RUNTIME_PACKAGES
+      - KFLOW_REPO_RUNTIME_PACKAGES
+      - KFLOW_REPO_RUNTIME_UPDATE
+      - KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES
+      - KFLOW_RUNTIME_GITHUB_AUTH
+      - KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME
+tags:
+  stage: checks
+  check_type: attach
