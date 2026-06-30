@@ -314,8 +314,8 @@ compact_prune_files <- function(root,
   keep <- base %in% keep_names | rel %in% keep_names
   if (length(keep_patterns)) {
     keep <- keep | vapply(seq_along(files), function(i) {
-      any(grepl(keep_patterns, base[[i]], ignore.case = TRUE)) ||
-        any(grepl(keep_patterns, rel[[i]], ignore.case = TRUE))
+      any(vapply(keep_patterns, grepl, logical(1L), x = base[[i]], ignore.case = TRUE)) ||
+        any(vapply(keep_patterns, grepl, logical(1L), x = rel[[i]], ignore.case = TRUE))
     }, logical(1L))
   }
 
