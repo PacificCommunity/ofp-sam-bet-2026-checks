@@ -155,6 +155,44 @@ discover_hessian_model_dirs <- function(root) {
   unique(model_dirs[file.exists(file.path(model_dirs, "model_payload.rds"))])
 }
 
+hessian_part_source_table <- function(model_dirs) {
+  part_dirs <- unique(unlist(lapply(model_dirs, function(src) {
+    list.dirs(file.path(src, "hessian"), recursive = FALSE, full.names = TRUE)
+  }), use.names = FALSE))
+  part_dirs <- part_dirs[grepl("^part_[0-9]+$", basename(part_dirs))]
+  if (!length(part_dirs)) {
+    return(data.frame(stringsAsFactors = FALSE))
+  }
+
+  normalized <- normalize_loose(part_dirs)
+  part_numbers <- suppressWarnings(as.integer(sub("^part_", "", basename(part_dirs))))
+  out <- data.frame(
+    part_number = part_numbers,
+    part_dir = normalized,
+    source_model_dir = normalize_loose(dirname(dirname(part_dirs))),
+    priority = ifelse(
+      grepl("/checks/hessian/", normalized, fixed = TRUE),
+      0L,
+      ifelse(grepl("/models/", normalized, fixed = TRUE), 1L, 2L)
+    ),
+    path_length = nchar(normalized),
+    stringsAsFactors = FALSE
+  )
+  out <- out[is.finite(out$part_number), , drop = FALSE]
+  out <- out[order(out$part_number, out$priority, out$path_length, out$part_dir), , drop = FALSE]
+  duplicated_parts <- unique(out$part_number[duplicated(out$part_number)])
+  if (length(duplicated_parts)) {
+    message(
+      "[checks] duplicate Hessian part directories found for part(s) ",
+      paste(duplicated_parts, collapse = ", "),
+      "; using the canonical copy for each part"
+    )
+    out <- out[!duplicated(out$part_number), , drop = FALSE]
+  }
+  rownames(out) <- NULL
+  out
+}
+
 matches_model <- function(model_dir, selector) {
   if (!nzchar(selector)) return(TRUE)
   values <- c(basename(model_dir))
@@ -177,13 +215,18 @@ if (!length(source_model_dirs)) {
   stop("No Hessian part model folders found under ", input_root, call. = FALSE)
 }
 
-model_key <- gsub("[^A-Za-z0-9_.-]+", "_", basename(source_model_dirs[[1L]]))
+part_table <- hessian_part_source_table(source_model_dirs)
+if (!nrow(part_table)) stop("No Hessian part directories found.", call. = FALSE)
+
+base_model_dir <- part_table$source_model_dir[[1L]]
+source_model_dirs <- unique(part_table$source_model_dir)
+
+model_key <- gsub("[^A-Za-z0-9_.-]+", "_", basename(base_model_dir))
 if (!nzchar(model_key)) model_key <- "model"
 model_dir <- file.path(output_dir, "checks", "hessian", model_key)
 hessian_dir <- file.path(model_dir, "hessian")
 dir.create(hessian_dir, recursive = TRUE, showWarnings = FALSE)
 
-base_model_dir <- source_model_dirs[[1L]]
 for (name in c(
   "model_payload.rds", "model_payload_manifest.json", "model_payload_manifest.csv",
   "fishery_map.R", "tag_rep_map.R", "bet.region_map.geojson", "bet.reg_scaling",
@@ -210,18 +253,8 @@ for (case_file in case_files) {
   copy_file_if_exists(case_file, model_dir)
 }
 
-part_sources <- unique(unlist(lapply(source_model_dirs, function(src) {
-  list.dirs(file.path(src, "hessian"), recursive = FALSE, full.names = TRUE)
-}), use.names = FALSE))
-part_sources <- part_sources[grepl("^part_[0-9]+$", basename(part_sources))]
-if (!length(part_sources)) stop("No Hessian part directories found.", call. = FALSE)
-
-part_numbers <- suppressWarnings(as.integer(sub("^part_", "", basename(part_sources))))
-part_sources <- part_sources[order(part_numbers)]
-part_numbers <- part_numbers[order(part_numbers)]
-if (anyDuplicated(part_numbers)) {
-  stop("Duplicate Hessian part directories: ", paste(part_numbers[duplicated(part_numbers)], collapse = ", "), call. = FALSE)
-}
+part_sources <- part_table$part_dir
+part_numbers <- part_table$part_number
 
 for (part_dir in part_sources) {
   copy_dir_contents(part_dir, file.path(hessian_dir, basename(part_dir)))
