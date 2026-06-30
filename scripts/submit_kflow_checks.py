@@ -147,14 +147,15 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
 
     if check_key == "hessian":
         parts = split_values(env_first("HESSIAN_PARTS", "HESSIAN_PART"))
-        nsplit = env_first("HESSIAN_NSPLIT", "NSPLIT")
+        nsplit = env_first("HESSIAN_NSPLIT", "NSPLIT") or "30"
         if not parts and nsplit:
             try:
                 n = int(nsplit)
             except ValueError as exc:
                 raise SystemExit(f"HESSIAN_NSPLIT must be an integer, got {nsplit!r}.") from exc
-            if n > 1:
-                parts = [str(i) for i in range(1, n + 1)]
+            if n < 1:
+                raise SystemExit(f"HESSIAN_NSPLIT must be positive, got {nsplit!r}.")
+            parts = [str(i) for i in range(1, n + 1)]
         return [
             {
                 "label": f"part {part}/{nsplit or '?'}",

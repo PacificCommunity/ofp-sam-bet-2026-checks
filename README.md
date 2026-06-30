@@ -104,9 +104,9 @@ model bundle as the input to the next check or merge job. For example,
   default `5000`. Use a smaller value for quick smoke tests.
 - `RETRO_PEELS`: comma/space list of peels, default `1`.
 - `N_MIXING_PERIODS`: MFCL retrospective mixing periods, default `2`.
-- `HESSIAN_NSPLIT`: number of Hessian parts, default `1`.
+- `HESSIAN_NSPLIT`: number of Hessian parts, default `30`.
 - `HESSIAN_PARTS`: comma/space list of Hessian parts. If unset, all parts are
-  run in the same job.
+  submitted as parallel Kflow jobs when parallel units are enabled.
 - `PROFILE_TYPE`: `quantity` or `fixed_parameter`.
 - `PROFILE_VALUES`: comma/space list of profile values.
 - `PROFILE_PARALLEL_MODE`: profile jobs run as downstream/upstream chains when

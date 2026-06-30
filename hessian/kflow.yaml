@@ -24,7 +24,7 @@ env:
   CHECK_COMPACT_OUTPUTS: "true"
   CHECK_ENRICH_PAYLOADS: "true"
   CHECK_KEEP_RAW_OUTPUTS: "false"
-  HESSIAN_NSPLIT: "1"
+  HESSIAN_NSPLIT: "30"
   HESSIAN_COMPACT: "true"
 output_patterns:
   - outputs/**
