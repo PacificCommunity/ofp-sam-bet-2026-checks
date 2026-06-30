@@ -67,13 +67,13 @@ def split_profile_chains(values: list[float], center_raw: str) -> dict[str, list
             raise SystemExit(f"PROFILE_CENTER must be numeric, got {center_raw!r}.") from exc
     if center is None:
         center = min(values, key=lambda value: abs(value - 100.0))
-    left = sorted([value for value in values if value <= center], reverse=True)
-    right = sorted([value for value in values if value > center])
+    downstream = sorted([value for value in values if value <= center], reverse=True)
+    upstream = sorted([value for value in values if value > center])
     out = {}
-    if left:
-        out["left"] = left
-    if right and right != left:
-        out["right"] = right
+    if downstream:
+        out["downstream"] = downstream
+    if upstream and upstream != downstream:
+        out["upstream"] = upstream
     return out
 
 
@@ -120,7 +120,7 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
         profile_name = os.environ.get("PROFILE_NAME", "profile")
         label_name = profile_name if profile_name and profile_name != "profile" else "scalar"
         mode = os.environ.get("PROFILE_PARALLEL_MODE", "chains").strip().lower() or "chains"
-        if mode in {"chain", "chains", "left-right", "left_right"}:
+        if mode in {"chain", "chains", "left-right", "left_right", "upstream-downstream", "upstream_downstream"}:
             chains = split_profile_chains(values, os.environ.get("PROFILE_CENTER", ""))
             return [
                 {
@@ -263,7 +263,7 @@ def main() -> int:
                     "KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME": os.environ.get("KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME", "true"),
                 }
                 env_prefixes = (
-                    "BET_", "JITTER_", "RETRO_", "HESSIAN_", "PROFILE_",
+                    "BET_", "JITTER_", "RETRO_", "HESSIAN_", "PROFILE_", "ASPM_",
                     "SELFTEST_", "MFK_", "CHECK_", "selftest_",
                 )
                 protected_env = {
@@ -357,7 +357,7 @@ def main() -> int:
         for key, value in os.environ.items():
             if key in {"CHECK_TYPE", "MODEL_SELECTOR", "KFLOW_JOB_TITLE", "KFLOW_JOB_DESCRIPTION"}:
                 continue
-            if key.startswith(("BET_", "JITTER_", "RETRO_", "HESSIAN_", "PROFILE_", "SELFTEST_", "MFK_", "CHECK_", "selftest_")) or key == "program_path":
+            if key.startswith(("BET_", "JITTER_", "RETRO_", "HESSIAN_", "PROFILE_", "ASPM_", "SELFTEST_", "MFK_", "CHECK_", "selftest_")) or key == "program_path":
                 env[key] = value
         if check == "hessian":
             env["CHECK_TYPE"] = "hessian_merge"

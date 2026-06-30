@@ -1,14 +1,14 @@
-name: ofp-sam-bet-2026-check-selftest
-description: Run mfclkit self-test checks on a fitted MFCL model output.
+name: ofp-sam-bet-2026-check-aspm
+description: Run mfclkit ASPM checks on a fitted MFCL model output.
 command: bash run.sh
-target_folder: selftest
+target_folder: aspm
 docker_image: ghcr.io/pacificcommunity/tuna-flow:v2.0
 resources:
   cpus: 2
   memory: 12GB
   disk: 10GB
 env:
-  CHECK_TYPE: selftest
+  CHECK_TYPE: aspm
   MODEL_SOURCE_REPO: PacificCommunity/ofp-sam-bet-2026-stepwise
   MODEL_SOURCE_REF: main
   PROGRAM_PATH: /home/mfcl/mfclo64
@@ -24,12 +24,12 @@ env:
   CHECK_COMPACT_OUTPUTS: "true"
   CHECK_ENRICH_PAYLOADS: "true"
   CHECK_KEEP_RAW_OUTPUTS: "false"
-  SELFTEST_REPS: "1"
-  SELFTEST_SEED: "20260519"
-  SELFTEST_RUN_REFIT: "true"
-  SELFTEST_COMPACT_CLEANUP: "1"
-  SELFTEST_KEEP_MODEL_PAYLOAD: "0"
-  SELFTEST_KEEP_SIM_DEBUG: "0"
+  ASPM_MAX_EVALS: "10000"
+  ASPM_FIX_SELECTIVITY: "true"
+  ASPM_LF_FLAG_311: "11"
+  ASPM_WF_FLAG_301: "1"
+  ASPM_MIN_LF_SAMPLE_SIZE: "1000000"
+  ASPM_MIN_WF_SAMPLE_SIZE: "1000000"
 output_patterns:
   - outputs/**
 metadata:
@@ -54,24 +54,14 @@ metadata:
       - CHECK_COMPACT_OUTPUTS
       - CHECK_ENRICH_PAYLOADS
       - CHECK_KEEP_RAW_OUTPUTS
-      - SELFTEST_REPS
-      - SELFTEST_REP
-      - SELFTEST_SEED
-      - SELFTEST_RUNNER
-      - SELFTEST_RUNNER_REPO
-      - SELFTEST_RUNNER_REF
-      - SELFTEST_RUNNER_ROOT
-      - SELFTEST_RUNNER_WORK_DIR
-      - SELFTEST_RUN_REFIT
-      - CHECK_SELFTEST_SCRIPT
-      - CHECK_SELFTEST_REPO
-      - CHECK_SELFTEST_REF
-      - CHECK_SELFTEST_ROOT
-      - CHECK_SELFTEST_WORK_DIR
-      - CHECK_SELFTEST_RUN_REFIT
-      - SELFTEST_COMPACT_CLEANUP
-      - SELFTEST_KEEP_MODEL_PAYLOAD
-      - SELFTEST_KEEP_SIM_DEBUG
+      - ASPM_MAX_EVALS
+      - ASPM_FIX_SELECTIVITY
+      - ASPM_LF_FLAG_311
+      - ASPM_WF_FLAG_301
+      - ASPM_MIN_LF_SAMPLE_SIZE
+      - ASPM_MIN_WF_SAMPLE_SIZE
+      - ASPM_OUTPUT_PAR
+      - ASPM_EXTRA_SWITCH_LINES
       - MFK_RUN_MESSAGES
       - KFLOW_RUNTIME_UPDATE
       - TUNA_FLOW_RUNTIME_UPDATE
@@ -84,4 +74,4 @@ metadata:
       - KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME
 tags:
   stage: checks
-  check_type: selftest
+  check_type: aspm

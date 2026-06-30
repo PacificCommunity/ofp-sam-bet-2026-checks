@@ -21,6 +21,9 @@ env:
   KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS: "0"
   KFLOW_RUNTIME_GITHUB_AUTH: "true"
   KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME: "true"
+  CHECK_COMPACT_OUTPUTS: "true"
+  CHECK_ENRICH_PAYLOADS: "true"
+  CHECK_KEEP_RAW_OUTPUTS: "false"
 output_patterns:
   - outputs/**
 metadata:
@@ -28,6 +31,9 @@ metadata:
     optional:
       - CHECK_TYPE
       - CHECK_MERGE_TYPE
+      - CHECK_COMPACT_OUTPUTS
+      - CHECK_ENRICH_PAYLOADS
+      - CHECK_KEEP_RAW_OUTPUTS
       - MODEL_SELECTOR
       - MODEL_INPUT_ROOT
       - PROGRAM_PATH

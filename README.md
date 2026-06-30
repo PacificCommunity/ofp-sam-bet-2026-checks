@@ -11,6 +11,7 @@ Kflow tasks for running `mfclkit` diagnostics on fitted MFCL model outputs:
 - `hessian`
 - `retro`
 - `selftest`
+- `aspm`
 
 The tasks are intentionally model-output driven, not stepwise-specific. A run can
 consume either:
@@ -38,8 +39,9 @@ all feed the same checks as long as they expose the same contract.
 - `CHECK_BUILD_REPORT_FIGURES`: build mfclshiny report-ready figures after the
   check. Default is `true`.
 - `CHECK_REPORT_FIGURE_KEYS`: optional comma/space list of report-ready item keys
-  such as `figure:jitter-diagnostics`. If unset, jitter/retro/selftest checks
-  export only their matching diagnostic figures instead of the full app bundle.
+  such as `figure:jitter-diagnostics`. If unset, jitter/retro/selftest/aspm
+  checks export only their matching diagnostic figures instead of the full app
+  bundle.
 - `CHECK_RENDER_REVIEW_HTML`: render a small HTML review for check figures.
   Default is `false`.
 
@@ -54,7 +56,7 @@ outputs/
     model_payload_manifest.{json,csv}
     check_manifest.{rds,csv}
     check-payload-index.csv
-    jitter/ | retro/ | hessian/ | profile/ | selftest/
+    jitter/ | retro/ | hessian/ | profile/ | selftest/ | aspm/
   checks/<check_type>/model-index.csv
   checks-index.csv
   report-ready-checks/<check_type>/<model_key>/
@@ -62,9 +64,10 @@ outputs/
 
 The copied `model_payload.rds` is the fitted parent model. The check-specific
 subdirectories follow the structure mfclshiny already reads for likelihood
-profiles, jitter, Hessian, retrospective, and self-test diagnostics. This lets a
-Kflow job open MFCL Shiny directly, and lets downstream results/report jobs scan
-the same payload folders later without needing stepwise-specific assumptions.
+profiles, jitter, Hessian, retrospective, self-test, and ASPM diagnostics. This
+lets a Kflow job open MFCL Shiny directly, and lets downstream results/report
+jobs scan the same payload folders later without needing stepwise-specific
+assumptions.
 
 ## Check-specific fields
 
@@ -83,9 +86,9 @@ the same payload folders later without needing stepwise-specific assumptions.
   run in the same job.
 - `PROFILE_TYPE`: `quantity` or `fixed_parameter`.
 - `PROFILE_VALUES`: comma/space list of profile values.
-- `PROFILE_PARALLEL_MODE`: profile jobs run as left/right chains when split for
-  Kflow. Point-by-point scalar splitting is intentionally unsupported because
-  each side should continue from the previous profile point.
+- `PROFILE_PARALLEL_MODE`: profile jobs run as downstream/upstream chains when
+  split for Kflow. Point-by-point scalar splitting is intentionally unsupported
+  because each side should continue from the previous profile point.
 - `PROFILE_CHAIN`: run profile values sequentially within a job. Default is
   `true`.
 - `PROFILE_NAME`: profile folder name.
@@ -99,6 +102,33 @@ the same payload folders later without needing stepwise-specific assumptions.
   checks use the native self-test runner bundled with `mfclkit`.
 - `SELFTEST_RUN_REFIT`: run self-test refits and write
   `selftest/refit/rep_*` outputs for mfclshiny. Default is `true`.
+- `ASPM_MAX_EVALS`: maximum evaluations for the ASPM refit, default `10000`.
+- `ASPM_FIX_SELECTIVITY`: fix selectivity to the fitted values before excluding
+  composition data. Default is `true`.
+- `ASPM_MIN_LF_SAMPLE_SIZE` and `ASPM_MIN_WF_SAMPLE_SIZE`: high minimum sample
+  size controls used to exclude LF/WF composition influence. Defaults are
+  `1000000`.
+- `ASPM_EXTRA_SWITCH_LINES`: optional newline- or semicolon-separated MFCL
+  control lines appended to the ASPM run. Use only for deliberate model-specific
+  diagnostics.
+- `CHECK_COMPACT_OUTPUTS`: keep check archives payload-first by removing raw
+  MFCL case copies and intermediate files after the diagnostic payloads and logs
+  have been written. Default is `true`.
+- `CHECK_KEEP_RAW_OUTPUTS`: set to `true` for a one-off debugging run that needs
+  every raw `.par`, `.rep`, `.frq`, and intermediate file in the Kflow archive.
+  Default is `false`.
+- `CHECK_ENRICH_PAYLOADS`: build compact mfclshiny payloads before raw outputs
+  are removed. Default is `true`.
+- `SELFTEST_COMPACT_CLEANUP`: compact self-test replicate folders in the
+  mfclkit runner. Default is `1`.
+- `SELFTEST_KEEP_MODEL_PAYLOAD`: keep full self-test truth/refit
+  `model_payload.rds` files. Default is `0`; recovery tables and model-info
+  payloads are kept either way.
+- `HESSIAN_COMPACT`: compact Hessian part jobs while preserving the `.hes` files
+  required by `hessian-merge`. Default is `true`.
+- `HESSIAN_KEEP_MATRIX`: keep final merged Hessian matrix files in the
+  `hessian-merge` archive. Default is `false`; Shiny/report diagnostics use
+  `hessian_info.rds`.
 
 ## Local examples
 
@@ -123,7 +153,7 @@ bash run.sh
 
 ## Kflow
 
-Register all five tasks:
+Register all six tasks:
 
 ```sh
 make kflow-register
@@ -138,7 +168,7 @@ parallel:
 
 ```sh
 make kflow CHECK_TYPE=jitter MODEL_SELECTOR=08-RegionalCPUE KFLOW_INPUT_JOBS=596
-make kflow-batch CHECK_TYPES="jitter retro hessian" MODEL_SELECTORS="08-RegionalCPUE 15-DataWeighting" KFLOW_INPUT_JOBS="596 603"
+make kflow-batch CHECK_TYPES="jitter retro hessian aspm" MODEL_SELECTORS="08-RegionalCPUE 15-DataWeighting" KFLOW_INPUT_JOBS="596 603"
 ```
 
 For all 15 stepwise models, pass all 15 upstream model jobs and all 15

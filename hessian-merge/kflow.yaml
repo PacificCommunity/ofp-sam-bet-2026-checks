@@ -23,6 +23,9 @@ env:
   HESSIAN_NSPLIT: ""
   HESSIAN_MERGE_RUN: "true"
   HESSIAN_MERGE_EIGEN: "true"
+  HESSIAN_KEEP_MATRIX: "false"
+  CHECK_COMPACT_OUTPUTS: "true"
+  CHECK_KEEP_RAW_OUTPUTS: "false"
 output_patterns:
   - outputs/**
 metadata:
@@ -36,6 +39,9 @@ metadata:
       - HESSIAN_NSPLIT
       - HESSIAN_MERGE_RUN
       - HESSIAN_MERGE_EIGEN
+      - HESSIAN_KEEP_MATRIX
+      - CHECK_COMPACT_OUTPUTS
+      - CHECK_KEEP_RAW_OUTPUTS
       - MFK_RUN_MESSAGES
       - KFLOW_RUNTIME_UPDATE
       - TUNA_FLOW_RUNTIME_UPDATE

@@ -41,6 +41,104 @@ bind_rows_fill_local <- function(rows) {
   do.call(rbind, rows)
 }
 
+check_compact_outputs_enabled <- function() {
+  if (truthy(env("CHECK_KEEP_RAW_OUTPUTS", "false"), FALSE)) return(FALSE)
+  truthy(env("CHECK_COMPACT_OUTPUTS", "true"), TRUE)
+}
+
+compact_prune_empty_dirs <- function(root) {
+  if (!dir.exists(root)) return(invisible(0L))
+  dirs <- list.dirs(root, recursive = TRUE, full.names = TRUE)
+  dirs <- rev(dirs[nzchar(dirs)])
+  removed <- 0L
+  for (dir in dirs) {
+    if (!dir.exists(dir)) next
+    if (length(list.files(dir, all.files = TRUE, no.. = TRUE)) == 0L) {
+      unlink(dir, recursive = TRUE, force = TRUE)
+      removed <- removed + 1L
+    }
+  }
+  invisible(removed)
+}
+
+compact_prune_files <- function(root,
+                                keep_names = character(),
+                                keep_patterns = character(),
+                                recursive = TRUE) {
+  if (!dir.exists(root)) return(data.frame())
+  files <- list.files(root, all.files = TRUE, no.. = TRUE, recursive = recursive, full.names = TRUE)
+  if (!length(files)) return(data.frame())
+  info <- file.info(files)
+  files <- files[!is.na(info$isdir) & !info$isdir]
+  if (!length(files)) return(data.frame())
+
+  rel <- substring(normalize_loose(files), nchar(paste0(normalize_loose(root), "/")) + 1L)
+  base <- basename(files)
+  keep <- base %in% keep_names | rel %in% keep_names
+  if (length(keep_patterns)) {
+    keep <- keep | vapply(seq_along(files), function(i) {
+      any(grepl(keep_patterns, base[[i]], ignore.case = TRUE)) ||
+        any(grepl(keep_patterns, rel[[i]], ignore.case = TRUE))
+    }, logical(1L))
+  }
+
+  remove <- files[!keep]
+  if (!length(remove)) return(data.frame())
+  remove_info <- file.info(remove)
+  out <- data.frame(
+    check_type = "hessian",
+    model_key = model_key,
+    root = normalize_loose(root),
+    file = normalize_loose(remove),
+    relative_file = substring(normalize_loose(remove), nchar(paste0(normalize_loose(model_dir), "/")) + 1L),
+    bytes = suppressWarnings(as.numeric(remove_info$size)),
+    stringsAsFactors = FALSE
+  )
+  unlink(remove, recursive = FALSE, force = TRUE)
+  out
+}
+
+compact_hessian_merge_outputs <- function() {
+  if (!check_compact_outputs_enabled()) return(invisible(data.frame()))
+
+  log_patterns <- c("(^|/).*log($|[.])", "(^|/)mfcl.*[.]txt$")
+  keep_matrix <- truthy(env("HESSIAN_KEEP_MATRIX", "false"), FALSE)
+  hessian_keep_patterns <- c(log_patterns, "(^|/)neigenvalues$")
+  if (isTRUE(keep_matrix)) {
+    hessian_keep_patterns <- c(hessian_keep_patterns, "[.]hes(_[0-9]+)?$", "(^|/)parall_hess$")
+  }
+
+  deleted <- list(
+    compact_prune_files(
+      hessian_dir,
+      keep_names = c("hessian_info.rds", "mfcl_stitch_log.txt", "mfcl_eigen_log.txt"),
+      keep_patterns = hessian_keep_patterns,
+      recursive = TRUE
+    ),
+    compact_prune_files(
+      model_dir,
+      keep_names = c(
+        "model_payload.rds", "model_payload_manifest.json", "model_payload_manifest.csv",
+        "fishery_map.R", "tag_rep_map.R", "bet.region_map.geojson", "bet.reg_scaling",
+        "check_manifest.csv", "check_manifest.rds", "hessian_merge.rds",
+        "model-index.csv", "check-model-index.csv", "mfclkit_diagnostics.rds",
+        "mfclkit_diagnostics.csv", "check-output-cleanup.csv", "check-output-cleanup.rds"
+      ),
+      keep_patterns = c("(^|/)hessian/", "(^|/).*index[.]csv$", log_patterns),
+      recursive = FALSE
+    )
+  )
+  out <- bind_rows_fill_local(deleted)
+  compact_prune_empty_dirs(model_dir)
+  if (nrow(out)) {
+    out$removed_at <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+    write.csv(out, file.path(model_dir, "check-output-cleanup.csv"), row.names = FALSE)
+    saveRDS(out, file.path(model_dir, "check-output-cleanup.rds"), compress = "xz")
+    message("[checks] compacted merged Hessian output: removed ", nrow(out), " raw/intermediate files")
+  }
+  invisible(out)
+}
+
 discover_hessian_model_dirs <- function(root) {
   roots <- normalize_loose(root)
   roots <- roots[dir.exists(roots)]
@@ -195,5 +293,7 @@ manifest <- data.frame(
 write.csv(manifest, file.path(model_dir, "check_manifest.csv"), row.names = FALSE)
 saveRDS(as.list(manifest), file.path(model_dir, "check_manifest.rds"), compress = "xz")
 
+try(mfclkit::mfk_collect_diagnostics(model_dir, write_index = TRUE), silent = TRUE)
+compact_hessian_merge_outputs()
 try(mfclkit::mfk_collect_diagnostics(model_dir, write_index = TRUE), silent = TRUE)
 message("[checks] merged Hessian parts under ", model_dir)

@@ -277,6 +277,149 @@ build_report_ready_figures <- function(model_dir, output_dir, check_type, model_
   invisible(result)
 }
 
+check_compact_outputs_enabled <- function() {
+  if (truthy(env("CHECK_KEEP_RAW_OUTPUTS", "false"), FALSE)) return(FALSE)
+  truthy(env("CHECK_COMPACT_OUTPUTS", "true"), TRUE)
+}
+
+compact_prune_empty_dirs <- function(root) {
+  if (!dir.exists(root)) return(invisible(0L))
+  dirs <- list.dirs(root, recursive = TRUE, full.names = TRUE)
+  dirs <- rev(dirs[nzchar(dirs)])
+  removed <- 0L
+  for (dir in dirs) {
+    if (!dir.exists(dir)) next
+    if (length(list.files(dir, all.files = TRUE, no.. = TRUE)) == 0L) {
+      unlink(dir, recursive = TRUE, force = TRUE)
+      removed <- removed + 1L
+    }
+  }
+  invisible(removed)
+}
+
+compact_prune_files <- function(root,
+                                keep_names = character(),
+                                keep_patterns = character(),
+                                recursive = TRUE) {
+  if (!dir.exists(root)) return(data.frame())
+  files <- list.files(root, all.files = TRUE, no.. = TRUE, recursive = recursive, full.names = TRUE)
+  if (!length(files)) return(data.frame())
+  info <- file.info(files)
+  files <- files[!is.na(info$isdir) & !info$isdir]
+  if (!length(files)) return(data.frame())
+
+  rel <- substring(normalize_loose(files), nchar(paste0(normalize_loose(root), "/")) + 1L)
+  base <- basename(files)
+  keep <- base %in% keep_names | rel %in% keep_names
+  if (length(keep_patterns)) {
+    keep <- keep | vapply(seq_along(files), function(i) {
+      any(grepl(keep_patterns, base[[i]], ignore.case = TRUE)) ||
+        any(grepl(keep_patterns, rel[[i]], ignore.case = TRUE))
+    }, logical(1L))
+  }
+
+  remove <- files[!keep]
+  if (!length(remove)) return(data.frame())
+  remove_info <- file.info(remove)
+  out <- data.frame(
+    check_type = check_type,
+    model_key = model_key,
+    root = normalize_loose(root),
+    file = normalize_loose(remove),
+    relative_file = substring(normalize_loose(remove), nchar(paste0(normalize_loose(model_dir), "/")) + 1L),
+    bytes = suppressWarnings(as.numeric(remove_info$size)),
+    stringsAsFactors = FALSE
+  )
+  unlink(remove, recursive = FALSE, force = TRUE)
+  out
+}
+
+mfclshiny_payload_tool_env <- function(required_for) {
+  if (!requireNamespace("mfclshiny", quietly = TRUE)) {
+    stop("mfclshiny is required to build compact ", required_for, " payloads.", call. = FALSE)
+  }
+  tool <- system.file("app", "tools", "model_payload.R", package = "mfclshiny")
+  if (!nzchar(tool) || !file.exists(tool)) {
+    stop("Could not find mfclshiny model_payload.R for compact ", required_for, " payloads.", call. = FALSE)
+  }
+  tool_env <- new.env(parent = globalenv())
+  sys.source(tool, envir = tool_env, keep.source = FALSE)
+  tool_env
+}
+
+enrich_merged_check_payloads <- function() {
+  if (!truthy(env("CHECK_ENRICH_PAYLOADS", "true"), TRUE)) return(invisible(data.frame()))
+  if (identical(check_type, "jitter")) {
+    seed_dirs <- list.dirs(file.path(model_dir, "jitter"), recursive = FALSE, full.names = TRUE)
+    seed_dirs <- seed_dirs[grepl("^jitter_seed_[0-9]+$", basename(seed_dirs))]
+    if (!length(seed_dirs)) return(invisible(data.frame()))
+    tool_env <- mfclshiny_payload_tool_env("jitter")
+    rows <- lapply(seed_dirs, function(seed_dir) {
+      payload <- tool_env$mp_build_jitter_payload(seed_dir)
+      out_file <- file.path(seed_dir, "jitter_result.rds")
+      saveRDS(payload, out_file, compress = "xz")
+      data.frame(payload_role = "jitter_result", folder = normalize_loose(seed_dir),
+                 payload = normalize_loose(out_file), stringsAsFactors = FALSE)
+    })
+    return(invisible(bind_rows_fill_local(rows)))
+  }
+  if (identical(check_type, "profile")) {
+    scalar_dirs <- list.dirs(file.path(model_dir, "profile"), recursive = TRUE, full.names = TRUE)
+    scalar_dirs <- scalar_dirs[grepl("^scalar_", basename(scalar_dirs))]
+    missing <- scalar_dirs[!file.exists(file.path(scalar_dirs, "profile_payload.rds"))]
+    if (length(missing)) {
+      tool_env <- mfclshiny_payload_tool_env("profile")
+      for (scalar_dir in missing) {
+        payload <- tool_env$mp_build_profile_payload(scalar_dir)
+        saveRDS(payload, file.path(scalar_dir, "profile_payload.rds"), compress = "xz")
+      }
+    }
+  }
+  invisible(data.frame())
+}
+
+compact_merged_check_outputs <- function() {
+  if (!check_compact_outputs_enabled()) return(invisible(data.frame()))
+
+  log_patterns <- c("(^|/).*log($|[.])", "(^|/)mfcl.*[.]txt$")
+  deleted <- list()
+  if (identical(check_type, "jitter")) {
+    seed_dirs <- list.dirs(file.path(model_dir, "jitter"), recursive = FALSE, full.names = TRUE)
+    seed_dirs <- seed_dirs[grepl("^jitter_seed_[0-9]+$", basename(seed_dirs))]
+    deleted <- lapply(seed_dirs, compact_prune_files,
+      keep_names = c("jitter_result.rds", "jitter_info.rds"),
+      keep_patterns = c(log_patterns, "^jitter_seed_[0-9]+_(label_changes|summary)[.]csv$"),
+      recursive = TRUE
+    )
+  } else if (identical(check_type, "retro")) {
+    peel_dirs <- list.dirs(file.path(model_dir, "retro"), recursive = FALSE, full.names = TRUE)
+    peel_dirs <- peel_dirs[grepl("^peel_[0-9]+$", basename(peel_dirs))]
+    deleted <- lapply(peel_dirs, compact_prune_files,
+      keep_names = c("retro_info.rds", "retro_metrics.rds", "retro_input_info.rds", "hessian_info.rds"),
+      keep_patterns = c(log_patterns, "(^|/)neigenvalues$"),
+      recursive = TRUE
+    )
+  } else if (identical(check_type, "profile")) {
+    scalar_dirs <- list.dirs(file.path(model_dir, "profile"), recursive = TRUE, full.names = TRUE)
+    scalar_dirs <- scalar_dirs[grepl("^scalar_", basename(scalar_dirs))]
+    deleted <- lapply(scalar_dirs, compact_prune_files,
+      keep_names = c("profile_payload.rds", "profile_point_info.rds", "info.rds", "test_plot_output", "hessian_info.rds"),
+      keep_patterns = c(log_patterns, "(^|/)neigenvalues$"),
+      recursive = TRUE
+    )
+  }
+
+  out <- bind_rows_fill_local(deleted)
+  compact_prune_empty_dirs(model_dir)
+  if (nrow(out)) {
+    out$removed_at <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+    write.csv(out, file.path(model_dir, "check-output-cleanup.csv"), row.names = FALSE)
+    saveRDS(out, file.path(model_dir, "check-output-cleanup.rds"), compress = "xz")
+    message("[checks] compacted merged ", check_type, " output: removed ", nrow(out), " raw/intermediate files")
+  }
+  invisible(out)
+}
+
 source_model_dirs <- discover_check_model_dirs(input_root, check_type)
 source_model_dirs <- source_model_dirs[vapply(source_model_dirs, matches_model, logical(1), selector = model_selector)]
 if (!length(source_model_dirs)) {
@@ -351,6 +494,9 @@ manifest <- data.frame(
 write.csv(manifest, file.path(model_dir, "check_manifest.csv"), row.names = FALSE)
 saveRDS(as.list(manifest), file.path(model_dir, "check_manifest.rds"), compress = "xz")
 
+enrich_merged_check_payloads()
+try(mfclkit::mfk_collect_diagnostics(model_dir, write_index = TRUE), silent = TRUE)
+compact_merged_check_outputs()
 try(mfclkit::mfk_collect_diagnostics(model_dir, write_index = TRUE), silent = TRUE)
 if (requireNamespace("mfclshiny", quietly = TRUE)) {
   payload_index <- tryCatch(

@@ -1,7 +1,7 @@
 SHELL := /usr/bin/env bash
 
-CHECK_TYPES ?= profile jitter hessian retro selftest
-KFLOW_REGISTER_CHECK_TYPES ?= profile jitter hessian hessian-merge jitter-merge profile-merge retro-merge selftest-merge retro selftest
+CHECK_TYPES ?= profile jitter hessian retro selftest aspm
+KFLOW_REGISTER_CHECK_TYPES ?= profile jitter hessian hessian-merge jitter-merge profile-merge retro-merge selftest-merge retro selftest aspm
 CHECK_TYPE ?= jitter
 MODEL_SELECTOR ?=
 MODEL_SELECTORS ?= $(MODEL_SELECTOR)
@@ -35,10 +35,16 @@ HESSIAN_NSPLIT ?=
 HESSIAN_PARTS ?=
 HESSIAN_PART ?=
 NSPLIT ?=
+ASPM_MAX_EVALS ?=
+ASPM_FIX_SELECTIVITY ?=
+ASPM_MIN_LF_SAMPLE_SIZE ?=
+ASPM_MIN_WF_SAMPLE_SIZE ?=
+ASPM_EXTRA_SWITCH_LINES ?=
 
 export JITTER_SEEDS JITTER_SEED RETRO_PEELS RETRO_PEEL SELFTEST_REPS SELFTEST_REP
 export PROFILE_VALUES PROFILE_NAME PROFILE_PARALLEL_MODE PROFILE_CENTER PROFILE_CHAIN PROFILE_CHAIN_SIDE MFK_SCALAR
 export HESSIAN_NSPLIT HESSIAN_PARTS HESSIAN_PART NSPLIT
+export ASPM_MAX_EVALS ASPM_FIX_SELECTIVITY ASPM_MIN_LF_SAMPLE_SIZE ASPM_MIN_WF_SAMPLE_SIZE ASPM_EXTRA_SWITCH_LINES
 
 .PHONY: help local clean kflow-register kflow kflow-batch
 
@@ -47,13 +53,13 @@ help:
 	  'BET 2026 MFCL checks' \
 	  '' \
 	  'make kflow-register' \
-	  '  Register profile, jitter, hessian, retro, selftest, and merge Kflow tasks.' \
+	  '  Register profile, jitter, hessian, retro, selftest, aspm, and merge Kflow tasks.' \
 	  '' \
 	  'make kflow CHECK_TYPE=jitter MODEL_SELECTOR=08-RegionalCPUE KFLOW_INPUT_JOBS=603' \
 	  '  Submit one independent check job.' \
 	  '' \
-	  'make kflow-batch CHECK_TYPES="jitter retro hessian" MODEL_SELECTORS="08-RegionalCPUE 15-DataWeighting" KFLOW_INPUT_JOBS=603' \
-	  '  Submit check x model jobs; seed/peel/rep/hessian units split by default; profile splits into left/right chains.' \
+	  'make kflow-batch CHECK_TYPES="jitter retro hessian aspm" MODEL_SELECTORS="08-RegionalCPUE 15-DataWeighting" KFLOW_INPUT_JOBS=603' \
+	  '  Submit check x model jobs; seed/peel/rep/hessian units split by default; profile splits into downstream/upstream chains.' \
 	  '' \
 	  'KFLOW_PARALLEL_UNITS=false make kflow CHECK_TYPE=jitter JITTER_SEEDS="1 2 3"' \
 	  '  Keep multiple check units in one Kflow job instead of splitting them.' \
@@ -71,7 +77,7 @@ local:
 	bash run.sh '$(CHECK_TYPE)'
 
 clean:
-	rm -rf outputs work profile/outputs profile/work jitter/outputs jitter/work hessian/outputs hessian/work hessian-merge/outputs hessian-merge/work jitter-merge/outputs jitter-merge/work profile-merge/outputs profile-merge/work retro-merge/outputs retro-merge/work selftest-merge/outputs selftest-merge/work retro/outputs retro/work selftest/outputs selftest/work .R-library .kflow-runtime-cache .docker-home
+	rm -rf outputs work profile/outputs profile/work jitter/outputs jitter/work hessian/outputs hessian/work hessian-merge/outputs hessian-merge/work jitter-merge/outputs jitter-merge/work profile-merge/outputs profile-merge/work retro-merge/outputs retro-merge/work selftest-merge/outputs selftest-merge/work retro/outputs retro/work selftest/outputs selftest/work aspm/outputs aspm/work .R-library .kflow-runtime-cache .docker-home
 
 kflow-register:
 	@test -n "$${KFLOW_API_TOKEN:-}" || { echo 'Set KFLOW_API_TOKEN before running make kflow-register.' >&2; exit 2; }

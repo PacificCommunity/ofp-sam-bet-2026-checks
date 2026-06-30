@@ -125,6 +125,14 @@ profile_input_par <- function(chain_start_par = NULL) {
   }
 }
 
+aspm_extra_switch_lines <- function() {
+  raw <- env("ASPM_EXTRA_SWITCH_LINES", "")
+  if (!nzchar(raw)) return(character())
+  lines <- unlist(strsplit(raw, "\\r?\\n|;", perl = TRUE), use.names = FALSE)
+  lines <- trimws(lines)
+  lines[nzchar(lines)]
+}
+
 relative_to <- function(path, root = output_dir) {
   path <- normalize_loose(path)
   root <- normalize_loose(root)
@@ -356,6 +364,7 @@ check_report_figure_keys <- function() {
       "figure:jitter-derived-quantities"
     ),
     retro = "figure:retrospective-diagnostics",
+    aspm = "figure:aspm-diagnostics",
     selftest = c(
       "figure:selftest-recovery",
       "figure:selftest-simulation",
@@ -377,6 +386,7 @@ write_check_report_selection <- function(output_dir) {
     check_type,
     jitter = "Jitter",
     retro = "Retro",
+    aspm = "ASPM",
     selftest = "Self-test",
     "Checks"
   )
@@ -464,6 +474,234 @@ build_report_ready_figures <- function() {
     write.csv(result$figures, file.path(out, "figure-index.csv"), row.names = FALSE)
   }
   invisible(result)
+}
+
+check_compact_outputs_enabled <- function() {
+  if (truthy(env("CHECK_KEEP_RAW_OUTPUTS", "false"), FALSE)) return(FALSE)
+  truthy(env("CHECK_COMPACT_OUTPUTS", "true"), TRUE)
+}
+
+compact_prune_empty_dirs <- function(root) {
+  if (!dir.exists(root)) return(invisible(0L))
+  dirs <- list.dirs(root, recursive = TRUE, full.names = TRUE)
+  dirs <- rev(dirs[nzchar(dirs)])
+  removed <- 0L
+  for (dir in dirs) {
+    if (!dir.exists(dir)) next
+    if (length(list.files(dir, all.files = TRUE, no.. = TRUE)) == 0L) {
+      unlink(dir, recursive = TRUE, force = TRUE)
+      removed <- removed + 1L
+    }
+  }
+  invisible(removed)
+}
+
+compact_prune_files <- function(root,
+                                keep_names = character(),
+                                keep_patterns = character(),
+                                recursive = TRUE) {
+  if (!dir.exists(root)) return(data.frame())
+  files <- list.files(root, all.files = TRUE, no.. = TRUE, recursive = recursive, full.names = TRUE)
+  if (!length(files)) return(data.frame())
+  info <- file.info(files)
+  files <- files[!is.na(info$isdir) & !info$isdir]
+  if (!length(files)) return(data.frame())
+
+  rel <- substring(normalize_loose(files), nchar(paste0(normalize_loose(root), "/")) + 1L)
+  base <- basename(files)
+  keep <- base %in% keep_names | rel %in% keep_names
+  if (length(keep_patterns)) {
+    keep <- keep | vapply(seq_along(files), function(i) {
+      any(grepl(keep_patterns, base[[i]], ignore.case = TRUE)) ||
+        any(grepl(keep_patterns, rel[[i]], ignore.case = TRUE))
+    }, logical(1L))
+  }
+
+  remove <- files[!keep]
+  if (!length(remove)) return(data.frame())
+  remove_info <- file.info(remove)
+  out <- data.frame(
+    check_type = check_type,
+    model_key = model_key,
+    root = normalize_loose(root),
+    file = normalize_loose(remove),
+    relative_file = substring(normalize_loose(remove), nchar(paste0(normalize_loose(model_dir), "/")) + 1L),
+    bytes = suppressWarnings(as.numeric(remove_info$size)),
+    stringsAsFactors = FALSE
+  )
+  unlink(remove, recursive = FALSE, force = TRUE)
+  out
+}
+
+mfclshiny_payload_tool_env <- function(required_for) {
+  if (!requireNamespace("mfclshiny", quietly = TRUE)) {
+    stop("mfclshiny is required to build compact ", required_for, " payloads.", call. = FALSE)
+  }
+  tool <- system.file("app", "tools", "model_payload.R", package = "mfclshiny")
+  if (!nzchar(tool) || !file.exists(tool)) {
+    stop("Could not find mfclshiny model_payload.R for compact ", required_for, " payloads.", call. = FALSE)
+  }
+  tool_env <- new.env(parent = globalenv())
+  sys.source(tool, envir = tool_env, keep.source = FALSE)
+  tool_env
+}
+
+enrich_jitter_payloads <- function() {
+  jitter_root <- file.path(model_dir, "jitter")
+  seed_dirs <- list.dirs(jitter_root, recursive = FALSE, full.names = TRUE)
+  seed_dirs <- seed_dirs[grepl("^jitter_seed_[0-9]+$", basename(seed_dirs))]
+  if (!length(seed_dirs)) return(invisible(data.frame()))
+
+  tool_env <- mfclshiny_payload_tool_env("jitter")
+  rows <- lapply(seed_dirs, function(seed_dir) {
+    payload <- tool_env$mp_build_jitter_payload(seed_dir)
+    out_file <- file.path(seed_dir, "jitter_result.rds")
+    saveRDS(payload, out_file, compress = "xz")
+    data.frame(
+      check_type = check_type,
+      model_key = model_key,
+      payload_role = "jitter_result",
+      folder = normalize_loose(seed_dir),
+      payload = normalize_loose(out_file),
+      bytes = suppressWarnings(as.numeric(file.info(out_file)$size)),
+      stringsAsFactors = FALSE
+    )
+  })
+  out <- bind_rows_fill(rows)
+  write.csv(out, file.path(model_dir, "jitter-payload-index.csv"), row.names = FALSE)
+  invisible(out)
+}
+
+ensure_profile_payloads <- function() {
+  profile_root <- file.path(model_dir, "profile")
+  scalar_dirs <- list.dirs(profile_root, recursive = TRUE, full.names = TRUE)
+  scalar_dirs <- scalar_dirs[grepl("^scalar_", basename(scalar_dirs))]
+  if (!length(scalar_dirs)) return(invisible(data.frame()))
+
+  missing <- scalar_dirs[!file.exists(file.path(scalar_dirs, "profile_payload.rds"))]
+  if (length(missing)) {
+    tool_env <- mfclshiny_payload_tool_env("profile")
+    for (scalar_dir in missing) {
+      payload <- tool_env$mp_build_profile_payload(scalar_dir)
+      saveRDS(payload, file.path(scalar_dir, "profile_payload.rds"), compress = "xz")
+    }
+  }
+  rows <- lapply(scalar_dirs, function(scalar_dir) {
+    payload <- file.path(scalar_dir, "profile_payload.rds")
+    data.frame(
+      check_type = check_type,
+      model_key = model_key,
+      payload_role = "profile_payload",
+      folder = normalize_loose(scalar_dir),
+      payload = normalize_loose(payload),
+      bytes = suppressWarnings(as.numeric(file.info(payload)$size)),
+      stringsAsFactors = FALSE
+    )
+  })
+  out <- bind_rows_fill(rows)
+  write.csv(out, file.path(model_dir, "profile-payload-index.csv"), row.names = FALSE)
+  invisible(out)
+}
+
+enrich_aspm_payload <- function() {
+  aspm_dir <- file.path(model_dir, "aspm")
+  if (!dir.exists(aspm_dir)) return(invisible(data.frame()))
+  if (!requireNamespace("mfclshiny", quietly = TRUE)) {
+    stop("mfclshiny is required to build compact ASPM payloads.", call. = FALSE)
+  }
+
+  tool_env <- mfclshiny_payload_tool_env("ASPM")
+  payload <- tool_env$mp_build_model_payload(aspm_dir)
+  payload_file <- file.path(aspm_dir, "model_payload.rds")
+  saveRDS(payload, payload_file, compress = "xz")
+  if ("write_model_payload_manifest" %in% getNamespaceExports("mfclshiny")) {
+    mfclshiny::write_model_payload_manifest(payload = payload, folder = aspm_dir, payload_file = payload_file)
+  }
+
+  out <- data.frame(
+    check_type = check_type,
+    model_key = model_key,
+    payload_role = "aspm_model_payload",
+    folder = normalize_loose(aspm_dir),
+    payload = normalize_loose(payload_file),
+    bytes = suppressWarnings(as.numeric(file.info(payload_file)$size)),
+    stringsAsFactors = FALSE
+  )
+  write.csv(out, file.path(model_dir, "aspm-payload-index.csv"), row.names = FALSE)
+  invisible(out)
+}
+
+enrich_check_payloads <- function() {
+  if (!truthy(env("CHECK_ENRICH_PAYLOADS", "true"), TRUE)) return(invisible(data.frame()))
+  if (identical(check_type, "jitter")) return(enrich_jitter_payloads())
+  if (identical(check_type, "profile")) return(ensure_profile_payloads())
+  if (identical(check_type, "aspm")) return(enrich_aspm_payload())
+  invisible(data.frame())
+}
+
+compact_check_outputs <- function() {
+  if (!check_compact_outputs_enabled()) return(invisible(data.frame()))
+
+  log_patterns <- c("(^|/).*log($|[.])", "(^|/)mfcl.*[.]txt$")
+  deleted <- list()
+  if (identical(check_type, "jitter")) {
+    seed_dirs <- list.dirs(file.path(model_dir, "jitter"), recursive = FALSE, full.names = TRUE)
+    seed_dirs <- seed_dirs[grepl("^jitter_seed_[0-9]+$", basename(seed_dirs))]
+    deleted <- lapply(seed_dirs, compact_prune_files,
+      keep_names = c("jitter_result.rds", "jitter_info.rds"),
+      keep_patterns = c(log_patterns, "^jitter_seed_[0-9]+_(label_changes|summary)[.]csv$"),
+      recursive = TRUE
+    )
+  } else if (identical(check_type, "retro")) {
+    peel_dirs <- list.dirs(file.path(model_dir, "retro"), recursive = FALSE, full.names = TRUE)
+    peel_dirs <- peel_dirs[grepl("^peel_[0-9]+$", basename(peel_dirs))]
+    deleted <- lapply(peel_dirs, compact_prune_files,
+      keep_names = c("retro_info.rds", "retro_metrics.rds", "retro_input_info.rds", "hessian_info.rds"),
+      keep_patterns = c(log_patterns, "(^|/)neigenvalues$"),
+      recursive = TRUE
+    )
+  } else if (identical(check_type, "profile")) {
+    scalar_dirs <- list.dirs(file.path(model_dir, "profile"), recursive = TRUE, full.names = TRUE)
+    scalar_dirs <- scalar_dirs[grepl("^scalar_", basename(scalar_dirs))]
+    deleted <- lapply(scalar_dirs, compact_prune_files,
+      keep_names = c("profile_payload.rds", "profile_point_info.rds", "info.rds", "test_plot_output", "hessian_info.rds"),
+      keep_patterns = c(log_patterns, "(^|/)neigenvalues$"),
+      recursive = TRUE
+    )
+  } else if (identical(check_type, "aspm")) {
+    deleted <- list(compact_prune_files(
+      file.path(model_dir, "aspm"),
+      keep_names = c(
+        "model_payload.rds",
+        "model_payload_manifest.json",
+        "model_payload_manifest.csv",
+        "aspm_info.rds",
+        "aspm-index.csv",
+        "aspm_control.txt",
+        "run_aspm.sh"
+      ),
+      keep_patterns = log_patterns,
+      recursive = TRUE
+    ))
+  } else if (identical(check_type, "hessian")) {
+    part_dirs <- list.dirs(file.path(model_dir, "hessian"), recursive = FALSE, full.names = TRUE)
+    part_dirs <- part_dirs[grepl("^part_[0-9]+$", basename(part_dirs))]
+    deleted <- lapply(part_dirs, compact_prune_files,
+      keep_names = c("hessian_info.rds", "mfcl_hessian_log.txt", "depgrad.rpt", "Hess.rpt", "neigenvalues"),
+      keep_patterns = c(log_patterns, "[.]hes$"),
+      recursive = TRUE
+    )
+  }
+
+  out <- bind_rows_fill(deleted)
+  compact_prune_empty_dirs(model_dir)
+  if (nrow(out)) {
+    out$removed_at <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+    write.csv(out, file.path(model_dir, "check-output-cleanup.csv"), row.names = FALSE)
+    saveRDS(out, file.path(model_dir, "check-output-cleanup.rds"), compress = "xz")
+    message("[checks] compacted ", check_type, " output: removed ", nrow(out), " raw/intermediate files")
+  }
+  invisible(out)
 }
 
 write_run_manifest <- function(extra = list()) {
@@ -564,7 +802,7 @@ if (identical(check_type, "jitter")) {
       nsplit = nsplit,
       par = prepared$start_par,
       frq = prepared$frq,
-      compact = truthy(env("HESSIAN_COMPACT", "false"), FALSE),
+      compact = truthy(env("HESSIAN_COMPACT", "true"), TRUE),
       run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
     )
   })
@@ -649,6 +887,42 @@ if (identical(check_type, "jitter")) {
     write.csv(mfk_profile_conflict_metrics(points), file.path(model_dir, "profile-qc.csv"), row.names = FALSE)
   }
 
+} else if (identical(check_type, "aspm")) {
+  max_evals <- as.integer(split_numbers(env("ASPM_MAX_EVALS", "10000"), default = 10000)[[1L]])
+  min_lf_sample_size <- split_numbers(env("ASPM_MIN_LF_SAMPLE_SIZE", "1000000"), default = 1000000)[[1L]]
+  min_wf_sample_size <- split_numbers(env("ASPM_MIN_WF_SAMPLE_SIZE", "1000000"), default = 1000000)[[1L]]
+  lf_flag_311 <- as.integer(split_numbers(env("ASPM_LF_FLAG_311", "11"), default = 11)[[1L]])
+  wf_flag_301 <- as.integer(split_numbers(env("ASPM_WF_FLAG_301", "1"), default = 1)[[1L]])
+  fix_selectivity <- truthy(env("ASPM_FIX_SELECTIVITY", "true"), TRUE)
+  output_par <- env("ASPM_OUTPUT_PAR", "aspm.par")
+  write_run_manifest(list(
+    aspm_max_evals = max_evals,
+    aspm_min_lf_sample_size = min_lf_sample_size,
+    aspm_min_wf_sample_size = min_wf_sample_size,
+    aspm_lf_flag_311 = lf_flag_311,
+    aspm_wf_flag_301 = wf_flag_301,
+    aspm_fix_selectivity = fix_selectivity,
+    aspm_output_par = output_par
+  ))
+  result <- mfk_run_aspm(
+    backend,
+    input_dir = prepared$case_dir,
+    output_dir = file.path(model_dir, "aspm"),
+    frq = prepared$frq,
+    input_par = prepared$start_par,
+    output_par = output_par,
+    max_evals = max_evals,
+    fix_selectivity = fix_selectivity,
+    lf_flag_311 = lf_flag_311,
+    wf_flag_301 = wf_flag_301,
+    min_lf_sample_size = min_lf_sample_size,
+    min_wf_sample_size = min_wf_sample_size,
+    extra_switch_lines = aspm_extra_switch_lines(),
+    run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
+  )
+  saveRDS(result, file.path(model_dir, "aspm_runs.rds"), compress = "xz")
+  try(write.csv(mfk_collect_aspm(model_dir), file.path(model_dir, "aspm-index.csv"), row.names = FALSE), silent = TRUE)
+
 } else if (identical(check_type, "selftest")) {
   runner <- resolve_selftest_runner(env("SELFTEST_RUNNER", ""))
   if (nzchar(runner) && !file.exists(runner)) {
@@ -677,6 +951,15 @@ if (identical(check_type, "jitter")) {
     par = prepared$start_par,
     run_refit = truthy(env("SELFTEST_RUN_REFIT", "true"), TRUE)
   )
+  if (!nzchar(Sys.getenv("selftest_compact_cleanup", ""))) {
+    Sys.setenv(selftest_compact_cleanup = env("SELFTEST_COMPACT_CLEANUP", "1"))
+  }
+  if (!nzchar(Sys.getenv("selftest_keep_model_payload", ""))) {
+    Sys.setenv(selftest_keep_model_payload = env("SELFTEST_KEEP_MODEL_PAYLOAD", "0"))
+  }
+  if (!nzchar(Sys.getenv("selftest_keep_sim_debug", ""))) {
+    Sys.setenv(selftest_keep_sim_debug = env("SELFTEST_KEEP_SIM_DEBUG", "0"))
+  }
   if (nzchar(runner)) args$runner <- runner
   if (nzchar(runner_work_dir)) args$runner_work_dir <- runner_work_dir
   result <- do.call(mfk_run_selftest, args)
@@ -686,6 +969,9 @@ if (identical(check_type, "jitter")) {
   stop("Unsupported CHECK_TYPE: ", check_type, call. = FALSE)
 }
 
+enrich_check_payloads()
+try(mfclkit::mfk_collect_diagnostics(model_dir, write_index = TRUE), silent = TRUE)
+compact_check_outputs()
 try(mfclkit::mfk_collect_diagnostics(model_dir, write_index = TRUE), silent = TRUE)
 payload_index <- build_report_payloads()
 write_check_payload_index(payload_index)
