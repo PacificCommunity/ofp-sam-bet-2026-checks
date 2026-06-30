@@ -264,6 +264,22 @@ matches_selector <- function(row, selector) {
   any(grepl(selector, values, ignore.case = TRUE))
 }
 
+candidate_score <- function(row) {
+  compact_dir <- normalize_loose(as.character(row$compact_dir %||% ""))
+  index_file <- normalize_loose(as.character(row$index_file %||% ""))
+  model_dir <- gsub("\\\\", "/", as.character(row$model_dir %||% ""))
+  payload_role <- as.character(row$payload_role %||% "")
+  score <- 0
+  if (truthy(row$attached_checks %||% "", FALSE)) score <- score + 100
+  if (grepl("(^|/)outputs/models/[^/]+$", compact_dir)) score <- score + 80
+  if (grepl("(^|/)models/[^/]+$", model_dir)) score <- score + 60
+  if (grepl("(^|/)outputs/model-index[.]csv$", index_file)) score <- score + 40
+  if (identical(as.character(row$candidate_type %||% ""), "full_case")) score <- score + 10
+  if (identical(payload_role, "check_model_root")) score <- score - 20
+  if (grepl("(^|/)outputs/checks/", compact_dir)) score <- score - 10
+  score
+}
+
 select_model_output <- function(candidates, selector = env("MODEL_SELECTOR", "")) {
   if (!nrow(candidates)) {
     stop("No model outputs found. Provide MODEL_INPUT_ROOT or Kflow input artifacts.", call. = FALSE)
@@ -276,6 +292,18 @@ select_model_output <- function(candidates, selector = env("MODEL_SELECTOR", "")
     stop("No model output matched MODEL_SELECTOR=", shQuote(selector), call. = FALSE)
   }
   if (nrow(hits) > 1L) {
+    hits$.candidate_score <- vapply(seq_len(nrow(hits)), function(i) {
+      candidate_score(hits[i, , drop = FALSE])
+    }, numeric(1))
+    hits <- hits[order(-hits$.candidate_score, hits$candidate_id), , drop = FALSE]
+    top <- hits[hits$.candidate_score == max(hits$.candidate_score, na.rm = TRUE), , drop = FALSE]
+    top_dirs <- unique(normalize_loose(as.character(top$compact_dir %||% "")))
+    top_dirs <- top_dirs[nzchar(top_dirs)]
+    if (length(top_dirs) == 1L) {
+      selected <- top[normalize_loose(as.character(top$compact_dir %||% "")) == top_dirs[[1L]], , drop = FALSE]
+      selected$.candidate_score <- NULL
+      return(selected[1L, , drop = FALSE])
+    }
     labels <- paste(hits$model_key, hits$compact_dir, sep = " -> ")
     stop(
       "MODEL_SELECTOR matched multiple outputs. Be more specific:\n",
