@@ -275,6 +275,7 @@ info <- mfclkit::mfk_stitch_native_hessian(
   run = run_stitch,
   eigen = run_eigen,
   require_complete = TRUE,
+  fail_on_command_error = FALSE,
   run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
 )
 saveRDS(info, file.path(model_dir, "hessian_merge.rds"), compress = "xz")
