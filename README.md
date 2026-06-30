@@ -12,6 +12,7 @@ Kflow tasks for running `mfclkit` diagnostics on fitted MFCL model outputs:
 - `retro`
 - `selftest`
 - `aspm`
+- `attach-checks`
 
 The tasks are intentionally model-output driven, not stepwise-specific. A run can
 consume either:
@@ -22,6 +23,12 @@ consume either:
 
 This means outputs from stepwise, sensitivity, or later BET model workflows can
 all feed the same checks as long as they expose the same contract.
+
+`attach-checks` is the downstream fan-in task. It takes one original model-run
+artifact plus completed check artifacts, then writes a new model bundle under
+`outputs/models/<model_key>/` with the check folders attached to that model. Use
+that attached bundle as the input to results/report jobs so those downstream
+jobs only need to follow one model artifact.
 
 ## Common Kflow fields
 
@@ -44,6 +51,12 @@ all feed the same checks as long as they expose the same contract.
   bundle.
 - `CHECK_RENDER_REVIEW_HTML`: render a small HTML review for check figures.
   Default is `false`.
+- `ATTACH_CHECK_TYPES`: optional comma/space list of checks to attach in the
+  `attach-checks` task. If unset, every matching completed check input is
+  attached.
+- `TRIGGER_NEXT`: set `false` on `attach-checks` smoke tests to prevent its
+  results trigger from firing. Default Kflow behavior is to trigger downstream
+  jobs when a task with `triggers.on_success` completes.
 
 ## Output contract
 
@@ -68,6 +81,26 @@ profiles, jitter, Hessian, retrospective, self-test, and ASPM diagnostics. This
 lets a Kflow job open MFCL Shiny directly, and lets downstream results/report
 jobs scan the same payload folders later without needing stepwise-specific
 assumptions.
+
+The attached model bundle contract is:
+
+```text
+outputs/
+  models/<model_key>/
+    model_payload.rds
+    model_payload_manifest.{json,csv}
+    final.par
+    jitter/ | retro/ | hessian/ | profile/ | selftest/ | aspm/
+    attached-checks-index.{csv,rds}
+  model-index.csv
+  attached-checks-index.csv
+  attached-model-bundle.{csv,rds}
+```
+
+Original model-run archives are not modified. The attached bundle is a new Kflow
+artifact, which makes reruns and provenance easier to track: if the model-run
+output changes, run the checks again and create a new attached bundle for
+results/report.
 
 ## Check-specific fields
 
@@ -153,7 +186,7 @@ bash run.sh
 
 ## Kflow
 
-Register all six tasks:
+Register all check, merge, and attach tasks:
 
 ```sh
 make kflow-register
@@ -170,6 +203,18 @@ parallel:
 make kflow CHECK_TYPE=jitter MODEL_SELECTOR=08-RegionalCPUE KFLOW_INPUT_JOBS=596
 make kflow-batch CHECK_TYPES="jitter retro hessian aspm" MODEL_SELECTORS="08-RegionalCPUE 15-DataWeighting" KFLOW_INPUT_JOBS="596 603"
 ```
+
+Attach completed check outputs back to a model bundle, then use that attached
+job as the input for results/report:
+
+```sh
+TRIGGER_NEXT=false \
+ATTACH_CHECK_TYPES="jitter retro hessian aspm" \
+make kflow CHECK_TYPE=attach-checks MODEL_SELECTOR=04-NewStructure KFLOW_INPUT_JOBS="607 710 711 712 713"
+```
+
+Leave `TRIGGER_NEXT` unset when you want the `attach-checks` job to trigger the
+registered results task automatically.
 
 For all 15 stepwise models, pass all 15 upstream model jobs and all 15
 selectors. The submit helper creates one Kflow job for each check/model

@@ -173,7 +173,7 @@ local_apps:
         folder <- normalize_loose(folder)
         parent <- parent_model_dir(folder)
         if (!identical(parent, folder)) return(parent)
-        if (basename(folder) %in% c("jitter", "retro", "hessian", "profile", "selftest") &&
+      if (basename(folder) %in% c("jitter", "retro", "aspm", "hessian", "profile", "selftest") &&
             file.exists(file.path(dirname(folder), "model_payload.rds"))) {
           return(normalize_loose(dirname(folder)))
         }
