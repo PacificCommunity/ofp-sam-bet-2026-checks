@@ -114,6 +114,17 @@ copy_if_exists <- function(from, to_dir, to_name = basename(from)) {
   isTRUE(file.copy(from, file.path(to_dir, to_name), overwrite = TRUE, copy.date = TRUE))
 }
 
+profile_input_par <- function(chain_start_par = NULL) {
+  if (!is.null(chain_start_par) &&
+      length(chain_start_par) &&
+      !is.na(chain_start_par[[1L]]) &&
+      nzchar(as.character(chain_start_par[[1L]]))) {
+    basename(as.character(chain_start_par[[1L]]))
+  } else {
+    start_par_name
+  }
+}
+
 relative_to <- function(path, root = output_dir) {
   path <- normalize_loose(path)
   root <- normalize_loose(root)
@@ -590,9 +601,14 @@ if (identical(check_type, "jitter")) {
       input_dir = prepared$case_dir,
       model_dir = model_dir,
       profile = profile,
-      command_fun = function(profile_row, ...) {
-        mfcl_command(output_par = "profile.par", extra = mfk_quantity_profile_switch(profile_row))
+      command_fun = function(profile_row, chain_start_par = NULL, ...) {
+        mfcl_command(
+          input_par = profile_input_par(chain_start_par),
+          output_par = "profile.par",
+          extra = mfk_quantity_profile_switch(profile_row)
+        )
       },
+      chain = truthy(env("PROFILE_CHAIN", "false"), FALSE),
       run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
     )
   } else if (identical(profile_type, "fixed_parameter")) {
@@ -617,7 +633,10 @@ if (identical(check_type, "jitter")) {
         }
         get("apply_profile_point", envir = profile_env)(point_dir, scalar, profile_row)
       },
-      command = mfcl_command(output_par = "profile.par"),
+      command_fun = function(profile_row, chain_start_par = NULL, ...) {
+        mfcl_command(input_par = profile_input_par(chain_start_par), output_par = "profile.par")
+      },
+      chain = truthy(env("PROFILE_CHAIN", "false"), FALSE),
       run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
     )
   } else {

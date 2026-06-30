@@ -12,6 +12,15 @@ import urllib.request
 from typing import Any
 
 
+MERGE_CHECKS = {
+    "jitter": "jitter-merge",
+    "retro": "retro-merge",
+    "selftest": "selftest-merge",
+    "profile": "profile-merge",
+    "hessian": "hessian-merge",
+}
+
+
 def split_values(raw: str) -> list[str]:
     return [part for part in re.split(r"[,\s]+", raw.strip()) if part]
 
@@ -29,6 +38,43 @@ def env_first(*names: str) -> str:
         if str(value).strip():
             return str(value)
     return ""
+
+
+def numeric_values(raw: str) -> list[float]:
+    out: list[float] = []
+    for value in split_values(raw):
+        try:
+            out.append(float(value))
+        except ValueError as exc:
+            raise SystemExit(f"Expected numeric profile value, got {value!r}.") from exc
+    return out
+
+
+def format_number(value: float) -> str:
+    if value.is_integer():
+        return str(int(value))
+    return f"{value:g}"
+
+
+def split_profile_chains(values: list[float], center_raw: str) -> dict[str, list[float]]:
+    if not values:
+        return {}
+    center = None
+    if str(center_raw or "").strip():
+        try:
+            center = float(center_raw)
+        except ValueError as exc:
+            raise SystemExit(f"PROFILE_CENTER must be numeric, got {center_raw!r}.") from exc
+    if center is None:
+        center = min(values, key=lambda value: abs(value - 100.0))
+    left = sorted([value for value in values if value <= center], reverse=True)
+    right = sorted([value for value in values if value > center])
+    out = {}
+    if left:
+        out["left"] = left
+    if right and right != left:
+        out["right"] = right
+    return out
 
 
 def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
@@ -70,17 +116,34 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
         ] or [{"label": "", "env": {}, "metadata": {}}]
 
     if check_key == "profile":
-        values = split_values(env_first("PROFILE_VALUES", "MFK_SCALAR"))
+        values = numeric_values(env_first("PROFILE_VALUES", "MFK_SCALAR"))
         profile_name = os.environ.get("PROFILE_NAME", "profile")
         label_name = profile_name if profile_name and profile_name != "profile" else "scalar"
-        return [
-            {
-                "label": f"{label_name} {value}",
-                "env": {"PROFILE_VALUES": value, "MFK_SCALAR": value},
-                "metadata": {"check_unit_type": "profile_scalar", "check_unit": value},
-            }
-            for value in values
-        ] or [{"label": "", "env": {}, "metadata": {}}]
+        mode = os.environ.get("PROFILE_PARALLEL_MODE", "chains").strip().lower() or "chains"
+        if mode in {"chain", "chains", "left-right", "left_right"}:
+            chains = split_profile_chains(values, os.environ.get("PROFILE_CENTER", ""))
+            return [
+                {
+                    "label": f"{side} chain",
+                    "env": {
+                        "PROFILE_VALUES": " ".join(format_number(value) for value in chain_values),
+                        "PROFILE_CHAIN": "true",
+                        "PROFILE_CHAIN_SIDE": side,
+                    },
+                    "metadata": {
+                        "check_unit_type": "profile_chain",
+                        "check_unit": side,
+                        "profile_chain_values": " ".join(format_number(value) for value in chain_values),
+                    },
+                }
+                for side, chain_values in chains.items()
+            ] or [{"label": "", "env": {}, "metadata": {}}]
+        if mode in {"scalar", "scalars", "point", "points"}:
+            raise SystemExit(
+                "PROFILE_PARALLEL_MODE=scalars is not supported for these checks. "
+                "Use PROFILE_PARALLEL_MODE=chains so profile points run as left/right chains."
+            )
+        raise SystemExit(f"Unsupported PROFILE_PARALLEL_MODE={mode!r}. Use chains.")
 
     if check_key == "hessian":
         parts = split_values(env_first("HESSIAN_PARTS", "HESSIAN_PART"))
@@ -102,6 +165,10 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
         ] or [{"label": "", "env": {}, "metadata": {}}]
 
     return [{"label": "", "env": {}, "metadata": {}}]
+
+
+def merge_check_for(check: str) -> str:
+    return MERGE_CHECKS.get(check.replace("_", "-").lower(), "")
 
 
 def api_json(method: str, url: str, token: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -136,6 +203,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--job-title", default=os.environ.get("JOB_TITLE", ""))
     parser.add_argument("--job-description", default=os.environ.get("JOB_DESCRIPTION", ""))
     parser.add_argument("--parallel-units", default=os.environ.get("KFLOW_PARALLEL_UNITS", "true"))
+    parser.add_argument("--auto-merge", default=os.environ.get("KFLOW_AUTO_MERGE", "true"))
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
@@ -155,9 +223,13 @@ def main() -> int:
     input_jobs = [job.lstrip("#") for job in split_values(args.input_jobs)]
     base_url = args.kflow_url.rstrip("/")
     parallel_units = truthy(args.parallel_units, default=True)
+    auto_merge = truthy(args.auto_merge, default=True)
+
+    submitted_groups: list[dict[str, Any]] = []
 
     for check in checks:
         for model in models:
+            unit_job_ids: list[str] = []
             unit_specs = check_unit_specs(check, parallel_units)
             for unit in unit_specs:
                 task = f"{args.task_prefix}-{check}"
@@ -205,6 +277,11 @@ def main() -> int:
                         continue
                     if key.startswith(env_prefixes) or key == "program_path":
                         env[key] = value
+                if check.replace("_", "-").lower() == "selftest":
+                    env.setdefault(
+                        "SELFTEST_RUN_REFIT",
+                        os.environ.get("SELFTEST_RUN_REFIT", os.environ.get("CHECK_SELFTEST_RUN_REFIT", "true")),
+                    )
                 env.update(unit.get("env", {}))
                 env = {key: value for key, value in env.items() if value not in (None, "")}
                 unit_metadata = unit.get("metadata", {})
@@ -236,11 +313,85 @@ def main() -> int:
                 }
                 if args.dry_run:
                     print(json.dumps({"task": task, "payload": payload}, indent=2, sort_keys=True))
+                    unit_job_ids.append(f"DRY-{check}-{model}-{check_unit or 'unit'}")
                     continue
                 response = api_json("POST", f"{base_url}/api/job/{task}", token, payload)
                 job = response.get("job", response)
                 code = job.get("code") or job.get("id") or "?"
+                if code and code != "?":
+                    unit_job_ids.append(str(code))
                 print(f"submitted {task} {model}: job {code}")
+            submitted_groups.append({"check": check, "model": model, "unit_job_ids": unit_job_ids})
+
+    for group in submitted_groups:
+        check = group["check"]
+        merge_check = merge_check_for(check)
+        unit_job_ids = group["unit_job_ids"]
+        if not auto_merge or not parallel_units or not merge_check or len(unit_job_ids) <= 1:
+            continue
+        model = group["model"]
+        task = f"{args.task_prefix}-{merge_check}"
+        title = args.job_title or f"{merge_check}: {model}"
+        description = args.job_description or f"Merge split {check} check outputs for {model}."
+        env = {
+            "CHECK_TYPE": merge_check,
+            "CHECK_MERGE_TYPE": check,
+            "MODEL_SELECTOR": model,
+            "KFLOW_JOB_TITLE": title,
+            "KFLOW_JOB_DESCRIPTION": description,
+            "MODEL_SOURCE_REPO": args.model_source_repo,
+            "MODEL_SOURCE_REF": args.model_source_ref,
+            "MODEL_SOURCE_PATH": args.model_source_path,
+            "PROGRAM_PATH": args.program_path,
+            "FLOW_GROUP": args.flow_group,
+            "KFLOW_RUNTIME_UPDATE": os.environ.get("KFLOW_RUNTIME_UPDATE", "always"),
+            "TUNA_FLOW_RUNTIME_UPDATE": os.environ.get("TUNA_FLOW_RUNTIME_UPDATE", "always"),
+            "KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS": os.environ.get("KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS", "0"),
+            "KFLOW_RUNTIME_PACKAGES": os.environ.get("KFLOW_RUNTIME_PACKAGES", "mfclkit=PacificCommunity/ofp-sam-mfclkit@main,mfclshiny=PacificCommunity/mfclshiny@main"),
+            "KFLOW_REPO_RUNTIME_PACKAGES": os.environ.get("KFLOW_REPO_RUNTIME_PACKAGES", "none"),
+            "KFLOW_REPO_RUNTIME_UPDATE": os.environ.get("KFLOW_REPO_RUNTIME_UPDATE", "always"),
+            "KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES": os.environ.get("KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES", "true"),
+            "KFLOW_RUNTIME_GITHUB_AUTH": os.environ.get("KFLOW_RUNTIME_GITHUB_AUTH", "true"),
+            "KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME": os.environ.get("KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME", "true"),
+        }
+        for key, value in os.environ.items():
+            if key in {"CHECK_TYPE", "MODEL_SELECTOR", "KFLOW_JOB_TITLE", "KFLOW_JOB_DESCRIPTION"}:
+                continue
+            if key.startswith(("BET_", "JITTER_", "RETRO_", "HESSIAN_", "PROFILE_", "SELFTEST_", "MFK_", "CHECK_", "selftest_")) or key == "program_path":
+                env[key] = value
+        if check == "hessian":
+            env["CHECK_TYPE"] = "hessian_merge"
+        payload = {
+            "env": {key: value for key, value in env.items() if value not in (None, "")},
+            "title": title,
+            "description": description,
+            "input_jobs": unit_job_ids,
+            "metadata": {
+                "flow_group": args.flow_group,
+                "job_title": title,
+                "job_description": description,
+                "check_type": merge_check,
+                "merged_check_type": check,
+                "model_selector": model,
+                "input_jobs": unit_job_ids,
+                "parallel_units": parallel_units,
+                "auto_merge": True,
+            },
+            "tags": {
+                "stage": "checks",
+                "flow": args.flow_group,
+                "check_type": merge_check,
+                "model": model,
+                "merge_for": check,
+            },
+        }
+        if args.dry_run:
+            print(json.dumps({"task": task, "payload": payload}, indent=2, sort_keys=True))
+            continue
+        response = api_json("POST", f"{base_url}/api/job/{task}", token, payload)
+        job = response.get("job", response)
+        code = job.get("code") or job.get("id") or "?"
+        print(f"submitted {task} {model}: job {code}")
     return 0
 
 

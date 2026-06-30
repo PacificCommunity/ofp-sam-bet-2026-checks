@@ -23,7 +23,7 @@ env:
   KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME: "true"
   SELFTEST_REPS: "1"
   SELFTEST_SEED: "20260519"
-  SELFTEST_RUN_REFIT: "false"
+  SELFTEST_RUN_REFIT: "true"
 output_patterns:
   - outputs/**
 metadata:

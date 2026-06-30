@@ -1,16 +1,16 @@
-name: ofp-sam-bet-2026-check-profile
-description: Run mfclkit likelihood profile checks on a fitted MFCL model output.
+name: ofp-sam-bet-2026-check-retro-merge
+description: Merge split mfclkit retrospective checks after parallel retro jobs complete.
 command: bash run.sh
-target_folder: profile
+target_folder: retro-merge
 docker_image: ghcr.io/pacificcommunity/tuna-flow:v2.0
 resources:
   cpus: 2
   memory: 12GB
   disk: 10GB
 env:
-  CHECK_TYPE: profile
-  MODEL_SOURCE_REPO: PacificCommunity/ofp-sam-bet-2026-stepwise
-  MODEL_SOURCE_REF: main
+  CHECK_TYPE: retro-merge
+  CHECK_MERGE_TYPE: retro
+  MODEL_SELECTOR: ""
   PROGRAM_PATH: /home/mfcl/mfclo64
   KFLOW_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@main,mfclshiny=PacificCommunity/mfclshiny@main
   KFLOW_REPO_RUNTIME_PACKAGES: none
@@ -21,54 +21,20 @@ env:
   KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS: "0"
   KFLOW_RUNTIME_GITHUB_AUTH: "true"
   KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME: "true"
-  PROFILE_TYPE: quantity
-  PROFILE_PARALLEL_MODE: chains
-  PROFILE_CHAIN: "true"
-  PROFILE_CHAIN_SIDE: ""
-  PROFILE_CENTER: "100"
-  PROFILE_NAME: adult_biomass
-  PROFILE_QUANTITY: avg_bio
-  PROFILE_VALUES: "70 80 90 100 110 120 130"
 output_patterns:
   - outputs/**
 metadata:
   job_config:
     optional:
       - CHECK_TYPE
+      - CHECK_MERGE_TYPE
       - MODEL_SELECTOR
       - MODEL_INPUT_ROOT
-      - MODEL_SOURCE_REPO
-      - MODEL_SOURCE_REF
-      - MODEL_SOURCE_PATH
-      - MODEL_SOURCE_ROOT
-      - MODEL_FINAL_PAR
-      - CHECK_START_PAR_NAME
       - PROGRAM_PATH
       - FLOW_GROUP
-      - CHECK_DRY_RUN
-      - CHECK_SMOKE_ONLY
       - CHECK_BUILD_REPORT_FIGURES
       - CHECK_REPORT_FIGURE_KEYS
       - CHECK_RENDER_REVIEW_HTML
-      - PROFILE_TYPE
-      - PROFILE_PARALLEL_MODE
-      - PROFILE_CHAIN
-      - PROFILE_CHAIN_SIDE
-      - PROFILE_CENTER
-      - PROFILE_NAME
-      - PROFILE_LABEL
-      - PROFILE_VALUES
-      - PROFILE_QUANTITY
-      - PROFILE_QUANTITY_TYPE
-      - PROFILE_BASE_QUANTITY
-      - PROFILE_AF172
-      - PROFILE_AF173
-      - PROFILE_AF174
-      - PROFILE_PENALTY
-      - PROFILE_REPS
-      - PROFILE_EXTRA_SWITCH
-      - PROFILE_PARAMETER
-      - PROFILE_APPLY_SCRIPT
       - MFK_RUN_MESSAGES
       - KFLOW_RUNTIME_UPDATE
       - TUNA_FLOW_RUNTIME_UPDATE
@@ -81,4 +47,4 @@ metadata:
       - KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME
 tags:
   stage: checks
-  check_type: profile
+  check_type: retro-merge

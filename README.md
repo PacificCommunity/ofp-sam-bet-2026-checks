@@ -79,6 +79,11 @@ the same payload folders later without needing stepwise-specific assumptions.
   run in the same job.
 - `PROFILE_TYPE`: `quantity` or `fixed_parameter`.
 - `PROFILE_VALUES`: comma/space list of profile values.
+- `PROFILE_PARALLEL_MODE`: profile jobs run as left/right chains when split for
+  Kflow. Point-by-point scalar splitting is intentionally unsupported because
+  each side should continue from the previous profile point.
+- `PROFILE_CHAIN`: run profile values sequentially within a job. Default is
+  `true`.
 - `PROFILE_NAME`: profile folder name.
 - `PROFILE_QUANTITY`: quantity profile target, for example `avg_bio` or
   `relative_depletion`.
@@ -88,6 +93,8 @@ the same payload folders later without needing stepwise-specific assumptions.
   project-specific R script that edits copied MFCL inputs for each profile point.
 - `SELFTEST_RUNNER`: optional override for native MFCL self-test. If unset,
   checks use the native self-test runner bundled with `mfclkit`.
+- `SELFTEST_RUN_REFIT`: run self-test refits and write
+  `selftest/refit/rep_*` outputs for mfclshiny. Default is `true`.
 
 ## Local examples
 
