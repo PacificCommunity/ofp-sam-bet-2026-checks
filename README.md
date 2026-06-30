@@ -1,5 +1,9 @@
 # BET 2026 MFCL checks
 
+<p align="right">
+  <a href="#kflow"><img src="kflow-ready.svg" alt="Kflow ready checks"></a>
+</p>
+
 Kflow tasks for running `mfclkit` diagnostics on fitted MFCL model outputs:
 
 - `profile`
