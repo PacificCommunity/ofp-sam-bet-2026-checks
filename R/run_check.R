@@ -280,6 +280,7 @@ stage_report_model_payload <- function() {
     copy_if_exists(file.path(compact_dir, name), model_dir)
   }
   copy_if_exists(prepared$start_par, model_dir, basename(prepared$start_par))
+  copy_existing_diagnostic_dirs(compact_dir, model_dir, exclude = check_type)
 
   index <- check_model_index_row()
   write_check_model_indices(index)
@@ -976,4 +977,11 @@ try(mfclkit::mfk_collect_diagnostics(model_dir, write_index = TRUE), silent = TR
 payload_index <- build_report_payloads()
 write_check_payload_index(payload_index)
 build_report_ready_figures()
+write_attached_model_output(
+  check_model_dir = model_dir,
+  output_dir = output_dir,
+  model_key = model_key,
+  index = prepared$row,
+  check_type = check_type
+)
 message("[checks] wrote outputs under ", model_dir)

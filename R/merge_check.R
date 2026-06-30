@@ -96,6 +96,7 @@ copy_base_model_files <- function(source_dir, target_dir) {
   )) {
     copy_file_if_exists(file.path(source_dir, name), target_dir)
   }
+  copy_existing_diagnostic_dirs(source_dir, target_dir, exclude = check_type)
 }
 
 copy_check_units <- function(source_dirs, target_dir, check_type) {
@@ -511,4 +512,12 @@ if (requireNamespace("mfclshiny", quietly = TRUE)) {
   }
 }
 build_report_ready_figures(model_dir, output_dir, check_type, model_key)
+write_attached_model_output(
+  check_model_dir = model_dir,
+  output_dir = output_dir,
+  model_key = model_key,
+  index = index,
+  check_type = check_type,
+  source_check_dirs = source_model_dirs
+)
 message("[checks] merged ", check_type, " outputs under ", model_dir)

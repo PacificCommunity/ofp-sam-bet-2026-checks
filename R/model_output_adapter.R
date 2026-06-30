@@ -51,6 +51,83 @@ copy_dir <- function(from, to) {
   normalize_loose(to)
 }
 
+diagnostic_dir_names <- function() {
+  c("jitter", "retro", "hessian", "profile", "selftest", "aspm", "projection")
+}
+
+copy_existing_diagnostic_dirs <- function(from, to, exclude = character()) {
+  if (!dir.exists(from)) return(invisible(character()))
+  exclude <- gsub("_", "-", tolower(as.character(exclude)))
+  copied <- character()
+  for (name in diagnostic_dir_names()) {
+    if (gsub("_", "-", tolower(name)) %in% exclude) next
+    source <- file.path(from, name)
+    if (!dir.exists(source)) next
+    target <- file.path(to, name)
+    if (dir.exists(target)) unlink(target, recursive = TRUE, force = TRUE)
+    copied <- c(copied, copy_dir(source, target))
+  }
+  invisible(copied)
+}
+
+write_attached_model_output <- function(check_model_dir,
+                                        output_dir,
+                                        model_key,
+                                        index = data.frame(),
+                                        check_type = env("CHECK_TYPE", ""),
+                                        source_check_dirs = character()) {
+  if (!dir.exists(check_model_dir)) {
+    stop("Check model directory not found: ", check_model_dir, call. = FALSE)
+  }
+  model_key <- gsub("[^A-Za-z0-9_.-]+", "_", as.character(model_key %||% "model"))
+  if (!nzchar(model_key)) model_key <- "model"
+  target_dir <- file.path(output_dir, "models", model_key)
+  copy_dir(check_model_dir, target_dir)
+
+  attached <- data.frame(
+    check_type = check_type,
+    source_check_dir = normalize_loose(check_model_dir),
+    attached_model_dir = normalize_loose(target_dir),
+    source_check_dirs = paste(normalize_loose(source_check_dirs), collapse = " "),
+    attached_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+    stringsAsFactors = FALSE
+  )
+  write.csv(attached, file.path(output_dir, "attached-checks-index.csv"), row.names = FALSE)
+  write.csv(attached, file.path(target_dir, "attached-checks-index.csv"), row.names = FALSE)
+  saveRDS(attached, file.path(target_dir, "attached-checks-index.rds"), compress = "xz")
+
+  index <- as.data.frame(index %||% data.frame(), stringsAsFactors = FALSE)
+  if (!nrow(index)) {
+    index <- data.frame(
+      model_key = model_key,
+      model_label = model_key,
+      step_id = model_key,
+      stringsAsFactors = FALSE
+    )
+  }
+  index <- index[seq_len(1L), , drop = FALSE]
+  index$model_dir <- file.path("models", model_key)
+  index$model_folder <- model_key
+  index$attached_checks <- TRUE
+  index$attached_check_type <- check_type
+  index$attached_at <- attached$attached_at[[1L]]
+  index$attached_model_dir <- normalize_loose(target_dir)
+  write.csv(index, file.path(output_dir, "model-index.csv"), row.names = FALSE)
+
+  manifest <- data.frame(
+    schema = "ofp-sam.checks.attached-model-bundle.v1",
+    created_at = attached$attached_at[[1L]],
+    model_key = model_key,
+    check_type = check_type,
+    check_model_dir = normalize_loose(check_model_dir),
+    attached_model_dir = normalize_loose(target_dir),
+    stringsAsFactors = FALSE
+  )
+  write.csv(manifest, file.path(output_dir, "attached-model-bundle.csv"), row.names = FALSE)
+  saveRDS(as.list(manifest), file.path(output_dir, "attached-model-bundle.rds"), compress = "xz")
+  invisible(target_dir)
+}
+
 bind_rows_fill <- function(rows) {
   rows <- rows[vapply(rows, function(x) is.data.frame(x) && nrow(x), logical(1))]
   if (!length(rows)) return(data.frame(stringsAsFactors = FALSE))

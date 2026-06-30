@@ -264,7 +264,7 @@ def main() -> int:
                 }
                 env_prefixes = (
                     "BET_", "JITTER_", "RETRO_", "HESSIAN_", "PROFILE_", "ASPM_",
-                    "SELFTEST_", "ATTACH_", "MFK_", "CHECK_", "selftest_",
+                    "SELFTEST_", "MFK_", "CHECK_", "selftest_",
                 )
                 passthrough_env = {"TRIGGER_NEXT"}
                 protected_env = {
@@ -358,7 +358,7 @@ def main() -> int:
         for key, value in os.environ.items():
             if key in {"CHECK_TYPE", "MODEL_SELECTOR", "KFLOW_JOB_TITLE", "KFLOW_JOB_DESCRIPTION"}:
                 continue
-            if key.startswith(("BET_", "JITTER_", "RETRO_", "HESSIAN_", "PROFILE_", "ASPM_", "SELFTEST_", "ATTACH_", "MFK_", "CHECK_", "selftest_")) or key in {"TRIGGER_NEXT"} or key == "program_path":
+            if key.startswith(("BET_", "JITTER_", "RETRO_", "HESSIAN_", "PROFILE_", "ASPM_", "SELFTEST_", "MFK_", "CHECK_", "selftest_")) or key in {"TRIGGER_NEXT"} or key == "program_path":
                 env[key] = value
         if check == "hessian":
             env["CHECK_TYPE"] = "hessian_merge"

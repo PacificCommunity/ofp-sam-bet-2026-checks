@@ -191,6 +191,7 @@ for (name in c(
 )) {
   copy_file_if_exists(file.path(base_model_dir, name), model_dir)
 }
+copy_existing_diagnostic_dirs(base_model_dir, model_dir, exclude = "hessian")
 
 case_files <- unique(unlist(lapply(c(
   "[.]frq$",
@@ -296,4 +297,12 @@ saveRDS(as.list(manifest), file.path(model_dir, "check_manifest.rds"), compress 
 try(mfclkit::mfk_collect_diagnostics(model_dir, write_index = TRUE), silent = TRUE)
 compact_hessian_merge_outputs()
 try(mfclkit::mfk_collect_diagnostics(model_dir, write_index = TRUE), silent = TRUE)
+write_attached_model_output(
+  check_model_dir = model_dir,
+  output_dir = output_dir,
+  model_key = model_key,
+  index = index,
+  check_type = "hessian",
+  source_check_dirs = source_model_dirs
+)
 message("[checks] merged Hessian parts under ", model_dir)
