@@ -509,25 +509,23 @@ manifest <- data.frame(
 write.csv(manifest, file.path(model_dir, "check_manifest.csv"), row.names = FALSE)
 saveRDS(as.list(manifest), file.path(model_dir, "check_manifest.rds"), compress = "xz")
 
-if (!isTRUE(smoke_only)) {
-  enrich_merged_check_payloads()
-  try(mfclkit::mfk_collect_diagnostics(model_dir, write_index = TRUE), silent = TRUE)
-  compact_merged_check_outputs()
-  try(mfclkit::mfk_collect_diagnostics(model_dir, write_index = TRUE), silent = TRUE)
-  if (requireNamespace("mfclshiny", quietly = TRUE)) {
-    payload_index <- tryCatch(
-      mfclshiny::build_model_payloads(model_dir, recursive = TRUE, overwrite = TRUE),
-      error = function(e) {
-        warning("mfclshiny payload build failed: ", conditionMessage(e), call. = FALSE)
-        data.frame()
-      }
-    )
-    if (is.data.frame(payload_index)) {
-      write.csv(payload_index, file.path(model_dir, "payload-build-index.csv"), row.names = FALSE)
+enrich_merged_check_payloads()
+try(mfclkit::mfk_collect_diagnostics(model_dir, write_index = TRUE), silent = TRUE)
+compact_merged_check_outputs()
+try(mfclkit::mfk_collect_diagnostics(model_dir, write_index = TRUE), silent = TRUE)
+if (requireNamespace("mfclshiny", quietly = TRUE)) {
+  payload_index <- tryCatch(
+    mfclshiny::build_model_payloads(model_dir, recursive = TRUE, overwrite = TRUE),
+    error = function(e) {
+      warning("mfclshiny payload build failed: ", conditionMessage(e), call. = FALSE)
+      data.frame()
     }
+  )
+  if (is.data.frame(payload_index)) {
+    write.csv(payload_index, file.path(model_dir, "payload-build-index.csv"), row.names = FALSE)
   }
-  build_report_ready_figures(model_dir, output_dir, check_type, model_key)
 }
+if (!isTRUE(smoke_only)) build_report_ready_figures(model_dir, output_dir, check_type, model_key)
 write_attached_model_output(
   check_model_dir = model_dir,
   output_dir = output_dir,

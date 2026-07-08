@@ -70,6 +70,59 @@ copy_existing_diagnostic_dirs <- function(from, to, exclude = character()) {
   invisible(copied)
 }
 
+refresh_diagnostic_model_bundle <- function(model_dir) {
+  if (!dir.exists(model_dir)) return(invisible(FALSE))
+  status <- data.frame(
+    step = character(),
+    ok = logical(),
+    message = character(),
+    stringsAsFactors = FALSE
+  )
+  add_status <- function(step, ok, message = "") {
+    status[nrow(status) + 1L, ] <<- list(step, isTRUE(ok), as.character(message %||% ""))
+  }
+
+  if (requireNamespace("mfclkit", quietly = TRUE)) {
+    err <- tryCatch({
+      mfclkit::mfk_collect_diagnostics(model_dir, write_index = TRUE)
+      NULL
+    }, error = function(e) e)
+    add_status("mfclkit_collect_diagnostics_before_payload", is.null(err), if (is.null(err)) "" else conditionMessage(err))
+  } else {
+    add_status("mfclkit_collect_diagnostics_before_payload", FALSE, "mfclkit is not installed")
+  }
+
+  if (requireNamespace("mfclshiny", quietly = TRUE) &&
+      "build_model_payload" %in% getNamespaceExports("mfclshiny")) {
+    err <- tryCatch({
+      args <- list(
+        folder = model_dir,
+        recursive = FALSE,
+        overwrite = TRUE,
+        object_cache = Sys.getenv("MFCLSHINY_PAYLOAD_OBJECT_CACHE", "all"),
+        artifacts = Sys.getenv("MFCLSHINY_PAYLOAD_ARTIFACTS", "core")
+      )
+      available <- names(formals(mfclshiny::build_model_payload))
+      do.call(mfclshiny::build_model_payload, args[intersect(names(args), available)])
+      NULL
+    }, error = function(e) e)
+    add_status("mfclshiny_build_model_payload", is.null(err), if (is.null(err)) "" else conditionMessage(err))
+  } else {
+    add_status("mfclshiny_build_model_payload", FALSE, "mfclshiny::build_model_payload is not available")
+  }
+
+  if (requireNamespace("mfclkit", quietly = TRUE)) {
+    err <- tryCatch({
+      mfclkit::mfk_collect_diagnostics(model_dir, write_index = TRUE)
+      NULL
+    }, error = function(e) e)
+    add_status("mfclkit_collect_diagnostics_after_payload", is.null(err), if (is.null(err)) "" else conditionMessage(err))
+  }
+
+  write.csv(status, file.path(model_dir, "diagnostic-refresh-status.csv"), row.names = FALSE)
+  invisible(all(status$ok))
+}
+
 write_attached_model_output <- function(check_model_dir,
                                         output_dir,
                                         model_key,
@@ -95,6 +148,7 @@ write_attached_model_output <- function(check_model_dir,
   write.csv(attached, file.path(output_dir, "attached-checks-index.csv"), row.names = FALSE)
   write.csv(attached, file.path(target_dir, "attached-checks-index.csv"), row.names = FALSE)
   saveRDS(attached, file.path(target_dir, "attached-checks-index.rds"), compress = "xz")
+  refresh_diagnostic_model_bundle(target_dir)
 
   index <- as.data.frame(index %||% data.frame(), stringsAsFactors = FALSE)
   if (!nrow(index)) {

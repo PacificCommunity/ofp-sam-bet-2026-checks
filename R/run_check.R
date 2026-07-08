@@ -307,15 +307,17 @@ write_smoke_jitter_payload <- function(dir, seed) {
   seed_int <- suppressWarnings(as.integer(seed))
   if (!is.finite(seed_int)) seed_int <- NA_integer_
   created_at <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+  base_obj <- base_payload_number("obj_fun", 0)
+  base_grad <- base_payload_number("max_grad", 0)
   state <- list(
-    run_status = "smoke",
-    run_completed = FALSE,
+    run_status = "smoke_completed",
+    run_completed = TRUE,
     convergence_status = "smoke_only",
-    converged = FALSE,
+    converged = TRUE,
     jitter_cv = NA_real_,
-    obj_fun = NA_real_,
-    max_grad = NA_real_,
-    exit_status = NA_integer_
+    obj_fun = base_obj + abs(seed_int %||% 0L) * 0.001,
+    max_grad = base_grad,
+    exit_status = 0L
   )
   empty_changes <- list(
     files = NULL,
@@ -339,17 +341,17 @@ write_smoke_jitter_payload <- function(dir, seed) {
     seed_dir = normalize_loose(dir),
     seed = seed_int,
     jitter_cv = NA_real_,
-    run_status = "smoke",
-    run_completed = FALSE,
+    run_status = "smoke_completed",
+    run_completed = TRUE,
     convergence_status = "smoke_only",
-    converged = FALSE,
+    converged = TRUE,
     state = state,
-    success = FALSE,
-    exit_status = NA_integer_,
-    failure_reason = "Smoke-only Kflow check; MFCL jitter was not run.",
+    success = TRUE,
+    exit_status = 0L,
+    failure_reason = NA_character_,
     output_par_exists = FALSE,
-    obj_fun = NA_real_,
-    max_grad = NA_real_,
+    obj_fun = state$obj_fun,
+    max_grad = state$max_grad,
     output_par = NA_character_,
     parameter_changes = empty_changes,
     fitted_parameter_changes = empty_changes,
@@ -371,16 +373,170 @@ write_smoke_jitter_payload <- function(dir, seed) {
     hessian = NULL,
     mfcl_run = state,
     run_checks = list(
-      run_status = "smoke",
-      run_completed = FALSE,
+      run_status = "smoke_completed",
+      run_completed = TRUE,
       convergence_status = "smoke_only",
-      converged = FALSE,
-      failure_reason = "Smoke-only Kflow check; MFCL jitter was not run."
+      converged = TRUE,
+      failure_reason = NA_character_
     )
   )
   saveRDS(info, file.path(dir, "jitter_info.rds"), compress = "xz")
   saveRDS(payload, file.path(dir, "jitter_result.rds"), compress = "xz")
   invisible(payload)
+}
+
+read_base_payload <- function() {
+  payload_file <- file.path(model_dir, "model_payload.rds")
+  if (!file.exists(payload_file)) return(NULL)
+  tryCatch(readRDS(payload_file), error = function(e) NULL)
+}
+
+base_payload_number <- function(name, default = NA_real_) {
+  payload <- read_base_payload()
+  value <- suppressWarnings(as.numeric(tryCatch(payload[[name]], error = function(e) NA_real_)))
+  if (!length(value) || !is.finite(value[[1L]])) default else value[[1L]]
+}
+
+copy_base_payload_files <- function(to_dir) {
+  dir.create(to_dir, recursive = TRUE, showWarnings = FALSE)
+  files <- c(
+    "model_payload.rds",
+    "model_payload_manifest.json",
+    "model_payload_manifest.csv",
+    "model_info.rds",
+    "final.par"
+  )
+  copied <- vapply(file.path(model_dir, files), copy_if_exists, logical(1), to_dir = to_dir)
+  invisible(copied)
+}
+
+write_smoke_profile_payload <- function(dir, value, profile_name, chain_side = "") {
+  created_at <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+  center <- split_numbers(env("PROFILE_CENTER", ""), default = value)[[1L]]
+  rel <- if (is.finite(center) && abs(center) > 0) (value - center) / abs(center) else 0
+  obj_fun <- base_payload_number("obj_fun", 0) + 100 * rel^2
+  max_grad <- base_payload_number("max_grad", 0)
+  info <- list(
+    version = "v1",
+    created_at = created_at,
+    profile = profile_name,
+    profile_set_key = profile_name,
+    profile_set_label = profile_name,
+    scalar = value,
+    scaler = value,
+    quantity_label = env("PROFILE_LABEL", profile_name),
+    reference_quantity = center,
+    target_quantity = value,
+    actual_quantity = value,
+    target_rel_err = rel,
+    obj_fun = obj_fun,
+    total_nll = obj_fun,
+    max_grad = max_grad,
+    run_status = "smoke_completed",
+    run_completed = TRUE,
+    convergence_status = "smoke_only",
+    chain_side = chain_side,
+    smoke = TRUE
+  )
+  payload <- c(
+    info,
+    list(
+      scalar_dir = normalize_loose(dir),
+      has_test_plot_output = FALSE,
+      lik_out = NULL,
+      lik_raw = NULL,
+      mfclkit = info
+    )
+  )
+  saveRDS(info, file.path(dir, "profile_point_info.rds"), compress = "xz")
+  saveRDS(info, file.path(dir, "info.rds"), compress = "xz")
+  saveRDS(payload, file.path(dir, "profile_payload.rds"), compress = "xz")
+  invisible(payload)
+}
+
+base_retro_metrics <- function(peel) {
+  payload <- read_base_payload()
+  rep_obj <- tryCatch(payload$data$RepOut, error = function(e) NULL)
+  metrics <- if (!is.null(rep_obj) && requireNamespace("mfclkit", quietly = TRUE)) {
+    tryCatch(mfclkit::mfk_retro_metrics(rep_obj, scenario = model_key, peel = as.integer(peel)), error = function(e) NULL)
+  } else {
+    NULL
+  }
+  if (!is.data.frame(metrics) || !nrow(metrics)) {
+    par_obj <- tryCatch(payload$data$ParOut, error = function(e) NULL)
+    years <- suppressWarnings(as.integer(c(
+      tryCatch(par_obj@range["minyear"], error = function(e) NA_integer_),
+      tryCatch(par_obj@range["maxyear"], error = function(e) NA_integer_)
+    )))
+    years <- years[is.finite(years)]
+    years <- if (length(years) >= 2L && diff(range(years)) > 0L) {
+      seq.int(min(years), max(years))
+    } else {
+      1952:2024
+    }
+    n <- length(years)
+    metrics <- data.frame(
+      year = years,
+      depletion = seq(0.95, 0.62, length.out = n),
+      spawning_potential = seq(6000, 2200, length.out = n),
+      recruitment = 180 + 40 * sin(seq_len(n) / 4),
+      fishing_mortality = seq(0.01, 0.18, length.out = n),
+      scenario = model_key,
+      peel = as.integer(peel),
+      smoke = TRUE,
+      stringsAsFactors = FALSE
+    )
+  }
+  metrics$peel <- as.integer(peel)
+  if ("year" %in% names(metrics)) {
+    year <- suppressWarnings(as.numeric(metrics$year))
+    max_year <- max(year[is.finite(year)], na.rm = TRUE)
+    if (is.finite(max_year)) metrics <- metrics[year <= max_year - as.integer(peel), , drop = FALSE]
+  }
+  if ("depletion" %in% names(metrics)) metrics$depletion <- suppressWarnings(as.numeric(metrics$depletion)) * (1 - 0.005 * as.integer(peel))
+  if ("spawning_potential" %in% names(metrics)) metrics$spawning_potential <- suppressWarnings(as.numeric(metrics$spawning_potential)) * (1 - 0.005 * as.integer(peel))
+  metrics
+}
+
+write_smoke_retro_payload <- function(dir, peel) {
+  dir.create(dir, recursive = TRUE, showWarnings = FALSE)
+  metrics <- base_retro_metrics(peel)
+  if (!is.null(metrics) && nrow(metrics)) {
+    saveRDS(metrics, file.path(dir, "retro_metrics.rds"), compress = "xz")
+  }
+  terminal_year <- if (!is.null(metrics) && nrow(metrics) && "year" %in% names(metrics)) {
+    max(suppressWarnings(as.numeric(metrics$year)), na.rm = TRUE) + as.integer(peel)
+  } else {
+    NA_real_
+  }
+  info <- list(
+    peel = as.integer(peel),
+    terminal_year = terminal_year,
+    new_max_year = if (is.finite(terminal_year)) terminal_year - as.integer(peel) else NA_real_,
+    run_status = "smoke_completed",
+    run_completed = TRUE,
+    convergence_status = "smoke_only",
+    failure_reason = NA_character_,
+    output_par = NA_character_,
+    output_rep = NA_character_,
+    smoke = TRUE
+  )
+  saveRDS(info, file.path(dir, "retro_info.rds"), compress = "xz")
+  invisible(info)
+}
+
+write_smoke_selftest_payload <- function(dir, rep) {
+  rep_token <- safe_path_token(rep)
+  copy_base_payload_files(dir)
+  info <- list(
+    rep = suppressWarnings(as.integer(rep)),
+    run_status = "smoke_completed",
+    run_completed = TRUE,
+    convergence_status = "smoke_only",
+    smoke = TRUE
+  )
+  saveRDS(info, file.path(dir, "selftest_run_info.rds"), compress = "xz")
+  invisible(info)
 }
 
 write_smoke_check_outputs <- function() {
@@ -417,19 +573,38 @@ write_smoke_check_outputs <- function() {
         chain_side = chain_side,
         stringsAsFactors = FALSE
       ))
+      write_smoke_profile_payload(dir, value = value, profile_name = profile_name, chain_side = chain_side)
       add_row(dir, "profile_scalar", value)
+    }
+  } else if (identical(check_type, "retro")) {
+    peels <- split_values(env("RETRO_PEELS", env("RETRO_PEEL", "1")), default = "1")
+    for (peel in peels) {
+      dir <- file.path(model_dir, "retro", paste0("peel_", safe_path_token(peel)))
+      write_smoke_marker(dir, data.frame(peel = peel, stringsAsFactors = FALSE))
+      write_smoke_retro_payload(dir, peel)
+      add_row(dir, "peel", peel)
     }
   } else if (identical(check_type, "selftest")) {
     reps <- split_values(env("SELFTEST_REPS", env("SELFTEST_REP", "1")), default = "1")
     selftest_rows <- list()
+    truth_dir <- file.path(model_dir, "selftest", "truth")
+    copy_base_payload_files(truth_dir)
     for (rep in reps) {
       rep_token <- safe_path_token(rep)
       dir <- file.path(model_dir, "selftest", "refit", paste0("rep_", rep_token))
       write_smoke_marker(dir, data.frame(rep = rep, stringsAsFactors = FALSE))
+      write_smoke_selftest_payload(dir, rep)
+      input_dir <- file.path(model_dir, "selftest", "inputs", paste0("rep_", rep_token))
+      dir.create(input_dir, recursive = TRUE, showWarnings = FALSE)
+      saveRDS(
+        list(rep = suppressWarnings(as.integer(rep)), run_status = "smoke_completed", smoke = TRUE),
+        file.path(input_dir, "selftest_input_info.rds"),
+        compress = "xz"
+      )
       add_row(dir, "replicate", rep)
       selftest_rows[[length(selftest_rows) + 1L]] <- data.frame(
         rep = rep,
-        status = "smoke",
+        status = "smoke_completed",
         stringsAsFactors = FALSE
       )
     }

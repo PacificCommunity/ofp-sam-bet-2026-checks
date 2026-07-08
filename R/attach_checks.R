@@ -213,6 +213,7 @@ if (!nrow(attached)) {
 write.csv(attached, file.path(output_dir, "attached-checks-index.csv"), row.names = FALSE)
 write.csv(attached, file.path(target_dir, "attached-checks-index.csv"), row.names = FALSE)
 saveRDS(attached, file.path(target_dir, "attached-checks-index.rds"), compress = "xz")
+refresh_diagnostic_model_bundle(target_dir)
 
 index <- as.data.frame(base_selected, stringsAsFactors = FALSE)
 index <- index[seq_len(1L), , drop = FALSE]

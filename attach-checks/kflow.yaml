@@ -24,7 +24,7 @@ env:
   KFLOW_REPORT_COMMIT_GENERATED: "false"
   KFLOW_REPORT_PUSH_GENERATED: "false"
   KFLOW_REPORT_PUBLISH_REQUIRED: "false"
-  KFLOW_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@main,mfclshiny=PacificCommunity/mfclshiny@66ced746ab734f350a183e9790df980e0250f3df
+  KFLOW_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@main,mfclshiny=PacificCommunity/mfclshiny@c541c769a8161b57710c92a9300ae5fcb5d5a5a3
   KFLOW_REPO_RUNTIME_PACKAGES: none
   KFLOW_REPO_RUNTIME_UPDATE: always
   KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
@@ -94,8 +94,8 @@ triggers:
         TUNA_FLOW_RUNTIME_UPDATE: never
         KFLOW_REPO_RUNTIME_UPDATE: auto
         KFLOW_RUNTIME_PACKAGES: none
-        KFLOW_REPO_RUNTIME_PACKAGES: mfclshiny=PacificCommunity/mfclshiny@66ced746ab734f350a183e9790df980e0250f3df
-        MFCLSHINY_GITHUB_REF: 66ced746ab734f350a183e9790df980e0250f3df
+        KFLOW_REPO_RUNTIME_PACKAGES: mfclshiny=PacificCommunity/mfclshiny@c541c769a8161b57710c92a9300ae5fcb5d5a5a3
+        MFCLSHINY_GITHUB_REF: c541c769a8161b57710c92a9300ae5fcb5d5a5a3
         MFCLSHINY_REPORT_DPI: "180"
         MFCLSHINY_OPTIMIZE_FIGURES: "false"
         PLOT_OPTIMIZE_FIGURES: "true"

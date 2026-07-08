@@ -272,9 +272,31 @@ run_eigen <- truthy(env("HESSIAN_MERGE_EIGEN", if (isTRUE(smoke_only)) "false" e
 info <- if (isTRUE(smoke_only)) {
   list(
     schema = "ofp-sam.checks.hessian_merge_smoke.v1",
-    model_key = model_key,
-    parts = part_numbers,
-    n_parts = length(part_numbers),
+    meta = list(
+      hessian_dir = normalize_loose(hessian_dir),
+      root_name = model_key,
+      model_key = model_key,
+      parts = part_numbers,
+      n_parts = length(part_numbers)
+    ),
+    stitch = list(
+      run = FALSE,
+      stitched_hessian_file = NA_character_
+    ),
+    eigen = list(
+      run = FALSE,
+      n_negative_eigenvalues = NA_integer_,
+      n_total_eigenvalues = NA_integer_,
+      hessian_status = "smoke_only",
+      reliability = "SMOKE"
+    ),
+    diagnostics = list(
+      summary = list(
+        hessian_ok = NA,
+        pdh = list(is_pdh = NA),
+        spd = NA
+      )
+    ),
     smoke = TRUE,
     run_stitch = run_stitch,
     run_eigen = run_eigen
@@ -292,6 +314,7 @@ info <- if (isTRUE(smoke_only)) {
   )
 }
 saveRDS(info, file.path(model_dir, "hessian_merge.rds"), compress = "xz")
+saveRDS(info, file.path(hessian_dir, "hessian_info.rds"), compress = "xz")
 
 rows <- list()
 for (source_parent in unique(dirname(source_model_dirs))) {
