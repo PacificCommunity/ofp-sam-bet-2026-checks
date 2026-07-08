@@ -395,6 +395,7 @@ def main() -> int:
                 "input_jobs": unit_job_ids,
                 "parallel_units": parallel_units,
                 "auto_merge": True,
+                "allow_failed_input_jobs": True,
             },
             "tags": {
                 "stage": "checks",

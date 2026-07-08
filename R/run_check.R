@@ -1568,3 +1568,17 @@ write_attached_model_output(
   check_type = check_type
 )
 message("[checks] wrote outputs under ", model_dir)
+
+final_summary <- tryCatch(
+  readRDS(file.path(model_dir, "check-summary.rds")),
+  error = function(e) NULL
+)
+has_failed_units <- isTRUE(final_summary$has_failures %||% FALSE)
+fail_on_failed_units <- truthy(env("CHECK_FAIL_ON_FAILED_UNITS", "true"), TRUE)
+if (isTRUE(fail_on_failed_units) && isTRUE(has_failed_units)) {
+  n_failed <- suppressWarnings(as.integer(final_summary$n_failed %||% NA_integer_))
+  if (!is.finite(n_failed)) n_failed <- NA_integer_
+  message("[checks] failing task because ", check_type, " has failed diagnostic unit(s)",
+          if (is.finite(n_failed)) paste0(": ", n_failed) else "")
+  quit(save = "no", status = 1)
+}
