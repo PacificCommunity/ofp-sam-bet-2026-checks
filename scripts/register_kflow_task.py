@@ -129,6 +129,17 @@ def build_payload(config: dict[str, Any], repo_root: Path, existing: dict[str, A
         "input_jobs": config.get("input_jobs", []),
         "triggers": config.get("triggers", {}),
     }
+
+    for key, env_name in (
+        ("owner_login", "KFLOW_OWNER_LOGIN"),
+        ("remote_user", "KFLOW_REMOTE_USER"),
+        ("remote_host", "KFLOW_REMOTE_HOST"),
+        ("remote_base_dir", "KFLOW_REMOTE_BASE_DIR"),
+    ):
+        value = first_present(config.get(key), os.environ.get(env_name), existing.get(key))
+        if value is not None:
+            payload[key] = value
+
     return {key: value for key, value in payload.items() if value is not None}
 
 
