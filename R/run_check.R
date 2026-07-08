@@ -303,6 +303,86 @@ write_smoke_marker <- function(dir, data) {
   invisible(dir)
 }
 
+write_smoke_jitter_payload <- function(dir, seed) {
+  seed_int <- suppressWarnings(as.integer(seed))
+  if (!is.finite(seed_int)) seed_int <- NA_integer_
+  created_at <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+  state <- list(
+    run_status = "smoke",
+    run_completed = FALSE,
+    convergence_status = "smoke_only",
+    converged = FALSE,
+    jitter_cv = NA_real_,
+    obj_fun = NA_real_,
+    max_grad = NA_real_,
+    exit_status = NA_integer_
+  )
+  empty_changes <- list(
+    files = NULL,
+    labels = data.frame(stringsAsFactors = FALSE),
+    summary = data.frame(stringsAsFactors = FALSE),
+    family_stats = data.frame(stringsAsFactors = FALSE),
+    overall_stats = data.frame(stringsAsFactors = FALSE)
+  )
+  info <- list(
+    seed = seed_int,
+    jitter_cv = NA_real_,
+    smoke = TRUE,
+    created_at = created_at,
+    output_par = NA_character_,
+    state = state,
+    mfcl_run = state
+  )
+  payload <- list(
+    version = "v1",
+    created_at = created_at,
+    seed_dir = normalize_loose(dir),
+    seed = seed_int,
+    jitter_cv = NA_real_,
+    run_status = "smoke",
+    run_completed = FALSE,
+    convergence_status = "smoke_only",
+    converged = FALSE,
+    state = state,
+    success = FALSE,
+    exit_status = NA_integer_,
+    failure_reason = "Smoke-only Kflow check; MFCL jitter was not run.",
+    output_par_exists = FALSE,
+    obj_fun = NA_real_,
+    max_grad = NA_real_,
+    output_par = NA_character_,
+    parameter_changes = empty_changes,
+    fitted_parameter_changes = empty_changes,
+    derived_quantities = data.frame(stringsAsFactors = FALSE),
+    age_curves = data.frame(stringsAsFactors = FALSE),
+    hessian_ok = NA,
+    hessian_info = list(
+      requested = FALSE,
+      attempted = FALSE,
+      run_ok = NA,
+      pdh = NA,
+      spd = NA,
+      n_negative_eigenvalues = NA_integer_,
+      n_total_eigenvalues = NA_integer_,
+      hessian_status = "not_requested",
+      reliability = NA_character_,
+      error = NA_character_
+    ),
+    hessian = NULL,
+    mfcl_run = state,
+    run_checks = list(
+      run_status = "smoke",
+      run_completed = FALSE,
+      convergence_status = "smoke_only",
+      converged = FALSE,
+      failure_reason = "Smoke-only Kflow check; MFCL jitter was not run."
+    )
+  )
+  saveRDS(info, file.path(dir, "jitter_info.rds"), compress = "xz")
+  saveRDS(payload, file.path(dir, "jitter_result.rds"), compress = "xz")
+  invisible(payload)
+}
+
 write_smoke_check_outputs <- function() {
   rows <- list()
   add_row <- function(dir, unit_type, unit) {
@@ -321,6 +401,7 @@ write_smoke_check_outputs <- function() {
     for (seed in seeds) {
       dir <- file.path(model_dir, "jitter", paste0("jitter_seed_", safe_path_token(seed)))
       write_smoke_marker(dir, data.frame(seed = seed, stringsAsFactors = FALSE))
+      write_smoke_jitter_payload(dir, seed)
       add_row(dir, "seed", seed)
     }
   } else if (identical(check_type, "profile")) {
