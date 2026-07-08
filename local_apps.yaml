@@ -14,8 +14,9 @@ local_apps:
       VECLIB_MAXIMUM_THREADS: "1"
       NUMEXPR_NUM_THREADS: "1"
       R_REMOTES_NO_ERRORS_FROM_WARNINGS: "true"
-      MFCLSHINY_GITHUB_REF: main
-      MFCLKIT_GITHUB_REF: main
+      KFLOW_LOCAL_APP_PACKAGE_UPDATE: "never"
+      MFCLSHINY_GITHUB_REF: bd3beedbf2585f9d517ea384d7db84a6b56c61cb
+      MFCLKIT_GITHUB_REF: 355d07842cec9fa2a18d4d77f496a12954514880
       MFCLSHINY_AUTO_LOAD: "true"
       MFCLSHINY_REPORT_DPI: "96"
       MFCLSHINY_OPTIMIZE_FIGURES: "true"
@@ -254,7 +255,7 @@ local_apps:
       mfclshiny::run_mfclshiny(
         model_dir = staging_root,
         export_dir = "/kflow/work/export",
-        report_ready_export = TRUE,
+        report_ready_export = FALSE,
         host = "0.0.0.0",
         port = as.integer(Sys.getenv("PORT", "3838")),
         launch.browser = FALSE
