@@ -21,7 +21,16 @@ dir.create(model_dir, recursive = TRUE, showWarnings = FALSE)
 
 program_token <- basename(program_path)
 frq_name <- basename(prepared$frq)
-start_par_name <- basename(prepared$start_par)
+check_start_par <- tryCatch(
+  mfclkit::mfk_latest_par(prepared$case_dir, required = FALSE),
+  error = function(e) NA_character_
+)
+if (!file.exists(check_start_par)) check_start_par <- prepared$start_par
+start_par_name <- basename(check_start_par)
+if (!identical(normalize_loose(check_start_par), normalize_loose(prepared$start_par))) {
+  message("[checks] using fitted start par ", start_par_name,
+          " instead of staged ", basename(prepared$start_par))
+}
 
 mfcl_command <- function(input_par = start_par_name, output_par = "check.par", extra = character()) {
   c(program_token, frq_name, input_par, output_par, extra)
@@ -279,7 +288,7 @@ stage_report_model_payload <- function() {
   )) {
     copy_if_exists(file.path(compact_dir, name), model_dir)
   }
-  copy_if_exists(prepared$start_par, model_dir, basename(prepared$start_par))
+  copy_if_exists(check_start_par, model_dir, basename(check_start_par))
   copy_existing_diagnostic_dirs(compact_dir, model_dir, exclude = check_type)
 
   index <- check_model_index_row()
@@ -1075,7 +1084,9 @@ write_run_manifest <- function(extra = list()) {
       model_dir = normalizePath(model_dir, winslash = "/", mustWork = FALSE),
       program_path = program_path,
       frq = frq_name,
-      start_par = start_par_name
+      start_par = start_par_name,
+      start_par_path = normalize_loose(check_start_par),
+      staged_start_par = basename(prepared$start_par)
     ),
     extra
   )
@@ -1116,7 +1127,7 @@ if (identical(check_type, "jitter")) {
     seeds = seeds,
     cv = cv,
     jitter_args = list(include_slots = slots),
-    par = prepared$start_par,
+    par = check_start_par,
     start_par_name = "00.par",
     command = jitter_command,
     run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
@@ -1163,7 +1174,7 @@ if (identical(check_type, "jitter")) {
       output_dir = file.path(model_dir, "hessian", paste0("part_", part)),
       part = part,
       nsplit = nsplit,
-      par = prepared$start_par,
+      par = check_start_par,
       frq = prepared$frq,
       compact = truthy(env("HESSIAN_COMPACT", "true"), TRUE),
       run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
@@ -1272,7 +1283,7 @@ if (identical(check_type, "jitter")) {
     input_dir = prepared$case_dir,
     output_dir = file.path(model_dir, "aspm"),
     frq = prepared$frq,
-    input_par = prepared$start_par,
+    input_par = check_start_par,
     output_par = output_par,
     max_evals = max_evals,
     fix_selectivity = fix_selectivity,
@@ -1311,7 +1322,7 @@ if (identical(check_type, "jitter")) {
     model_dir = model_dir,
     reps = reps,
     seed = seed,
-    par = prepared$start_par,
+    par = check_start_par,
     run_refit = truthy(env("SELFTEST_RUN_REFIT", "true"), TRUE)
   )
   if (!nzchar(Sys.getenv("selftest_compact_cleanup", ""))) {

@@ -206,13 +206,67 @@ latest_file <- function(files) {
   normalize_loose(rownames(info)[which.max(info$mtime)])
 }
 
+par_npars_marker <- function(par_file) {
+  if (!file.exists(par_file)) return(NA_integer_)
+  lines <- tryCatch(readLines(par_file, warn = FALSE), error = function(e) character())
+  idx <- grep("#\\s*The number of parameters", lines)
+  if (length(idx) && idx[[1L]] < length(lines)) {
+    n <- suppressWarnings(as.integer(scan(par_file, skip = idx[[1L]],
+                                          nlines = 1L, quiet = TRUE)))
+    if (is.finite(n) && n > 0L) return(as.integer(n))
+  }
+  NA_integer_
+}
+
+par_has_fit_summary <- function(par_file) {
+  if (!file.exists(par_file)) return(FALSE)
+  lines <- tryCatch(readLines(par_file, warn = FALSE), error = function(e) character())
+  any(grepl("^#\\s*(Objective function value|The number of parameters)\\s*$",
+            lines))
+}
+
+order_par_files <- function(files) {
+  files <- files[file.exists(files)]
+  if (!length(files)) return(integer())
+  names <- basename(files)
+  stems <- sub("\\.par[0-9]*$", "", names)
+  numeric_stems <- suppressWarnings(as.integer(stems))
+  exact_numeric <- grepl("^[0-9]+\\.par$", names)
+  fitted <- vapply(files, par_has_fit_summary, logical(1L))
+  info <- file.info(files)
+  order(
+    !fitted,
+    !exact_numeric,
+    -ifelse(is.finite(numeric_stems), numeric_stems, -1L),
+    -ifelse(is.finite(as.numeric(info$mtime)), as.numeric(info$mtime), -Inf),
+    tolower(names)
+  )
+}
+
 latest_par <- function(path) {
   priority <- c("*finalmle.par", "*finalz.par", "*finalzz.par", "*finaly.par", "*finalx.par", "*final.par")
+  priority_hits <- character()
   for (pattern in priority) {
     hits <- list.files(path, pattern = glob2rx(pattern), full.names = TRUE, ignore.case = TRUE)
-    if (length(hits)) return(latest_file(hits))
+    if (length(hits)) {
+      priority_hits <- c(priority_hits, hits)
+      fitted <- hits[vapply(hits, par_has_fit_summary, logical(1L))]
+      if (length(fitted)) return(latest_file(fitted))
+    }
   }
-  latest_file(case_files(path, "[.]par[0-9]*$"))
+  files <- case_files(path, "[.]par[0-9]*$")
+  if (length(files)) {
+    ord <- order_par_files(files)
+    if (length(ord) && par_has_fit_summary(files[ord[[1L]]])) {
+      return(normalize_loose(files[ord[[1L]]]))
+    }
+  }
+  if (length(priority_hits)) return(latest_file(priority_hits))
+  if (length(files)) {
+    ord <- order_par_files(files)
+    return(normalize_loose(files[ord[[1L]]]))
+  }
+  ""
 }
 
 has_full_case <- function(path) {
@@ -461,7 +515,12 @@ find_final_par <- function(row) {
   )
   candidates <- unique(candidates[nzchar(candidates)])
   hit <- candidates[file.exists(candidates)]
-  if (length(hit)) normalize_loose(hit[[1L]]) else ""
+  if (length(hit)) {
+    fitted <- hit[vapply(hit, par_has_fit_summary, logical(1L))]
+    if (length(fitted)) return(normalize_loose(fitted[[1L]]))
+    return(normalize_loose(hit[[1L]]))
+  }
+  ""
 }
 
 restore_payload_par <- function(payload_file, dest) {
