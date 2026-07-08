@@ -288,6 +288,111 @@ stage_report_model_payload <- function() {
   invisible(index)
 }
 
+safe_path_token <- function(value, default = "unit") {
+  token <- gsub("[^A-Za-z0-9_.-]+", "_", as.character(value %||% default))
+  token <- gsub("^_+|_+$", "", token)
+  if (nzchar(token)) token else default
+}
+
+write_smoke_marker <- function(dir, data) {
+  dir.create(dir, recursive = TRUE, showWarnings = FALSE)
+  data$smoke <- TRUE
+  data$created_at <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+  write.csv(data, file.path(dir, "smoke-check.csv"), row.names = FALSE)
+  saveRDS(as.list(data), file.path(dir, "smoke-check.rds"), compress = "xz")
+  invisible(dir)
+}
+
+write_smoke_check_outputs <- function() {
+  rows <- list()
+  add_row <- function(dir, unit_type, unit) {
+    rows[[length(rows) + 1L]] <<- data.frame(
+      check_type = check_type,
+      model_key = model_key,
+      unit_type = unit_type,
+      unit = as.character(unit),
+      unit_dir = normalize_loose(dir),
+      stringsAsFactors = FALSE
+    )
+  }
+
+  if (identical(check_type, "jitter")) {
+    seeds <- split_values(env("JITTER_SEEDS", env("JITTER_SEED", "1")), default = "1")
+    for (seed in seeds) {
+      dir <- file.path(model_dir, "jitter", paste0("jitter_seed_", safe_path_token(seed)))
+      write_smoke_marker(dir, data.frame(seed = seed, stringsAsFactors = FALSE))
+      add_row(dir, "seed", seed)
+    }
+  } else if (identical(check_type, "profile")) {
+    values <- split_numbers(env("PROFILE_VALUES", env("MFK_SCALAR", "100")), default = 100)
+    profile_name <- safe_path_token(env("PROFILE_NAME", "scalar"), "scalar")
+    chain_side <- env("PROFILE_CHAIN_SIDE", "")
+    for (value in values) {
+      value_token <- safe_path_token(format(value, scientific = FALSE, trim = TRUE), "value")
+      dir <- file.path(model_dir, "profile", profile_name, paste0("scalar_", value_token))
+      write_smoke_marker(dir, data.frame(
+        profile_name = profile_name,
+        scalar = value,
+        chain_side = chain_side,
+        stringsAsFactors = FALSE
+      ))
+      add_row(dir, "profile_scalar", value)
+    }
+  } else if (identical(check_type, "selftest")) {
+    reps <- split_values(env("SELFTEST_REPS", env("SELFTEST_REP", "1")), default = "1")
+    selftest_rows <- list()
+    for (rep in reps) {
+      rep_token <- safe_path_token(rep)
+      dir <- file.path(model_dir, "selftest", "refit", paste0("rep_", rep_token))
+      write_smoke_marker(dir, data.frame(rep = rep, stringsAsFactors = FALSE))
+      add_row(dir, "replicate", rep)
+      selftest_rows[[length(selftest_rows) + 1L]] <- data.frame(
+        rep = rep,
+        status = "smoke",
+        stringsAsFactors = FALSE
+      )
+    }
+    dir.create(file.path(model_dir, "selftest"), recursive = TRUE, showWarnings = FALSE)
+    selftest_index <- bind_rows_fill(selftest_rows)
+    saveRDS(selftest_index, file.path(model_dir, "selftest", "selftest_runs.rds"), compress = "xz")
+    write.csv(selftest_index, file.path(model_dir, "selftest", "selftest_runs.csv"), row.names = FALSE)
+  } else if (identical(check_type, "hessian")) {
+    parts <- split_values(env("HESSIAN_PARTS", env("HESSIAN_PART", "")))
+    if (!length(parts)) parts <- "1"
+    nsplit <- env("HESSIAN_NSPLIT", as.character(length(parts)))
+    for (part in parts) {
+      part_token <- safe_path_token(part)
+      dir <- file.path(model_dir, "hessian", paste0("part_", part_token))
+      write_smoke_marker(dir, data.frame(
+        part = part,
+        nsplit = nsplit,
+        stringsAsFactors = FALSE
+      ))
+      saveRDS(
+        list(
+          schema = "ofp-sam.checks.hessian_smoke.v1",
+          check_type = "hessian",
+          model_key = model_key,
+          part = part,
+          nsplit = nsplit,
+          smoke = TRUE
+        ),
+        file.path(dir, "hessian_info.rds"),
+        compress = "xz"
+      )
+      add_row(dir, "hessian_part", part)
+    }
+  } else {
+    dir <- file.path(model_dir, check_type, "smoke_unit")
+    write_smoke_marker(dir, data.frame(unit = "smoke", stringsAsFactors = FALSE))
+    add_row(dir, "unit", "smoke")
+  }
+
+  out <- bind_rows_fill(rows)
+  write.csv(out, file.path(model_dir, "smoke-check-index.csv"), row.names = FALSE)
+  invisible(out)
+}
+
 stage_hessian_stitch_inputs <- function() {
   patterns <- c(
     "[.]frq$",
@@ -726,6 +831,7 @@ write_run_manifest <- function(extra = list()) {
 stage_report_model_payload()
 
 if (truthy(env("CHECK_DRY_RUN", env("CHECK_SMOKE_ONLY", "false")), FALSE)) {
+  write_smoke_check_outputs()
   write_run_manifest(list(
     dry_run = TRUE,
     reason = "staged input model and skipped MFCL execution"

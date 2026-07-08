@@ -8,6 +8,7 @@ output_dir <- env("OUTPUT_DIR", "outputs")
 work_dir <- env("WORK_DIR", "work")
 model_selector <- env("MODEL_SELECTOR", "")
 program_path <- env("PROGRAM_PATH", "/home/mfcl/mfclo64")
+smoke_only <- truthy(env("CHECK_SMOKE_ONLY", env("CHECK_DRY_RUN", "false")), FALSE)
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(work_dir, recursive = TRUE, showWarnings = FALSE)
 
@@ -266,18 +267,30 @@ if (is.finite(expected_nsplit) && expected_nsplit > 0L) {
   if (length(missing)) stop("Missing Hessian part(s): ", paste(missing, collapse = ", "), call. = FALSE)
 }
 
-run_stitch <- truthy(env("HESSIAN_MERGE_RUN", "true"), TRUE)
-run_eigen <- truthy(env("HESSIAN_MERGE_EIGEN", "true"), TRUE)
-info <- mfclkit::mfk_stitch_native_hessian(
-  model_dir,
-  model_dir = model_dir,
-  program_path = program_path,
-  run = run_stitch,
-  eigen = run_eigen,
-  require_complete = TRUE,
-  fail_on_command_error = FALSE,
-  run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
-)
+run_stitch <- truthy(env("HESSIAN_MERGE_RUN", if (isTRUE(smoke_only)) "false" else "true"), TRUE)
+run_eigen <- truthy(env("HESSIAN_MERGE_EIGEN", if (isTRUE(smoke_only)) "false" else "true"), TRUE)
+info <- if (isTRUE(smoke_only)) {
+  list(
+    schema = "ofp-sam.checks.hessian_merge_smoke.v1",
+    model_key = model_key,
+    parts = part_numbers,
+    n_parts = length(part_numbers),
+    smoke = TRUE,
+    run_stitch = run_stitch,
+    run_eigen = run_eigen
+  )
+} else {
+  mfclkit::mfk_stitch_native_hessian(
+    model_dir,
+    model_dir = model_dir,
+    program_path = program_path,
+    run = run_stitch,
+    eigen = run_eigen,
+    require_complete = TRUE,
+    fail_on_command_error = FALSE,
+    run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
+  )
+}
 saveRDS(info, file.path(model_dir, "hessian_merge.rds"), compress = "xz")
 
 rows <- list()

@@ -13,6 +13,7 @@ message("[checks] merging split ", check_type, " jobs")
 input_root <- env("MODEL_INPUT_ROOT", default_input_root())
 output_dir <- env("OUTPUT_DIR", "outputs")
 model_selector <- env("MODEL_SELECTOR", "")
+smoke_only <- truthy(env("CHECK_SMOKE_ONLY", env("CHECK_DRY_RUN", "false")), FALSE)
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 copy_file_if_exists <- function(from, to_dir, to_name = basename(from)) {
@@ -436,7 +437,20 @@ dir.create(model_dir, recursive = TRUE, showWarnings = FALSE)
 copy_base_model_files(source_model_dirs[[1L]], model_dir)
 copied <- copy_check_units(source_model_dirs, model_dir, check_type)
 
-if (identical(check_type, "jitter")) {
+if (isTRUE(smoke_only)) {
+  write.csv(
+    data.frame(
+      check_type = check_type,
+      model_key = model_key,
+      n_source_model_dirs = length(source_model_dirs),
+      n_copied_paths = length(copied),
+      smoke = TRUE,
+      stringsAsFactors = FALSE
+    ),
+    file.path(model_dir, paste0(check_type, "-smoke-merge.csv")),
+    row.names = FALSE
+  )
+} else if (identical(check_type, "jitter")) {
   try(write.csv(mfclkit::mfk_collect_jitter(model_dir), file.path(model_dir, "jitter-index.csv"), row.names = FALSE), silent = TRUE)
 } else if (identical(check_type, "retro")) {
   try(write.csv(mfclkit::mfk_collect_retro(model_dir), file.path(model_dir, "retro-index.csv"), row.names = FALSE), silent = TRUE)
@@ -511,7 +525,9 @@ if (requireNamespace("mfclshiny", quietly = TRUE)) {
     write.csv(payload_index, file.path(model_dir, "payload-build-index.csv"), row.names = FALSE)
   }
 }
-build_report_ready_figures(model_dir, output_dir, check_type, model_key)
+if (!isTRUE(smoke_only)) {
+  build_report_ready_figures(model_dir, output_dir, check_type, model_key)
+}
 write_attached_model_output(
   check_model_dir = model_dir,
   output_dir = output_dir,
