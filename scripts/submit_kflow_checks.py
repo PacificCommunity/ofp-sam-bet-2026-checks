@@ -20,6 +20,11 @@ MERGE_CHECKS = {
     "hessian": "hessian-merge",
 }
 
+DEFAULT_RUNTIME_PACKAGES = (
+    "mfclkit=PacificCommunity/ofp-sam-mfclkit@main,"
+    "mfclshiny=PacificCommunity/mfclshiny@66ced746ab734f350a183e9790df980e0250f3df"
+)
+
 
 def split_values(raw: str) -> list[str]:
     return [part for part in re.split(r"[,\s]+", raw.strip()) if part]
@@ -201,6 +206,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-source-ref", default=os.environ.get("MODEL_SOURCE_REF", "main"))
     parser.add_argument("--model-source-path", default=os.environ.get("MODEL_SOURCE_PATH", ""))
     parser.add_argument("--program-path", default=os.environ.get("PROGRAM_PATH", "/home/mfcl/mfclo64"))
+    parser.add_argument("--submitter", default=os.environ.get("KFLOW_SUBMITTER", ""))
+    parser.add_argument("--remote-host", default=os.environ.get("KFLOW_REMOTE_HOST", ""))
+    parser.add_argument("--remote-user", default=os.environ.get("KFLOW_REMOTE_USER", ""))
+    parser.add_argument("--remote-base-dir", default=os.environ.get("KFLOW_REMOTE_BASE_DIR", ""))
     parser.add_argument("--job-title", default=os.environ.get("JOB_TITLE", ""))
     parser.add_argument("--job-description", default=os.environ.get("JOB_DESCRIPTION", ""))
     parser.add_argument("--parallel-units", default=os.environ.get("KFLOW_PARALLEL_UNITS", "true"))
@@ -225,6 +234,12 @@ def main() -> int:
     base_url = args.kflow_url.rstrip("/")
     parallel_units = truthy(args.parallel_units, default=True)
     auto_merge = truthy(args.auto_merge, default=True)
+    submitter_fields = {
+        "remote_host": args.submitter or args.remote_host,
+        "remote_user": args.remote_user,
+        "remote_base_dir": args.remote_base_dir,
+    }
+    submitter_fields = {key: value for key, value in submitter_fields.items() if str(value or "").strip()}
 
     submitted_groups: list[dict[str, Any]] = []
 
@@ -256,7 +271,7 @@ def main() -> int:
                     "KFLOW_RUNTIME_UPDATE": os.environ.get("KFLOW_RUNTIME_UPDATE", "always"),
                     "TUNA_FLOW_RUNTIME_UPDATE": os.environ.get("TUNA_FLOW_RUNTIME_UPDATE", "always"),
                     "KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS": os.environ.get("KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS", "0"),
-                    "KFLOW_RUNTIME_PACKAGES": os.environ.get("KFLOW_RUNTIME_PACKAGES", "mfclkit=PacificCommunity/ofp-sam-mfclkit@main,mfclshiny=PacificCommunity/mfclshiny@main"),
+                    "KFLOW_RUNTIME_PACKAGES": os.environ.get("KFLOW_RUNTIME_PACKAGES", DEFAULT_RUNTIME_PACKAGES),
                     "KFLOW_REPO_RUNTIME_PACKAGES": os.environ.get("KFLOW_REPO_RUNTIME_PACKAGES", "none"),
                     "KFLOW_REPO_RUNTIME_UPDATE": os.environ.get("KFLOW_REPO_RUNTIME_UPDATE", "always"),
                     "KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES": os.environ.get("KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES", "true"),
@@ -297,6 +312,7 @@ def main() -> int:
                 if check_unit:
                     tags["check_unit"] = check_unit
                 payload: dict[str, Any] = {
+                    **submitter_fields,
                     "env": env,
                     "title": title,
                     "description": description,
@@ -349,7 +365,7 @@ def main() -> int:
             "KFLOW_RUNTIME_UPDATE": os.environ.get("KFLOW_RUNTIME_UPDATE", "always"),
             "TUNA_FLOW_RUNTIME_UPDATE": os.environ.get("TUNA_FLOW_RUNTIME_UPDATE", "always"),
             "KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS": os.environ.get("KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS", "0"),
-            "KFLOW_RUNTIME_PACKAGES": os.environ.get("KFLOW_RUNTIME_PACKAGES", "mfclkit=PacificCommunity/ofp-sam-mfclkit@main,mfclshiny=PacificCommunity/mfclshiny@main"),
+            "KFLOW_RUNTIME_PACKAGES": os.environ.get("KFLOW_RUNTIME_PACKAGES", DEFAULT_RUNTIME_PACKAGES),
             "KFLOW_REPO_RUNTIME_PACKAGES": os.environ.get("KFLOW_REPO_RUNTIME_PACKAGES", "none"),
             "KFLOW_REPO_RUNTIME_UPDATE": os.environ.get("KFLOW_REPO_RUNTIME_UPDATE", "always"),
             "KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES": os.environ.get("KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES", "true"),
@@ -364,6 +380,7 @@ def main() -> int:
         if check == "hessian":
             env["CHECK_TYPE"] = "hessian_merge"
         payload = {
+            **submitter_fields,
             "env": {key: value for key, value in env.items() if value not in (None, "")},
             "title": title,
             "description": description,

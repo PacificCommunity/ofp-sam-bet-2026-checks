@@ -12,6 +12,10 @@ MODEL_INPUT_ROOT ?=
 PROGRAM_PATH ?= /home/mfcl/mfclo64
 KFLOW_URL ?= http://127.0.0.1:8089
 KFLOW_TASK_PREFIX ?= ofp-sam-bet-2026-check
+KFLOW_SUBMITTER ?=
+KFLOW_REMOTE_HOST ?=
+KFLOW_REMOTE_USER ?=
+KFLOW_REMOTE_BASE_DIR ?=
 KFLOW_INPUT_JOBS ?=
 FLOW_GROUP ?= bet-2026-checks
 JOB_TITLE ?=
@@ -100,6 +104,10 @@ kflow:
 	  --model-source-ref '$(MODEL_SOURCE_REF)' \
 	  --model-source-path '$(MODEL_SOURCE_PATH)' \
 	  --program-path '$(PROGRAM_PATH)' \
+	  --submitter '$(KFLOW_SUBMITTER)' \
+	  --remote-host '$(KFLOW_REMOTE_HOST)' \
+	  --remote-user '$(KFLOW_REMOTE_USER)' \
+	  --remote-base-dir '$(KFLOW_REMOTE_BASE_DIR)' \
 	  --parallel-units '$(KFLOW_PARALLEL_UNITS)' \
 	  --auto-merge '$(KFLOW_AUTO_MERGE)' \
 	  --job-title '$(JOB_TITLE)' \
@@ -118,6 +126,10 @@ kflow-batch:
 	  --model-source-ref '$(MODEL_SOURCE_REF)' \
 	  --model-source-path '$(MODEL_SOURCE_PATH)' \
 	  --program-path '$(PROGRAM_PATH)' \
+	  --submitter '$(KFLOW_SUBMITTER)' \
+	  --remote-host '$(KFLOW_REMOTE_HOST)' \
+	  --remote-user '$(KFLOW_REMOTE_USER)' \
+	  --remote-base-dir '$(KFLOW_REMOTE_BASE_DIR)' \
 	  --parallel-units '$(KFLOW_PARALLEL_UNITS)' \
 	  --auto-merge '$(KFLOW_AUTO_MERGE)' \
 	  --job-title '$(JOB_TITLE)' \
