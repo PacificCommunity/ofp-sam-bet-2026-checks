@@ -24,7 +24,7 @@ env:
   KFLOW_REPORT_COMMIT_GENERATED: "false"
   KFLOW_REPORT_PUSH_GENERATED: "false"
   KFLOW_REPORT_PUBLISH_REQUIRED: "false"
-  KFLOW_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@main,mfclshiny=PacificCommunity/mfclshiny@e6b0e42a3e4b35543a5b1e8bf9bb3c64cb666b90
+  KFLOW_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@main,mfclshiny=PacificCommunity/mfclshiny@ba995733d134289006b67aa4747d19edbfb5bdb3
   KFLOW_REPO_RUNTIME_PACKAGES: none
   KFLOW_REPO_RUNTIME_UPDATE: always
   KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
@@ -68,47 +68,3 @@ metadata:
 tags:
   stage: checks
   check_type: attach-checks
-triggers:
-  on_success:
-    - key: results-from-attached-model
-      report: ofp-sam-bet-2026-results
-      input_jobs:
-        - "{{ job.job_number }}"
-      env:
-        FLOW_GROUP: "{{ job.config.FLOW_GROUP }}"
-        JOB_TITLE: BET results
-        JOB_KEY: results
-        JOB_DESCRIPTION: Build report-ready figures and tables from the attached model-check bundle.
-        PLOT_TITLE: "{{ job.config.PLOT_TITLE }}"
-        PLOT_MAX_FISHERIES: "{{ job.config.PLOT_MAX_FISHERIES }}"
-        FLOW_SPECIES: "{{ job.config.FLOW_SPECIES }}"
-        FLOW_SPECIES_LABEL: "{{ job.config.FLOW_SPECIES_LABEL }}"
-        FLOW_ASSESSMENT_YEAR: "{{ job.config.FLOW_ASSESSMENT_YEAR }}"
-        REPORT_QMD: "{{ job.config.REPORT_QMD }}"
-        REPORT_FILE_STEM: "{{ job.config.REPORT_FILE_STEM }}"
-        KFLOW_REPORT_COMMIT_GENERATED: "{{ job.config.KFLOW_REPORT_COMMIT_GENERATED }}"
-        KFLOW_REPORT_PUSH_GENERATED: "{{ job.config.KFLOW_REPORT_PUSH_GENERATED }}"
-        KFLOW_REPORT_PUBLISH_REQUIRED: "{{ job.config.KFLOW_REPORT_PUBLISH_REQUIRED }}"
-        KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
-        KFLOW_RUNTIME_UPDATE: always
-        TUNA_FLOW_RUNTIME_UPDATE: always
-        KFLOW_REPO_RUNTIME_UPDATE: always
-        KFLOW_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@main,mfclshiny=PacificCommunity/mfclshiny@e6b0e42a3e4b35543a5b1e8bf9bb3c64cb666b90
-        KFLOW_REPO_RUNTIME_PACKAGES: none
-        MFCLSHINY_GITHUB_REF: e6b0e42a3e4b35543a5b1e8bf9bb3c64cb666b90
-        MFCLSHINY_REPORT_DPI: "180"
-        MFCLSHINY_OPTIMIZE_FIGURES: "false"
-        PLOT_OPTIMIZE_FIGURES: "true"
-        PLOT_OPTIMIZE_MODE: lossy
-        PLOT_PNGQUANT_QUALITY: "60-85"
-        PLOT_WEBP_FIGURES: "true"
-        PLOT_WEBP_QUALITY: "72"
-        PLOT_PDF_JPEG_FIGURES: "true"
-        PLOT_JPEG_QUALITY: "82"
-        PLOT_JPEG_SAMPLING_FACTOR: "4:2:0"
-        KFLOW_RUNTIME_GITHUB_AUTH: "true"
-        KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME: "true"
-      tags:
-        auto: "true"
-        source: attached-checks
-        stage: results

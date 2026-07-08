@@ -22,7 +22,7 @@ MERGE_CHECKS = {
 
 DEFAULT_RUNTIME_PACKAGES = (
     "mfclkit=PacificCommunity/ofp-sam-mfclkit@main,"
-    "mfclshiny=PacificCommunity/mfclshiny@e6b0e42a3e4b35543a5b1e8bf9bb3c64cb666b90"
+    "mfclshiny=PacificCommunity/mfclshiny@ba995733d134289006b67aa4747d19edbfb5bdb3"
 )
 
 
@@ -214,6 +214,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--job-description", default=os.environ.get("JOB_DESCRIPTION", ""))
     parser.add_argument("--parallel-units", default=os.environ.get("KFLOW_PARALLEL_UNITS", "true"))
     parser.add_argument("--auto-merge", default=os.environ.get("KFLOW_AUTO_MERGE", "true"))
+    parser.add_argument("--auto-attach", default=os.environ.get("KFLOW_AUTO_ATTACH", "true"))
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
@@ -234,6 +235,8 @@ def main() -> int:
     base_url = args.kflow_url.rstrip("/")
     parallel_units = truthy(args.parallel_units, default=True)
     auto_merge = truthy(args.auto_merge, default=True)
+    auto_attach = truthy(args.auto_attach, default=True)
+    base_input_job = input_jobs[0] if input_jobs else ""
     submitter_fields = {
         "remote_host": args.submitter or args.remote_host,
         "remote_user": args.remote_user,
@@ -339,7 +342,14 @@ def main() -> int:
                 if code and code != "?":
                     unit_job_ids.append(str(code))
                 print(f"submitted {task} {model}: job {code}")
-            submitted_groups.append({"check": check, "model": model, "unit_job_ids": unit_job_ids})
+            submitted_groups.append(
+                {
+                    "check": check,
+                    "model": model,
+                    "unit_job_ids": unit_job_ids,
+                    "final_job_ids": list(unit_job_ids),
+                }
+            )
 
     for group in submitted_groups:
         check = group["check"]
@@ -407,11 +417,103 @@ def main() -> int:
         }
         if args.dry_run:
             print(json.dumps({"task": task, "payload": payload}, indent=2, sort_keys=True))
+            group["final_job_ids"] = [f"DRY-{merge_check}-{model}-merge"]
             continue
         response = api_json("POST", f"{base_url}/api/job/{task}", token, payload)
         job = response.get("job", response)
         code = job.get("job_number") or job.get("number") or job.get("code") or job.get("id") or "?"
+        if code and code != "?":
+            group["final_job_ids"] = [str(code)]
         print(f"submitted {task} {model}: job {code}")
+
+    if auto_attach and base_input_job:
+        groups_by_model: dict[str, dict[str, Any]] = {}
+        for group in submitted_groups:
+            model = str(group["model"])
+            item = groups_by_model.setdefault(model, {"checks": [], "job_ids": []})
+            check = str(group["check"])
+            if check not in item["checks"]:
+                item["checks"].append(check)
+            for job_id in group.get("final_job_ids") or []:
+                if job_id and job_id not in item["job_ids"]:
+                    item["job_ids"].append(str(job_id))
+
+        for model, item in groups_by_model.items():
+            final_job_ids = item["job_ids"]
+            if not final_job_ids:
+                continue
+            checks_text = " ".join(item["checks"])
+            task = f"{args.task_prefix}-attach-checks"
+            title = f"diagnostics update: {model}"
+            description = f"Attach completed model-check outputs to the base job for {model}."
+            env = {
+                "CHECK_TYPE": "attach-checks",
+                "MODEL_SELECTOR": model,
+                "MODEL_BASE_INPUT_JOB": base_input_job,
+                "BASE_MODEL_JOB": base_input_job,
+                "CHECK_INPUT_JOBS": " ".join(final_job_ids),
+                "ATTACH_CHECK_TYPES": checks_text,
+                "KFLOW_JOB_TITLE": title,
+                "KFLOW_JOB_DESCRIPTION": description,
+                "MODEL_SOURCE_REPO": args.model_source_repo,
+                "MODEL_SOURCE_REF": args.model_source_ref,
+                "MODEL_SOURCE_PATH": args.model_source_path,
+                "PROGRAM_PATH": args.program_path,
+                "FLOW_GROUP": args.flow_group,
+                "KFLOW_RUNTIME_UPDATE": os.environ.get("KFLOW_RUNTIME_UPDATE", "always"),
+                "TUNA_FLOW_RUNTIME_UPDATE": os.environ.get("TUNA_FLOW_RUNTIME_UPDATE", "always"),
+                "KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS": os.environ.get("KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS", "0"),
+                "KFLOW_RUNTIME_PACKAGES": os.environ.get("KFLOW_RUNTIME_PACKAGES", DEFAULT_RUNTIME_PACKAGES),
+                "KFLOW_REPO_RUNTIME_PACKAGES": os.environ.get("KFLOW_REPO_RUNTIME_PACKAGES", "none"),
+                "KFLOW_REPO_RUNTIME_UPDATE": os.environ.get("KFLOW_REPO_RUNTIME_UPDATE", "always"),
+                "KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES": os.environ.get("KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES", "true"),
+                "KFLOW_RUNTIME_GITHUB_AUTH": os.environ.get("KFLOW_RUNTIME_GITHUB_AUTH", "true"),
+                "KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME": os.environ.get("KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME", "true"),
+            }
+            for key, value in os.environ.items():
+                if key in {"CHECK_TYPE", "MODEL_SELECTOR", "KFLOW_JOB_TITLE", "KFLOW_JOB_DESCRIPTION"}:
+                    continue
+                if key.startswith(("BET_", "JITTER_", "RETRO_", "HESSIAN_", "PROFILE_", "ASPM_", "SELFTEST_", "MFK_", "CHECK_", "selftest_")) or key in {"TRIGGER_NEXT"} or key == "program_path":
+                    env[key] = value
+            payload = {
+                **submitter_fields,
+                "env": {key: value for key, value in env.items() if value not in (None, "")},
+                "title": title,
+                "description": description,
+                "input_jobs": [base_input_job, *final_job_ids],
+                "metadata": {
+                    "flow_group": args.flow_group,
+                    "job_title": title,
+                    "job_description": description,
+                    "check_type": "attach-checks",
+                    "model_selector": model,
+                    "base_job": base_input_job,
+                    "input_jobs": [base_input_job, *final_job_ids],
+                    "check_input_jobs": final_job_ids,
+                    "attach_check_types": item["checks"],
+                    "attached_work_parent_job": base_input_job,
+                    "attached_work_latest": True,
+                    "attached_work_group": f"{args.flow_group}:{model}:diagnostics",
+                    "attached_work_label": f"{model} diagnostics",
+                    "attached_work_summary": "Latest model-check outputs attached to the base job output bundle.",
+                    "attached_work_role": "updated output",
+                    "auto_attach": True,
+                },
+                "tags": {
+                    "stage": "checks",
+                    "flow": args.flow_group,
+                    "check_type": "attach-checks",
+                    "model": model,
+                    "base_job": base_input_job,
+                },
+            }
+            if args.dry_run:
+                print(json.dumps({"task": task, "payload": payload}, indent=2, sort_keys=True))
+                continue
+            response = api_json("POST", f"{base_url}/api/job/{task}", token, payload)
+            job = response.get("job", response)
+            code = job.get("job_number") or job.get("number") or job.get("code") or job.get("id") or "?"
+            print(f"submitted {task} {model}: job {code}")
     return 0
 
 
