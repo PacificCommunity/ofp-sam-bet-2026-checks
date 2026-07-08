@@ -174,7 +174,7 @@ local_apps:
         folder <- normalize_loose(folder)
         parent <- parent_model_dir(folder)
         if (!identical(parent, folder)) return(parent)
-      if (basename(folder) %in% c("jitter", "retro", "aspm", "hessian", "profile", "selftest") &&
+      if (basename(folder) %in% c("jitter", "retro", "aspm", "hessian", "profile", "selftest", "projection") &&
             file.exists(file.path(dirname(folder), "model_payload.rds"))) {
           return(normalize_loose(dirname(folder)))
         }
@@ -200,7 +200,7 @@ local_apps:
             full.names = TRUE
           ))
         }), use.names = FALSE))
-        manifest_dirs <- manifest_dirs[file.exists(file.path(manifest_dirs, "model_payload.rds"))]
+        manifest_dirs <- topmost_dirs(manifest_dirs)
         if (length(manifest_dirs)) return(normalize_loose(manifest_dirs))
 
         payload_dirs <- unique(unlist(lapply(roots, function(root) {
