@@ -12,7 +12,7 @@ env:
   CHECK_MERGE_TYPE: jitter
   MODEL_SELECTOR: ""
   PROGRAM_PATH: /home/mfcl/mfclo64
-  KFLOW_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@main,mfclshiny=PacificCommunity/mfclshiny@189994c27d2ae0478a7f954190fdd1c84558c9a6
+  KFLOW_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@main,mfclshiny=PacificCommunity/mfclshiny@6175d2ffda2231d2e1ef53d219b7cbc4295c6a11
   KFLOW_REPO_RUNTIME_PACKAGES: none
   KFLOW_REPO_RUNTIME_UPDATE: always
   KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
