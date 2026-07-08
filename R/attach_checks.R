@@ -24,7 +24,24 @@ job_dir <- function(root, job) {
   if (!dir.exists(root)) return(character())
   dirs <- list.dirs(root, recursive = FALSE, full.names = TRUE)
   hits <- dirs[startsWith(basename(dirs), job)]
-  normalize_loose(hits)
+  if (length(hits)) return(normalize_loose(hits))
+
+  provenance_matches <- vapply(dirs, function(dir) {
+    path <- file.path(dir, "kflow-provenance.json")
+    if (!file.exists(path) || !requireNamespace("jsonlite", quietly = TRUE)) {
+      return(FALSE)
+    }
+    prov <- tryCatch(jsonlite::read_json(path, simplifyVector = TRUE), error = function(e) NULL)
+    values <- c(
+      tryCatch(prov$job$job_number, error = function(e) ""),
+      tryCatch(prov$job$job_id, error = function(e) ""),
+      tryCatch(prov$job$id, error = function(e) ""),
+      tryCatch(prov$job$cluster_id, error = function(e) "")
+    )
+    values <- unique(as.character(values[!is.na(values)]))
+    any(values == job) || any(startsWith(values, job))
+  }, logical(1))
+  normalize_loose(dirs[provenance_matches])
 }
 
 input_child_dirs <- function(root) {
