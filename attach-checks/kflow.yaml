@@ -1,18 +1,29 @@
-name: ofp-sam-bet-2026-check-attach
-description: Attach completed check outputs back onto a compact fitted model output bundle.
+name: ofp-sam-bet-2026-check-attach-checks
+description: Attach completed mfclkit check outputs to a fitted MFCL model bundle.
 command: bash run.sh
 target_folder: attach-checks
 docker_image: ghcr.io/pacificcommunity/tuna-flow:v2.1
 resources:
-  cpus: 1
-  memory: 4GB
+  cpus: 2
+  memory: 12GB
   disk: 10GB
 env:
-  CHECK_TYPE: attach_checks
+  CHECK_TYPE: attach-checks
   MODEL_SELECTOR: ""
   MODEL_BASE_INPUT_JOB: ""
   CHECK_INPUT_JOBS: ""
   ATTACH_CHECK_TYPES: ""
+  FLOW_GROUP: bet-2026-checks
+  FLOW_SPECIES: BET
+  FLOW_SPECIES_LABEL: bigeye tuna
+  FLOW_ASSESSMENT_YEAR: "2026"
+  PLOT_TITLE: BET 2026 report-ready figures
+  PLOT_MAX_FISHERIES: "33"
+  REPORT_QMD: assessment-report.qmd
+  REPORT_FILE_STEM: bet-2026-report
+  KFLOW_REPORT_COMMIT_GENERATED: "false"
+  KFLOW_REPORT_PUSH_GENERATED: "false"
+  KFLOW_REPORT_PUBLISH_REQUIRED: "false"
   KFLOW_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@main,mfclshiny=PacificCommunity/mfclshiny@main
   KFLOW_REPO_RUNTIME_PACKAGES: none
   KFLOW_REPO_RUNTIME_UPDATE: always
@@ -35,6 +46,16 @@ metadata:
       - CHECK_INPUT_JOBS
       - ATTACH_CHECK_TYPES
       - FLOW_GROUP
+      - FLOW_SPECIES
+      - FLOW_SPECIES_LABEL
+      - FLOW_ASSESSMENT_YEAR
+      - PLOT_TITLE
+      - PLOT_MAX_FISHERIES
+      - REPORT_QMD
+      - REPORT_FILE_STEM
+      - KFLOW_REPORT_COMMIT_GENERATED
+      - KFLOW_REPORT_PUSH_GENERATED
+      - KFLOW_REPORT_PUBLISH_REQUIRED
       - KFLOW_RUNTIME_UPDATE
       - TUNA_FLOW_RUNTIME_UPDATE
       - KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS
@@ -46,4 +67,48 @@ metadata:
       - KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME
 tags:
   stage: checks
-  check_type: attach
+  check_type: attach-checks
+triggers:
+  on_success:
+    - key: results-from-attached-model
+      report: ofp-sam-bet-2026-results
+      input_jobs:
+        - "{{ job.job_number }}"
+      env:
+        FLOW_GROUP: "{{ job.config.FLOW_GROUP }}"
+        JOB_TITLE: BET results
+        JOB_KEY: results
+        JOB_DESCRIPTION: Build report-ready figures and tables from the attached model-check bundle.
+        PLOT_TITLE: "{{ job.config.PLOT_TITLE }}"
+        PLOT_MAX_FISHERIES: "{{ job.config.PLOT_MAX_FISHERIES }}"
+        FLOW_SPECIES: "{{ job.config.FLOW_SPECIES }}"
+        FLOW_SPECIES_LABEL: "{{ job.config.FLOW_SPECIES_LABEL }}"
+        FLOW_ASSESSMENT_YEAR: "{{ job.config.FLOW_ASSESSMENT_YEAR }}"
+        REPORT_QMD: "{{ job.config.REPORT_QMD }}"
+        REPORT_FILE_STEM: "{{ job.config.REPORT_FILE_STEM }}"
+        KFLOW_REPORT_COMMIT_GENERATED: "{{ job.config.KFLOW_REPORT_COMMIT_GENERATED }}"
+        KFLOW_REPORT_PUSH_GENERATED: "{{ job.config.KFLOW_REPORT_PUSH_GENERATED }}"
+        KFLOW_REPORT_PUBLISH_REQUIRED: "{{ job.config.KFLOW_REPORT_PUBLISH_REQUIRED }}"
+        KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
+        KFLOW_RUNTIME_UPDATE: never
+        TUNA_FLOW_RUNTIME_UPDATE: never
+        KFLOW_REPO_RUNTIME_UPDATE: auto
+        KFLOW_RUNTIME_PACKAGES: none
+        KFLOW_REPO_RUNTIME_PACKAGES: mfclshiny=PacificCommunity/mfclshiny@main
+        MFCLSHINY_GITHUB_REF: main
+        MFCLSHINY_REPORT_DPI: "180"
+        MFCLSHINY_OPTIMIZE_FIGURES: "false"
+        PLOT_OPTIMIZE_FIGURES: "true"
+        PLOT_OPTIMIZE_MODE: lossy
+        PLOT_PNGQUANT_QUALITY: "60-85"
+        PLOT_WEBP_FIGURES: "true"
+        PLOT_WEBP_QUALITY: "72"
+        PLOT_PDF_JPEG_FIGURES: "true"
+        PLOT_JPEG_QUALITY: "82"
+        PLOT_JPEG_SAMPLING_FACTOR: "4:2:0"
+        KFLOW_RUNTIME_GITHUB_AUTH: "true"
+        KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME: "true"
+      tags:
+        auto: "true"
+        source: attached-checks
+        stage: results

@@ -299,7 +299,7 @@ write_smoke_marker <- function(dir, data) {
   data$smoke <- TRUE
   data$created_at <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
   write.csv(data, file.path(dir, "smoke-check.csv"), row.names = FALSE)
-  saveRDS(as.list(data), file.path(dir, "smoke-check.rds"), compress = "xz")
+  saveRDS(data, file.path(dir, "smoke-check.rds"), compress = "xz")
   invisible(dir)
 }
 
