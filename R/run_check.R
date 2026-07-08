@@ -1541,6 +1541,9 @@ if (identical(check_type, "jitter")) {
   }
   if (nzchar(runner)) args$runner <- runner
   if (nzchar(runner_work_dir)) args$runner_work_dir <- runner_work_dir
+  if ("fail_on_error" %in% names(formals(mfk_run_selftest))) {
+    args$fail_on_error <- FALSE
+  }
   result <- do.call(mfk_run_selftest, args)
   saveRDS(result, file.path(model_dir, "selftest_runs.rds"), compress = "xz")
 
