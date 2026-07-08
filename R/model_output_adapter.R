@@ -410,14 +410,43 @@ find_final_par <- function(row) {
   if (length(hit)) normalize_loose(hit[[1L]]) else ""
 }
 
+restore_payload_par <- function(payload_file, dest) {
+  payload <- tryCatch(readRDS(payload_file), error = function(e) e)
+  if (inherits(payload, "error")) {
+    stop("Could not read compact payload par from ", payload_file, ": ", conditionMessage(payload), call. = FALSE)
+  }
+  artifact <- tryCatch(payload$artifacts$files$par, error = function(e) NULL)
+  bytes <- tryCatch(artifact$bytes, error = function(e) NULL)
+  if (is.null(artifact) || is.null(bytes) || !is.raw(bytes)) {
+    stop("Compact payload does not contain a par artifact: ", payload_file, call. = FALSE)
+  }
+  compression <- tryCatch(as.character(artifact$compression[[1L]]), error = function(e) "none")
+  if (!nzchar(compression) || is.na(compression)) compression <- "none"
+  if (!identical(compression, "none")) {
+    bytes <- tryCatch(memDecompress(bytes, type = compression), error = function(e) e)
+    if (inherits(bytes, "error") || is.null(bytes)) {
+      stop("Could not decompress par artifact from ", payload_file, call. = FALSE)
+    }
+  }
+  dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
+  writeBin(bytes, dest)
+  if (!file.exists(dest) || file.info(dest)$size <= 0) {
+    stop("Could not restore par artifact from compact payload: ", payload_file, call. = FALSE)
+  }
+  invisible(dest)
+}
+
 stage_selected_model <- function(row, work_dir = env("WORK_DIR", "work"), output_dir = env("OUTPUT_DIR", "outputs")) {
   stage_dir <- file.path(work_dir, "case")
   source_root <- ""
   compact_dir <- as.character(row$compact_dir %||% "")
   full_case <- identical(as.character(row$candidate_type %||% ""), "full_case") && has_full_case(compact_dir)
+  compact_case <- file.path(compact_dir, "mfcl-inputs")
 
   if (isTRUE(full_case)) {
     source_case <- compact_dir
+  } else if (has_full_case(compact_case)) {
+    source_case <- compact_case
   } else {
     repo <- env("MODEL_SOURCE_REPO", "")
     ref <- env("MODEL_SOURCE_REF", "main")
@@ -429,11 +458,22 @@ stage_selected_model <- function(row, work_dir = env("WORK_DIR", "work"), output
   }
 
   copy_dir(source_case, stage_dir)
+  start_name <- env("CHECK_START_PAR_NAME", "final.par")
+  start_par <- file.path(stage_dir, start_name)
+  start_par_restored <- FALSE
   start_par_source <- find_final_par(row)
   if (!nzchar(start_par_source) || !file.exists(start_par_source)) {
     start_par_source <- latest_par(stage_dir)
   }
   if (!nzchar(start_par_source) || !file.exists(start_par_source)) {
+    payload_file <- file.path(compact_dir, "model_payload.rds")
+    if (file.exists(payload_file)) {
+      restore_payload_par(payload_file, start_par)
+      start_par_source <- paste0(normalize_loose(payload_file), ":par")
+      start_par_restored <- TRUE
+    }
+  }
+  if (!isTRUE(start_par_restored) && (!nzchar(start_par_source) || !file.exists(start_par_source))) {
     stop("Selected model does not contain a fitted .par file.", call. = FALSE)
   }
   compact_payloads <- file.path(compact_dir, c(
@@ -442,9 +482,9 @@ stage_selected_model <- function(row, work_dir = env("WORK_DIR", "work"), output
   for (payload in compact_payloads[file.exists(compact_payloads)]) {
     file.copy(payload, file.path(stage_dir, basename(payload)), overwrite = TRUE, copy.date = TRUE)
   }
-  start_name <- env("CHECK_START_PAR_NAME", "final.par")
-  start_par <- file.path(stage_dir, start_name)
-  file.copy(start_par_source, start_par, overwrite = TRUE, copy.date = TRUE)
+  if (!isTRUE(start_par_restored)) {
+    file.copy(start_par_source, start_par, overwrite = TRUE, copy.date = TRUE)
+  }
 
   frq <- latest_file(case_files(stage_dir, "[.]frq$"))
   if (!nzchar(frq)) stop("Staged model case has no .frq file.", call. = FALSE)
