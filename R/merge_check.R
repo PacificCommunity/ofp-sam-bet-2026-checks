@@ -680,3 +680,15 @@ write_attached_model_output(
   source_check_dirs = source_model_dirs
 )
 message("[checks] merged ", check_type, " outputs under ", model_dir)
+
+final_summary <- tryCatch(
+  readRDS(file.path(model_dir, "check-summary.rds")),
+  error = function(e) NULL
+)
+requires_all_units <- isTRUE(final_summary$requires_all_units %||% FALSE)
+all_required_ok <- isTRUE(final_summary$all_required_units_successful %||% FALSE)
+if (isTRUE(requires_all_units) && !isTRUE(all_required_ok)) {
+  merge_status <- as.character(final_summary$merge_status %||% "incomplete")
+  message("[checks] failing ", check_type, " merge because required unit(s) are incomplete: ", merge_status)
+  quit(save = "no", status = 1)
+}

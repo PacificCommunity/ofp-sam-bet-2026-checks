@@ -522,3 +522,8 @@ write_attached_model_output(
   source_check_dirs = source_model_dirs
 )
 message("[checks] merged Hessian parts under ", model_dir)
+
+if (!identical(merge_status, "complete")) {
+  message("[checks] failing Hessian merge because all partitions are required: ", merge_status)
+  quit(save = "no", status = 1)
+}
