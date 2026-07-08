@@ -12,7 +12,7 @@ env:
   CHECK_MERGE_TYPE: selftest
   MODEL_SELECTOR: ""
   PROGRAM_PATH: /home/mfcl/mfclo64
-  KFLOW_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@main,mfclshiny=PacificCommunity/mfclshiny@aa35b7fc9bcaf1362c282e1151b9ba6e2c53bf27
+  KFLOW_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@main,mfclshiny=PacificCommunity/mfclshiny@e6b0e42a3e4b35543a5b1e8bf9bb3c64cb666b90
   KFLOW_REPO_RUNTIME_PACKAGES: none
   KFLOW_REPO_RUNTIME_UPDATE: always
   KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
