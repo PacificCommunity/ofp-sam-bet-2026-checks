@@ -12,7 +12,7 @@ env:
   MODEL_SOURCE_REPO: PacificCommunity/ofp-sam-bet-2026-stepwise
   MODEL_SOURCE_REF: main
   PROGRAM_PATH: /home/mfcl/mfclo64
-  KFLOW_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@main,mfclshiny=PacificCommunity/mfclshiny@045de7c5526d3a8c884422456be0a274d8228ad8
+  KFLOW_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@main,mfclshiny=PacificCommunity/mfclshiny@3bcee81da59a2971d74335b409aa107700b2de43
   KFLOW_REPO_RUNTIME_PACKAGES: none
   KFLOW_REPO_RUNTIME_UPDATE: always
   KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
