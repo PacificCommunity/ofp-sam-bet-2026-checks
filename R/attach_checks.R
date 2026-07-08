@@ -26,6 +26,25 @@ job_dir <- function(root, job) {
   hits <- dirs[startsWith(basename(dirs), job)]
   if (length(hits)) return(normalize_loose(hits))
 
+  global_provenance <- file.path(root, "kflow-provenance.json")
+  if (file.exists(global_provenance) && requireNamespace("jsonlite", quietly = TRUE)) {
+    prov <- tryCatch(jsonlite::read_json(global_provenance, simplifyVector = TRUE), error = function(e) NULL)
+    inputs <- tryCatch(as.data.frame(prov$inputs, stringsAsFactors = FALSE), error = function(e) data.frame())
+    if (nrow(inputs)) {
+      fields <- intersect(c("job_number", "job_id", "id", "cluster_id", "job_label"), names(inputs))
+      matched <- vapply(seq_len(nrow(inputs)), function(i) {
+        values <- unique(as.character(unlist(inputs[i, fields, drop = FALSE], use.names = FALSE)))
+        values <- values[!is.na(values) & nzchar(values)]
+        any(values == job) || any(startsWith(values, job))
+      }, logical(1))
+      ids <- unique(as.character(inputs$job_id[matched]))
+      ids <- ids[!is.na(ids) & nzchar(ids)]
+      hits <- file.path(root, ids)
+      hits <- hits[dir.exists(hits)]
+      if (length(hits)) return(normalize_loose(hits))
+    }
+  }
+
   provenance_matches <- vapply(dirs, function(dir) {
     path <- file.path(dir, "kflow-provenance.json")
     if (!file.exists(path) || !requireNamespace("jsonlite", quietly = TRUE)) {
