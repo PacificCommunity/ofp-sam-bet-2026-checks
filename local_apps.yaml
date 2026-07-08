@@ -150,6 +150,15 @@ local_apps:
         if (!length(parts)) return("")
         if (identical(parts[[1L]], "")) paste0("/", paste(parts[-1L], collapse = "/")) else do.call(file.path, as.list(parts))
       }
+      diagnostic_leaf_name <- function(folder) {
+        name <- basename(normalize_loose(folder))
+        grepl("^jitter_seed_[0-9]+$", name) ||
+          grepl("^peel_[0-9]+$", name) ||
+          grepl("^part_[0-9]+$", name) ||
+          grepl("^rep_[0-9]+$", name) ||
+          grepl("^scalar_[-+]?[0-9.]+$", name) ||
+          name %in% c("truth", "truth_eval", "inputs", "refit", "sim", "recovery")
+      }
       diagnostic_anchor <- function(folder) {
         parts <- path_parts(folder)
         n <- length(parts)
@@ -172,6 +181,7 @@ local_apps:
       }
       canonical_model_dir <- function(folder) {
         folder <- normalize_loose(folder)
+        if (diagnostic_leaf_name(folder)) return(NA_character_)
         parent <- parent_model_dir(folder)
         if (!identical(parent, folder)) return(parent)
       if (basename(folder) %in% c("jitter", "retro", "aspm", "hessian", "profile", "selftest", "projection") &&
@@ -182,6 +192,7 @@ local_apps:
       }
       topmost_dirs <- function(paths) {
         paths <- normalize_loose(unique(vapply(paths, canonical_model_dir, character(1L), USE.NAMES = FALSE)))
+        paths <- paths[!is.na(paths) & nzchar(paths)]
         paths <- paths[file.exists(file.path(paths, "model_payload.rds"))]
         if (!length(paths)) return(paths)
         keep <- vapply(paths, function(path) {
