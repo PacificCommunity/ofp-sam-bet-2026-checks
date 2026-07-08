@@ -2,7 +2,7 @@ name: ofp-sam-bet-2026-check-jitter-merge
 description: Merge split mfclkit jitter checks after parallel jitter jobs complete.
 command: bash run.sh
 target_folder: jitter-merge
-docker_image: ghcr.io/pacificcommunity/tuna-flow:v2.0
+docker_image: ghcr.io/pacificcommunity/tuna-flow:v2.1
 resources:
   cpus: 2
   memory: 12GB

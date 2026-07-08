@@ -2,7 +2,7 @@ name: ofp-sam-bet-2026-check-attach
 description: Attach completed check outputs back onto a compact fitted model output bundle.
 command: bash run.sh
 target_folder: attach-checks
-docker_image: ghcr.io/pacificcommunity/tuna-flow:v2.0
+docker_image: ghcr.io/pacificcommunity/tuna-flow:v2.1
 resources:
   cpus: 1
   memory: 4GB
