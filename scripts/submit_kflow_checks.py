@@ -22,7 +22,7 @@ MERGE_CHECKS = {
 
 DEFAULT_RUNTIME_PACKAGES = (
     "mfclkit=PacificCommunity/ofp-sam-mfclkit@main,"
-    "mfclshiny=PacificCommunity/mfclshiny@045de7c5526d3a8c884422456be0a274d8228ad8"
+    "mfclshiny=PacificCommunity/mfclshiny@e6b0e42a3e4b35543a5b1e8bf9bb3c64cb666b90"
 )
 
 
