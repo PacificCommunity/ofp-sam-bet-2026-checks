@@ -183,6 +183,175 @@ write_check_model_indices <- function(index) {
   invisible(index)
 }
 
+check_status_success <- function(dat) {
+  if (!is.data.frame(dat) || !nrow(dat)) return(logical())
+  if ("success" %in% names(dat)) {
+    success <- suppressWarnings(as.logical(dat$success))
+    success[is.na(success)] <- FALSE
+    return(success)
+  }
+  if ("n_failed" %in% names(dat)) {
+    failed <- suppressWarnings(as.integer(dat$n_failed))
+    success <- is.finite(failed) & failed == 0L
+    success[is.na(success)] <- FALSE
+    return(success)
+  }
+  status <- rep("", nrow(dat))
+  for (name in c("run_status", "status", "convergence_status")) {
+    if (name %in% names(dat)) {
+      value <- tolower(trimws(as.character(dat[[name]])))
+      status[nzchar(value)] <- value[nzchar(value)]
+    }
+  }
+  bad_status <- status %in% c(
+    "failed", "error", "model_run_failed", "completed_with_nonzero_status",
+    "completed_not_converged", "not_completed", "not_converged",
+    "blocked_by_previous_profile_point", "unknown"
+  )
+  success <- !bad_status
+  if ("run_completed" %in% names(dat)) {
+    completed <- suppressWarnings(as.logical(dat$run_completed))
+    success <- success & (is.na(completed) | completed)
+  }
+  if ("converged" %in% names(dat)) {
+    converged <- suppressWarnings(as.logical(dat$converged))
+    success <- success & (is.na(converged) | converged)
+  }
+  if ("total_nll" %in% names(dat)) {
+    total_nll <- suppressWarnings(as.numeric(dat$total_nll))
+    success <- success & is.finite(total_nll)
+  }
+  if ("output_hessian" %in% names(dat)) {
+    output_hessian <- trimws(as.character(dat$output_hessian))
+    success <- success & nzchar(output_hessian) & !is.na(output_hessian)
+  }
+  success
+}
+
+collect_check_unit_status <- function(model_dir, check_type) {
+  out <- tryCatch({
+    if (identical(check_type, "jitter")) {
+      mfclkit::mfk_collect_jitter(model_dir)
+    } else if (identical(check_type, "retro")) {
+      mfclkit::mfk_collect_retro(model_dir)
+    } else if (identical(check_type, "profile")) {
+      roots <- list.dirs(file.path(model_dir, "profile"), recursive = FALSE, full.names = TRUE)
+      bind_rows_fill(lapply(roots, mfclkit::mfk_read_profile_points))
+    } else if (identical(check_type, "selftest")) {
+      candidates <- c(
+        file.path(model_dir, "selftest", "selftest_runs.rds"),
+        file.path(model_dir, "selftest_runs.rds")
+      )
+      for (path in candidates[file.exists(candidates)]) {
+        dat <- tryCatch(readRDS(path), error = function(e) NULL)
+        if (is.data.frame(dat)) return(dat)
+      }
+      refits <- list.dirs(file.path(model_dir, "selftest", "refit"),
+                          recursive = FALSE, full.names = TRUE)
+      rows <- lapply(refits, function(dir) {
+        info <- tryCatch(readRDS(file.path(dir, "model_info.rds")),
+                         error = function(e) NULL)
+        data.frame(
+          rep = sub("^rep_", "", basename(dir)),
+          run_status = as.character(info$run_status %||% info$status %||% "unknown"),
+          run_completed = isTRUE(info$run_completed %||% FALSE),
+          convergence_status = as.character(info$convergence_status %||% ""),
+          converged = isTRUE(info$converged %||% FALSE),
+          failure_reason = as.character(info$failure_reason %||% ""),
+          folder = normalize_loose(dir),
+          stringsAsFactors = FALSE
+        )
+      })
+      bind_rows_fill(rows)
+    } else if (identical(check_type, "hessian")) {
+      part_dirs <- list.dirs(file.path(model_dir, "hessian"), recursive = FALSE, full.names = TRUE)
+      part_dirs <- part_dirs[grepl("^part_[0-9]+$", basename(part_dirs))]
+      if (length(part_dirs)) {
+        bind_rows_fill(lapply(part_dirs, function(dir) {
+          hinfo <- tryCatch(readRDS(file.path(dir, "hessian_info.rds")),
+                            error = function(e) NULL)
+          data.frame(
+            unit = basename(dir),
+            part = suppressWarnings(as.integer(hinfo$hessian_part %||% sub("^part_", "", basename(dir)))),
+            run_status = as.character(hinfo$run_status %||% "unknown"),
+            run_completed = !is.null(hinfo) && !identical(hinfo$run_status, "model_run_failed"),
+            converged = !is.null(hinfo) && !identical(hinfo$run_status, "model_run_failed"),
+            output_hessian = as.character(hinfo$output_hessian %||% NA_character_),
+            failure_reason = as.character(hinfo$error %||% ""),
+            folder = normalize_loose(dir),
+            stringsAsFactors = FALSE
+          )
+        }))
+      } else {
+        hinfo <- tryCatch(readRDS(file.path(model_dir, "hessian", "hessian_info.rds")),
+                          error = function(e) NULL)
+        data.frame(
+          unit = "hessian",
+          run_status = as.character(hinfo$eigen$hessian_status %||% hinfo$run_status %||% "unknown"),
+          run_completed = !is.null(hinfo),
+          converged = suppressWarnings(as.logical(hinfo$diagnostics$summary$hessian_ok %||% NA)),
+          failure_reason = as.character(hinfo$stitch$command$error %||% hinfo$error %||% ""),
+          folder = normalize_loose(file.path(model_dir, "hessian")),
+          stringsAsFactors = FALSE
+        )
+      }
+    } else {
+      data.frame(stringsAsFactors = FALSE)
+    }
+  }, error = function(e) {
+    data.frame(
+      run_status = "status_collect_failed",
+      run_completed = FALSE,
+      converged = FALSE,
+      failure_reason = conditionMessage(e),
+      stringsAsFactors = FALSE
+    )
+  })
+  if (!is.data.frame(out)) out <- data.frame(stringsAsFactors = FALSE)
+  if (nrow(out)) {
+    out$check_type <- check_type
+    out$success <- check_status_success(out)
+  }
+  out
+}
+
+write_check_status_summary <- function(model_dir, check_type) {
+  units <- collect_check_unit_status(model_dir, check_type)
+  if (nrow(units)) {
+    write.csv(units, file.path(model_dir, "check-unit-status.csv"), row.names = FALSE)
+    saveRDS(units, file.path(model_dir, "check-unit-status.rds"), compress = "xz")
+  }
+  n_units <- nrow(units)
+  n_success <- if (n_units) sum(units$success %in% TRUE, na.rm = TRUE) else 0L
+  n_failed <- if (n_units) sum(!(units$success %in% TRUE), na.rm = TRUE) else 0L
+  requires_all_units <- check_type %in% c("profile", "hessian")
+  merge_status <- if (!n_units) {
+    "no_units"
+  } else if (requires_all_units && n_failed > 0L) {
+    "incomplete"
+  } else if (n_failed > 0L) {
+    "complete_with_failed_units"
+  } else {
+    "complete"
+  }
+  summary <- data.frame(
+    check_type = check_type,
+    model_key = model_key,
+    n_units = n_units,
+    n_success = n_success,
+    n_failed = n_failed,
+    has_failures = n_failed > 0L,
+    requires_all_units = requires_all_units,
+    all_required_units_successful = !requires_all_units || (n_units > 0L && n_failed == 0L),
+    merge_status = merge_status,
+    created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+    stringsAsFactors = FALSE
+  )
+  write.csv(summary, file.path(model_dir, "check-summary.csv"), row.names = FALSE)
+  saveRDS(as.list(summary), file.path(model_dir, "check-summary.rds"), compress = "xz")
+  invisible(summary)
+}
+
 payload_text <- function(x, default = "") {
   value <- tryCatch(as.character(x), error = function(e) character())
   if (!length(value) || is.na(value[[1L]]) || !nzchar(value[[1L]])) default else value[[1L]]
@@ -1114,14 +1283,16 @@ if (identical(check_type, "jitter")) {
   seeds <- as.integer(split_numbers(env("JITTER_SEEDS", env("JITTER_SEED", "1")), default = 1))
   cv <- split_numbers(env("JITTER_CV", "0.2"), default = 0.2)[[1L]]
   slots <- check_jitter_slots()
-  jitter_command <- check_final_phase_command()
+  jitter_use_doitall <- truthy(env("JITTER_USE_DOITALL", "true"), TRUE)
+  jitter_command <- if (isTRUE(jitter_use_doitall)) NULL else check_final_phase_command()
   write_run_manifest(list(
     jitter_seeds = paste(seeds, collapse = " "),
     jitter_cv = cv,
-    jitter_slots = paste(slots, collapse = " ")
+    jitter_slots = paste(slots, collapse = " "),
+    jitter_use_doitall = jitter_use_doitall
   ))
-  result <- mfk_run_jitter(
-    backend,
+  jitter_args <- list(
+    backend = backend,
     input_dir = prepared$case_dir,
     model_dir = model_dir,
     seeds = seeds,
@@ -1129,9 +1300,10 @@ if (identical(check_type, "jitter")) {
     jitter_args = list(include_slots = slots),
     par = check_start_par,
     start_par_name = "00.par",
-    command = jitter_command,
     run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
   )
+  if (!is.null(jitter_command)) jitter_args$command <- jitter_command
+  result <- do.call(mfk_run_jitter, jitter_args)
   saveRDS(result, file.path(model_dir, "jitter_runs.rds"), compress = "xz")
   try(write.csv(mfk_collect_jitter(model_dir), file.path(model_dir, "jitter-index.csv"), row.names = FALSE), silent = TRUE)
 
@@ -1168,16 +1340,43 @@ if (identical(check_type, "jitter")) {
     hessian_stitch_inputs = paste(names(stitch_inputs)[stitch_inputs], collapse = " ")
   ))
   result <- lapply(parts, function(part) {
-    mfk_run_hessian_part(
-      backend,
-      input_dir = prepared$case_dir,
-      output_dir = file.path(model_dir, "hessian", paste0("part_", part)),
-      part = part,
-      nsplit = nsplit,
-      par = check_start_par,
-      frq = prepared$frq,
-      compact = truthy(env("HESSIAN_COMPACT", "true"), TRUE),
-      run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
+    part_dir <- file.path(model_dir, "hessian", paste0("part_", part))
+    tryCatch(
+      mfk_run_hessian_part(
+        backend,
+        input_dir = prepared$case_dir,
+        output_dir = part_dir,
+        part = part,
+        nsplit = nsplit,
+        par = check_start_par,
+        frq = prepared$frq,
+        compact = truthy(env("HESSIAN_COMPACT", "true"), TRUE),
+        run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
+      ),
+      error = function(e) {
+        dir.create(part_dir, recursive = TRUE, showWarnings = FALSE)
+        info <- list(
+          engine = "native",
+          hessian_part = as.integer(part),
+          nsplit = as.integer(nsplit),
+          start_par = NA_integer_,
+          end_par = NA_integer_,
+          npars = NA_integer_,
+          frq_file = basename(prepared$frq),
+          program_path = program_path,
+          part_dir = normalize_loose(part_dir),
+          input_dir = normalize_loose(prepared$case_dir),
+          input_par = basename(check_start_par),
+          output_par = NA_character_,
+          output_hessian = NA_character_,
+          command = NA_character_,
+          run_status = "model_run_failed",
+          error = conditionMessage(e)
+        )
+        saveRDS(info, file.path(part_dir, "hessian_info.rds"), compress = "xz")
+        writeLines(conditionMessage(e), file.path(part_dir, "hessian-failure.txt"), useBytes = TRUE)
+        info
+      }
     )
   })
   saveRDS(result, file.path(model_dir, "hessian_runs.rds"), compress = "xz")
@@ -1334,6 +1533,12 @@ if (identical(check_type, "jitter")) {
   if (!nzchar(Sys.getenv("selftest_keep_sim_debug", ""))) {
     Sys.setenv(selftest_keep_sim_debug = env("SELFTEST_KEEP_SIM_DEBUG", "0"))
   }
+  if (!nzchar(Sys.getenv("selftest_source_mode", ""))) {
+    Sys.setenv(selftest_source_mode = env("SELFTEST_SOURCE_MODE", "last_par"))
+  }
+  if (!nzchar(Sys.getenv("selftest_refit_mode", ""))) {
+    Sys.setenv(selftest_refit_mode = env("SELFTEST_REFIT_MODE", "doitall"))
+  }
   if (nzchar(runner)) args$runner <- runner
   if (nzchar(runner_work_dir)) args$runner_work_dir <- runner_work_dir
   result <- do.call(mfk_run_selftest, args)
@@ -1345,8 +1550,10 @@ if (identical(check_type, "jitter")) {
 
 enrich_check_payloads()
 try(mfclkit::mfk_collect_diagnostics(model_dir, write_index = TRUE), silent = TRUE)
+write_check_status_summary(model_dir, check_type)
 compact_check_outputs()
 try(mfclkit::mfk_collect_diagnostics(model_dir, write_index = TRUE), silent = TRUE)
+write_check_status_summary(model_dir, check_type)
 payload_index <- build_report_payloads()
 write_check_payload_index(payload_index)
 build_report_ready_figures()

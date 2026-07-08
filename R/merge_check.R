@@ -69,7 +69,6 @@ discover_check_model_dirs <- function(root, check_type) {
   }), use.names = FALSE))
   marker <- paste0("/checks/", check_type, "/")
   dirs <- dirs[grepl(marker, normalize_loose(dirs), fixed = TRUE)]
-  dirs <- dirs[file.exists(file.path(dirs, "model_payload.rds"))]
   unique(normalize_loose(dirs))
 }
 
@@ -171,9 +170,152 @@ copy_check_units <- function(source_dirs, target_dir, check_type) {
     }
   }
   if (!length(copied)) {
-    stop("No ", check_type, " unit outputs found to merge.", call. = FALSE)
+    warning("No ", check_type, " unit outputs found to merge; writing summary-only merge.", call. = FALSE)
   }
   copied
+}
+
+check_status_success <- function(dat) {
+  if (!is.data.frame(dat) || !nrow(dat)) return(logical())
+  if ("success" %in% names(dat)) {
+    success <- suppressWarnings(as.logical(dat$success))
+    success[is.na(success)] <- FALSE
+    return(success)
+  }
+  if ("n_failed" %in% names(dat)) {
+    failed <- suppressWarnings(as.integer(dat$n_failed))
+    success <- is.finite(failed) & failed == 0L
+    success[is.na(success)] <- FALSE
+    return(success)
+  }
+  status <- rep("", nrow(dat))
+  for (name in c("run_status", "status", "convergence_status")) {
+    if (name %in% names(dat)) {
+      value <- tolower(trimws(as.character(dat[[name]])))
+      status[nzchar(value)] <- value[nzchar(value)]
+    }
+  }
+  bad_status <- status %in% c(
+    "failed", "error", "model_run_failed", "completed_with_nonzero_status",
+    "completed_not_converged", "not_completed", "not_converged",
+    "blocked_by_previous_profile_point", "unknown", "status_collect_failed"
+  )
+  success <- !bad_status
+  if ("run_completed" %in% names(dat)) {
+    completed <- suppressWarnings(as.logical(dat$run_completed))
+    success <- success & (is.na(completed) | completed)
+  }
+  if ("converged" %in% names(dat)) {
+    converged <- suppressWarnings(as.logical(dat$converged))
+    success <- success & (is.na(converged) | converged)
+  }
+  if ("total_nll" %in% names(dat)) {
+    total_nll <- suppressWarnings(as.numeric(dat$total_nll))
+    success <- success & is.finite(total_nll)
+  }
+  success
+}
+
+collect_check_unit_status <- function(model_dir, check_type, source_dirs = character()) {
+  out <- tryCatch({
+    if (identical(check_type, "jitter")) {
+      mfclkit::mfk_collect_jitter(model_dir)
+    } else if (identical(check_type, "retro")) {
+      mfclkit::mfk_collect_retro(model_dir)
+    } else if (identical(check_type, "profile")) {
+      roots <- list.dirs(file.path(model_dir, "profile"), recursive = FALSE, full.names = TRUE)
+      bind_rows_fill_local(lapply(roots, mfclkit::mfk_read_profile_points))
+    } else if (identical(check_type, "selftest")) {
+      candidates <- c(
+        file.path(model_dir, "selftest", "selftest_runs.rds"),
+        file.path(model_dir, "selftest_runs.rds")
+      )
+      for (path in candidates[file.exists(candidates)]) {
+        dat <- tryCatch(readRDS(path), error = function(e) NULL)
+        if (is.data.frame(dat)) return(dat)
+      }
+      data.frame(stringsAsFactors = FALSE)
+    } else {
+      data.frame(stringsAsFactors = FALSE)
+    }
+  }, error = function(e) {
+    data.frame(
+      run_status = "status_collect_failed",
+      run_completed = FALSE,
+      converged = FALSE,
+      failure_reason = conditionMessage(e),
+      stringsAsFactors = FALSE
+    )
+  })
+  if (!is.data.frame(out) || !nrow(out)) {
+    summaries <- lapply(source_dirs, function(src) {
+      path <- file.path(src, "check-summary.csv")
+      if (file.exists(path)) read_csv_safe(path) else data.frame(stringsAsFactors = FALSE)
+    })
+    out <- bind_rows_fill_local(summaries)
+  }
+  if (!is.data.frame(out)) out <- data.frame(stringsAsFactors = FALSE)
+  if (nrow(out)) {
+    out$check_type <- check_type
+    out$success <- check_status_success(out)
+  }
+  out
+}
+
+write_check_status_summary <- function(model_dir, check_type, source_dirs = character()) {
+  units <- collect_check_unit_status(model_dir, check_type, source_dirs)
+  if (nrow(units)) {
+    write.csv(units, file.path(model_dir, "check-unit-status.csv"), row.names = FALSE)
+    saveRDS(units, file.path(model_dir, "check-unit-status.rds"), compress = "xz")
+  }
+  source_summaries <- bind_rows_fill_local(lapply(source_dirs, function(src) {
+    path <- file.path(src, "check-summary.csv")
+    if (!file.exists(path)) return(data.frame(stringsAsFactors = FALSE))
+    dat <- read_csv_safe(path)
+    if (!nrow(dat)) return(dat)
+    dat$source_model_dir <- normalize_loose(src)
+    dat
+  }))
+  if (nrow(source_summaries)) {
+    source_summaries$success <- check_status_success(source_summaries)
+    write.csv(source_summaries, file.path(model_dir, "check-source-status.csv"), row.names = FALSE)
+    saveRDS(source_summaries, file.path(model_dir, "check-source-status.rds"), compress = "xz")
+  }
+  n_units <- nrow(units)
+  n_success <- if (n_units) sum(units$success %in% TRUE, na.rm = TRUE) else 0L
+  n_failed <- if (n_units) sum(!(units$success %in% TRUE), na.rm = TRUE) else 0L
+  n_source_units <- nrow(source_summaries)
+  n_source_failed <- if (n_source_units) sum(!(source_summaries$success %in% TRUE), na.rm = TRUE) else 0L
+  requires_all_units <- check_type %in% c("profile")
+  total_failed <- n_failed + n_source_failed
+  merge_status <- if (!n_units && !n_source_units) {
+    "no_units"
+  } else if (requires_all_units && total_failed > 0L) {
+    "incomplete"
+  } else if (total_failed > 0L) {
+    "complete_with_failed_units"
+  } else {
+    "complete"
+  }
+  summary <- data.frame(
+    check_type = check_type,
+    model_key = model_key,
+    n_units = n_units,
+    n_success = n_success,
+    n_failed = n_failed,
+    has_failures = total_failed > 0L,
+    n_source_model_dirs = length(source_dirs),
+    n_source_units = n_source_units,
+    n_source_failed = n_source_failed,
+    requires_all_units = requires_all_units,
+    all_required_units_successful = !requires_all_units || ((n_units > 0L || n_source_units > 0L) && total_failed == 0L),
+    merge_status = merge_status,
+    created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+    stringsAsFactors = FALSE
+  )
+  write.csv(summary, file.path(model_dir, "check-summary.csv"), row.names = FALSE)
+  saveRDS(as.list(summary), file.path(model_dir, "check-summary.rds"), compress = "xz")
+  invisible(summary)
 }
 
 check_report_figure_keys <- function(check_type) {
@@ -462,6 +604,7 @@ if (isTRUE(smoke_only)) {
     write.csv(mfclkit::mfk_profile_conflict_metrics(points), file.path(model_dir, "profile-qc.csv"), row.names = FALSE)
   }
 }
+write_check_status_summary(model_dir, check_type, source_model_dirs)
 
 rows <- list()
 for (source_parent in unique(dirname(source_model_dirs))) {
@@ -511,8 +654,10 @@ saveRDS(as.list(manifest), file.path(model_dir, "check_manifest.rds"), compress 
 
 enrich_merged_check_payloads()
 try(mfclkit::mfk_collect_diagnostics(model_dir, write_index = TRUE), silent = TRUE)
+write_check_status_summary(model_dir, check_type, source_model_dirs)
 compact_merged_check_outputs()
 try(mfclkit::mfk_collect_diagnostics(model_dir, write_index = TRUE), silent = TRUE)
+write_check_status_summary(model_dir, check_type, source_model_dirs)
 if (requireNamespace("mfclshiny", quietly = TRUE)) {
   payload_index <- tryCatch(
     mfclshiny::build_model_payloads(model_dir, recursive = TRUE, overwrite = TRUE),

@@ -335,7 +335,7 @@ def main() -> int:
                     continue
                 response = api_json("POST", f"{base_url}/api/job/{task}", token, payload)
                 job = response.get("job", response)
-                code = job.get("code") or job.get("id") or "?"
+                code = job.get("job_number") or job.get("number") or job.get("code") or job.get("id") or "?"
                 if code and code != "?":
                     unit_job_ids.append(str(code))
                 print(f"submitted {task} {model}: job {code}")
@@ -409,7 +409,7 @@ def main() -> int:
             continue
         response = api_json("POST", f"{base_url}/api/job/{task}", token, payload)
         job = response.get("job", response)
-        code = job.get("code") or job.get("id") or "?"
+        code = job.get("job_number") or job.get("number") or job.get("code") or job.get("id") or "?"
         print(f"submitted {task} {model}: job {code}")
     return 0
 

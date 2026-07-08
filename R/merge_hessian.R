@@ -122,6 +122,9 @@ compact_hessian_merge_outputs <- function() {
         "model_payload.rds", "model_payload_manifest.json", "model_payload_manifest.csv",
         "fishery_map.R", "tag_rep_map.R", "bet.region_map.geojson", "bet.reg_scaling",
         "check_manifest.csv", "check_manifest.rds", "hessian_merge.rds",
+        "hessian-part-status.csv", "hessian-part-status.rds",
+        "check-unit-status.csv", "check-unit-status.rds",
+        "check-summary.csv", "check-summary.rds",
         "model-index.csv", "check-model-index.csv", "mfclkit_diagnostics.rds",
         "mfclkit_diagnostics.csv", "check-output-cleanup.csv", "check-output-cleanup.rds"
       ),
@@ -153,7 +156,7 @@ discover_hessian_model_dirs <- function(root) {
   }), use.names = FALSE))
   dirs <- dirs[grepl("/hessian/part_[0-9]+$", normalize_loose(dirs))]
   model_dirs <- normalize_loose(dirname(dirname(dirs)))
-  unique(model_dirs[file.exists(file.path(model_dirs, "model_payload.rds"))])
+  unique(model_dirs)
 }
 
 hessian_part_source_table <- function(model_dirs) {
@@ -194,6 +197,76 @@ hessian_part_source_table <- function(model_dirs) {
   out
 }
 
+hessian_part_status_table <- function(hessian_dir, expected_nsplit = NA_integer_) {
+  part_dirs <- list.dirs(hessian_dir, recursive = FALSE, full.names = TRUE)
+  part_dirs <- part_dirs[grepl("^part_[0-9]+$", basename(part_dirs))]
+  part_numbers <- suppressWarnings(as.integer(sub("^part_", "", basename(part_dirs))))
+  keep <- is.finite(part_numbers)
+  part_dirs <- part_dirs[keep]
+  part_numbers <- part_numbers[keep]
+  observed_parts <- sort(unique(part_numbers))
+  expected_parts <- if (is.finite(expected_nsplit) && expected_nsplit > 0L) {
+    seq_len(expected_nsplit)
+  } else {
+    observed_parts
+  }
+  if (!length(expected_parts)) expected_parts <- integer()
+  rows <- lapply(expected_parts, function(part) {
+    dir <- part_dirs[part_numbers == part]
+    dir <- if (length(dir)) dir[[1L]] else file.path(hessian_dir, paste0("part_", part))
+    info_file <- file.path(dir, "hessian_info.rds")
+    hinfo <- if (file.exists(info_file)) tryCatch(readRDS(info_file), error = function(e) NULL) else NULL
+    hes_files <- if (dir.exists(dir)) list.files(dir, pattern = "\\.hes$", full.names = FALSE) else character()
+    output_hessian <- as.character(hinfo$output_hessian %||% NA_character_)
+    if ((!length(output_hessian) || is.na(output_hessian) || !nzchar(output_hessian)) && length(hes_files)) {
+      output_hessian <- hes_files[[1L]]
+    }
+    has_hessian_file <- length(hes_files) > 0L ||
+      (!is.na(output_hessian) && nzchar(output_hessian) && file.exists(file.path(dir, output_hessian)))
+    run_status <- as.character(hinfo$run_status %||% if (file.exists(info_file)) "unknown" else "missing")
+    missing <- !dir.exists(dir) || !file.exists(info_file)
+    success <- !missing && identical(run_status, "completed") && isTRUE(has_hessian_file)
+    data.frame(
+      check_type = "hessian",
+      unit = paste0("part_", part),
+      part = as.integer(part),
+      run_status = run_status,
+      run_completed = !missing && !identical(run_status, "model_run_failed"),
+      output_hessian = output_hessian,
+      has_hessian_file = isTRUE(has_hessian_file),
+      success = isTRUE(success),
+      missing = isTRUE(missing),
+      failure_reason = as.character(hinfo$error %||% if (missing) "missing Hessian part metadata" else ""),
+      folder = normalize_loose(dir),
+      stringsAsFactors = FALSE
+    )
+  })
+  observed_only <- setdiff(observed_parts, expected_parts)
+  if (length(observed_only)) {
+    rows <- c(rows, lapply(observed_only, function(part) {
+      dir <- part_dirs[part_numbers == part][[1L]]
+      hinfo <- tryCatch(readRDS(file.path(dir, "hessian_info.rds")), error = function(e) NULL)
+      hes_files <- list.files(dir, pattern = "\\.hes$", full.names = FALSE)
+      output_hessian <- as.character(hinfo$output_hessian %||% if (length(hes_files)) hes_files[[1L]] else NA_character_)
+      data.frame(
+        check_type = "hessian",
+        unit = paste0("part_", part),
+        part = as.integer(part),
+        run_status = as.character(hinfo$run_status %||% "unknown"),
+        run_completed = !identical(hinfo$run_status, "model_run_failed"),
+        output_hessian = output_hessian,
+        has_hessian_file = length(hes_files) > 0L,
+        success = FALSE,
+        missing = FALSE,
+        failure_reason = "unexpected Hessian part outside expected nsplit",
+        folder = normalize_loose(dir),
+        stringsAsFactors = FALSE
+      )
+    }))
+  }
+  bind_rows_fill_local(rows)
+}
+
 matches_model <- function(model_dir, selector) {
   if (!nzchar(selector)) return(TRUE)
   values <- c(basename(model_dir))
@@ -212,46 +285,53 @@ matches_model <- function(model_dir, selector) {
 
 source_model_dirs <- discover_hessian_model_dirs(input_root)
 source_model_dirs <- source_model_dirs[vapply(source_model_dirs, matches_model, logical(1), selector = model_selector)]
-if (!length(source_model_dirs)) {
-  stop("No Hessian part model folders found under ", input_root, call. = FALSE)
-}
-
 part_table <- hessian_part_source_table(source_model_dirs)
-if (!nrow(part_table)) stop("No Hessian part directories found.", call. = FALSE)
+base_model_dir <- if (nrow(part_table)) {
+  part_table$source_model_dir[[1L]]
+} else if (length(source_model_dirs)) {
+  source_model_dirs[[1L]]
+} else {
+  NA_character_
+}
+source_model_dirs <- unique(c(source_model_dirs, part_table$source_model_dir))
+source_model_dirs <- source_model_dirs[!is.na(source_model_dirs) & nzchar(source_model_dirs)]
 
-base_model_dir <- part_table$source_model_dir[[1L]]
-source_model_dirs <- unique(part_table$source_model_dir)
-
-model_key <- gsub("[^A-Za-z0-9_.-]+", "_", basename(base_model_dir))
+model_key <- if (!is.na(base_model_dir) && nzchar(base_model_dir)) {
+  gsub("[^A-Za-z0-9_.-]+", "_", basename(base_model_dir))
+} else {
+  gsub("[^A-Za-z0-9_.-]+", "_", model_selector)
+}
 if (!nzchar(model_key)) model_key <- "model"
 model_dir <- file.path(output_dir, "checks", "hessian", model_key)
 hessian_dir <- file.path(model_dir, "hessian")
 dir.create(hessian_dir, recursive = TRUE, showWarnings = FALSE)
 
-for (name in c(
-  "model_payload.rds", "model_payload_manifest.json", "model_payload_manifest.csv",
-  "fishery_map.R", "tag_rep_map.R", "bet.region_map.geojson", "bet.reg_scaling",
-  "final.par"
-)) {
-  copy_file_if_exists(file.path(base_model_dir, name), model_dir)
-}
-copy_existing_diagnostic_dirs(base_model_dir, model_dir, exclude = "hessian")
+if (!is.na(base_model_dir) && dir.exists(base_model_dir)) {
+  for (name in c(
+    "model_payload.rds", "model_payload_manifest.json", "model_payload_manifest.csv",
+    "fishery_map.R", "tag_rep_map.R", "bet.region_map.geojson", "bet.reg_scaling",
+    "final.par"
+  )) {
+    copy_file_if_exists(file.path(base_model_dir, name), model_dir)
+  }
+  copy_existing_diagnostic_dirs(base_model_dir, model_dir, exclude = "hessian")
 
-case_files <- unique(unlist(lapply(c(
-  "[.]frq$",
-  "[.]ini$",
-  "[.]tag$",
-  "[.]age_length$",
-  "[.]dep$",
-  "[.]dp2$",
-  "^mfcl[.]cfg$",
-  "^depgrad[.]rpt$",
-  "^Hess[.]rpt$"
-), function(pattern) {
-  list.files(base_model_dir, pattern = pattern, full.names = TRUE, ignore.case = TRUE)
-}), use.names = FALSE))
-for (case_file in case_files) {
-  copy_file_if_exists(case_file, model_dir)
+  case_files <- unique(unlist(lapply(c(
+    "[.]frq$",
+    "[.]ini$",
+    "[.]tag$",
+    "[.]age_length$",
+    "[.]dep$",
+    "[.]dp2$",
+    "^mfcl[.]cfg$",
+    "^depgrad[.]rpt$",
+    "^Hess[.]rpt$"
+  ), function(pattern) {
+    list.files(base_model_dir, pattern = pattern, full.names = TRUE, ignore.case = TRUE)
+  }), use.names = FALSE))
+  for (case_file in case_files) {
+    copy_file_if_exists(case_file, model_dir)
+  }
 }
 
 part_sources <- part_table$part_dir
@@ -262,22 +342,50 @@ for (part_dir in part_sources) {
 }
 
 expected_nsplit <- suppressWarnings(as.integer(env("HESSIAN_NSPLIT", NA_character_)))
-if (is.finite(expected_nsplit) && expected_nsplit > 0L) {
-  missing <- setdiff(seq_len(expected_nsplit), part_numbers)
-  if (length(missing)) stop("Missing Hessian part(s): ", paste(missing, collapse = ", "), call. = FALSE)
+part_status <- hessian_part_status_table(hessian_dir, expected_nsplit = expected_nsplit)
+if (nrow(part_status)) {
+  write.csv(part_status, file.path(model_dir, "hessian-part-status.csv"), row.names = FALSE)
+  write.csv(part_status, file.path(model_dir, "check-unit-status.csv"), row.names = FALSE)
+  saveRDS(part_status, file.path(model_dir, "hessian-part-status.rds"), compress = "xz")
+  saveRDS(part_status, file.path(model_dir, "check-unit-status.rds"), compress = "xz")
+}
+n_units <- nrow(part_status)
+n_success <- if (n_units) sum(part_status$success %in% TRUE, na.rm = TRUE) else 0L
+n_failed <- if (n_units) sum(!(part_status$success %in% TRUE), na.rm = TRUE) else 0L
+missing <- if (n_units && "missing" %in% names(part_status)) {
+  part_status$part[part_status$missing %in% TRUE]
+} else {
+  integer()
+}
+requested_run_stitch <- truthy(env("HESSIAN_MERGE_RUN", if (isTRUE(smoke_only)) "false" else "true"), TRUE)
+requested_run_eigen <- truthy(env("HESSIAN_MERGE_EIGEN", if (isTRUE(smoke_only)) "false" else "true"), TRUE)
+complete_for_stitch <- n_units > 0L && n_failed == 0L
+run_stitch <- requested_run_stitch && complete_for_stitch
+run_eigen <- requested_run_eigen && complete_for_stitch
+merge_status <- if (!n_units) {
+  "no_units"
+} else if (!complete_for_stitch) {
+  "incomplete_parts"
+} else {
+  "complete"
 }
 
-run_stitch <- truthy(env("HESSIAN_MERGE_RUN", if (isTRUE(smoke_only)) "false" else "true"), TRUE)
-run_eigen <- truthy(env("HESSIAN_MERGE_EIGEN", if (isTRUE(smoke_only)) "false" else "true"), TRUE)
-info <- if (isTRUE(smoke_only)) {
+incomplete_info <- function(status, reliability, reason) {
   list(
-    schema = "ofp-sam.checks.hessian_merge_smoke.v1",
+    schema = "ofp-sam.checks.hessian_merge_status.v1",
     meta = list(
       hessian_dir = normalize_loose(hessian_dir),
       root_name = model_key,
       model_key = model_key,
       parts = part_numbers,
-      n_parts = length(part_numbers)
+      n_parts = length(part_numbers),
+      expected_nsplit = expected_nsplit,
+      n_units = n_units,
+      n_success = n_success,
+      n_failed = n_failed,
+      missing_parts = missing,
+      merge_status = status,
+      failure_reason = reason
     ),
     stitch = list(
       run = FALSE,
@@ -287,34 +395,64 @@ info <- if (isTRUE(smoke_only)) {
       run = FALSE,
       n_negative_eigenvalues = NA_integer_,
       n_total_eigenvalues = NA_integer_,
-      hessian_status = "smoke_only",
-      reliability = "SMOKE"
+      hessian_status = status,
+      reliability = reliability
     ),
     diagnostics = list(
       summary = list(
-        hessian_ok = NA,
+        hessian_ok = FALSE,
         pdh = list(is_pdh = NA),
         spd = NA
-      )
+      ),
+      part_status = part_status
     ),
-    smoke = TRUE,
-    run_stitch = run_stitch,
-    run_eigen = run_eigen
+    smoke = isTRUE(smoke_only),
+    run_stitch = requested_run_stitch,
+    run_eigen = requested_run_eigen
   )
+}
+
+info <- if (isTRUE(smoke_only)) {
+  incomplete_info("smoke_only", "SMOKE", "CHECK_SMOKE_ONLY=true")
+} else if (!complete_for_stitch) {
+  incomplete_info("incomplete_parts", "FAILED_PARTS", "One or more Hessian parts failed or are missing.")
 } else {
-  mfclkit::mfk_stitch_native_hessian(
-    model_dir,
-    model_dir = model_dir,
-    program_path = program_path,
-    run = run_stitch,
-    eigen = run_eigen,
-    require_complete = TRUE,
-    fail_on_command_error = FALSE,
-    run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
+  tryCatch(
+    mfclkit::mfk_stitch_native_hessian(
+      model_dir,
+      model_dir = model_dir,
+      program_path = program_path,
+      run = run_stitch,
+      eigen = run_eigen,
+      require_complete = TRUE,
+      fail_on_command_error = FALSE,
+      run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
+    ),
+    error = function(e) {
+      merge_status <<- "stitch_failed"
+      incomplete_info("stitch_failed", "STITCH_FAILED", conditionMessage(e))
+    }
   )
 }
 saveRDS(info, file.path(model_dir, "hessian_merge.rds"), compress = "xz")
 saveRDS(info, file.path(hessian_dir, "hessian_info.rds"), compress = "xz")
+
+summary <- data.frame(
+  check_type = "hessian",
+  model_key = model_key,
+  n_units = n_units,
+  n_success = n_success,
+  n_failed = n_failed,
+  has_failures = n_failed > 0L,
+  n_source_model_dirs = length(source_model_dirs),
+  requires_all_units = TRUE,
+  all_required_units_successful = n_units > 0L && n_failed == 0L,
+  merge_status = merge_status,
+  created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+  stringsAsFactors = FALSE
+)
+write.csv(summary, file.path(model_dir, "check-summary.csv"), row.names = FALSE)
+saveRDS(as.list(summary), file.path(model_dir, "check-summary.rds"), compress = "xz")
 
 rows <- list()
 for (source_parent in unique(dirname(source_model_dirs))) {
@@ -356,9 +494,17 @@ manifest <- data.frame(
   model_dir = normalize_loose(model_dir),
   hessian_dir = normalize_loose(hessian_dir),
   n_parts = length(part_numbers),
+  n_units = n_units,
+  n_success = n_success,
+  n_failed = n_failed,
+  requires_all_units = TRUE,
+  all_required_units_successful = n_units > 0L && n_failed == 0L,
+  merge_status = merge_status,
   parts = paste(part_numbers, collapse = " "),
   run_stitch = run_stitch,
   run_eigen = run_eigen,
+  requested_run_stitch = requested_run_stitch,
+  requested_run_eigen = requested_run_eigen,
   stringsAsFactors = FALSE
 )
 write.csv(manifest, file.path(model_dir, "check_manifest.csv"), row.names = FALSE)
