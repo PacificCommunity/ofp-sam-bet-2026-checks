@@ -29,6 +29,7 @@ env:
   N_MIXING_PERIODS: "2"
   RETRO_ALLOW_NEW_INI_VERSION_WRITE: "true"
   RETRO_USE_DOITALL: "false"
+  RETRO_REMOVE_PAR_FILES: "false"
 output_patterns:
   - outputs/**
 metadata:
@@ -59,6 +60,7 @@ metadata:
       - N_MIXING_PERIODS
       - RETRO_ALLOW_NEW_INI_VERSION_WRITE
       - RETRO_USE_DOITALL
+      - RETRO_REMOVE_PAR_FILES
       - RETRO_COMMAND
       - MFK_RUN_MESSAGES
       - KFLOW_RUNTIME_UPDATE

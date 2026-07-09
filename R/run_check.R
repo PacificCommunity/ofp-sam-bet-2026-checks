@@ -1347,10 +1347,12 @@ if (identical(check_type, "jitter")) {
   } else {
     truthy(retro_use_doitall_raw, FALSE)
   }
+  retro_remove_par_files <- truthy(env("RETRO_REMOVE_PAR_FILES", "false"), FALSE)
   write_run_manifest(list(
     retro_peels = paste(peels, collapse = " "),
     n_mixing_periods = n_mixing_periods,
-    retro_use_doitall = retro_use_doitall
+    retro_use_doitall = retro_use_doitall,
+    retro_remove_par_files = retro_remove_par_files
   ))
   retro_args <- list(
     backend = backend,
@@ -1359,7 +1361,7 @@ if (identical(check_type, "jitter")) {
     peel = peels,
     n_mixing_periods = n_mixing_periods,
     allow_new_ini_version_write = truthy(env("RETRO_ALLOW_NEW_INI_VERSION_WRITE", "false"), FALSE),
-    remove_par_files = isTRUE(retro_use_doitall),
+    remove_par_files = isTRUE(retro_remove_par_files),
     rewrite_par = !isTRUE(retro_use_doitall),
     run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
   )

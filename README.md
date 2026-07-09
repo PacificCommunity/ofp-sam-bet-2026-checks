@@ -110,6 +110,11 @@ which diagnostic folders are copied.
   default `5000`. Use a smaller value for quick smoke tests.
 - `RETRO_PEELS`: comma/space list of peels, default `1`.
 - `N_MIXING_PERIODS`: MFCL retrospective mixing periods, default `2`.
+- `RETRO_USE_DOITALL`: use the staged `doitall.sh` when available. Default is
+  `auto`.
+- `RETRO_REMOVE_PAR_FILES`: remove copied `.par` files before a `doitall.sh`
+  retro run. Default is `false`; enable only for model folders whose `doitall.sh`
+  does not need staged par files.
 - `HESSIAN_NSPLIT`: number of Hessian parts, default `30`.
 - `HESSIAN_PARTS`: comma/space list of Hessian parts. If unset, all parts are
   submitted as parallel Kflow jobs when parallel units are enabled.
