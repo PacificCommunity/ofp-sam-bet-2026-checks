@@ -27,7 +27,7 @@ env:
   RETRO_PEELS: "1"
   N_MIXING_PERIODS: "2"
   RETRO_ALLOW_NEW_INI_VERSION_WRITE: "true"
-  RETRO_USE_DOITALL: "true"
+  RETRO_USE_DOITALL: "false"
 output_patterns:
   - outputs/**
 metadata:

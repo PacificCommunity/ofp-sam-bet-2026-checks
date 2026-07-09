@@ -1300,7 +1300,7 @@ if (identical(check_type, "jitter")) {
   seeds <- as.integer(split_numbers(env("JITTER_SEEDS", env("JITTER_SEED", "1")), default = 1))
   cv <- split_numbers(env("JITTER_CV", "0.2"), default = 0.2)[[1L]]
   slots <- check_jitter_slots()
-  jitter_use_doitall <- truthy(env("JITTER_USE_DOITALL", "true"), TRUE)
+  jitter_use_doitall <- truthy(env("JITTER_USE_DOITALL", "false"), FALSE)
   jitter_command <- if (isTRUE(jitter_use_doitall)) NULL else check_final_phase_command()
   write_run_manifest(list(
     jitter_seeds = paste(seeds, collapse = " "),
@@ -1340,7 +1340,7 @@ if (identical(check_type, "jitter")) {
   )
   if (length(retro_command)) {
     retro_args$command <- retro_command
-  } else if (!truthy(env("RETRO_USE_DOITALL", "true"), TRUE)) {
+  } else if (!truthy(env("RETRO_USE_DOITALL", "false"), FALSE)) {
     retro_args$command <- mfcl_command(output_par = "retro.par")
   }
   result <- do.call(mfk_run_retro, retro_args)

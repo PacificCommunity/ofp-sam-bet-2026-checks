@@ -27,7 +27,7 @@ env:
   JITTER_SEEDS: "1"
   JITTER_CV: "0.2"
   JITTER_SLOTS: ""
-  JITTER_USE_DOITALL: "true"
+  JITTER_USE_DOITALL: "false"
   BET_JITTER_MAX_EVALS: "5000"
 output_patterns:
   - outputs/**
