@@ -1347,12 +1347,24 @@ if (identical(check_type, "jitter")) {
   } else {
     truthy(retro_use_doitall_raw, FALSE)
   }
-  retro_remove_par_files <- truthy(env("RETRO_REMOVE_PAR_FILES", "false"), FALSE)
+  retro_makepar_start_raw <- tolower(trimws(env("RETRO_MAKEPAR_START", "auto")))
+  retro_makepar_start <- if (retro_makepar_start_raw %in% c("", "auto")) {
+    isTRUE(retro_use_doitall)
+  } else {
+    truthy(retro_makepar_start_raw, isTRUE(retro_use_doitall))
+  }
+  retro_remove_par_files_raw <- tolower(trimws(env("RETRO_REMOVE_PAR_FILES", "auto")))
+  retro_remove_par_files <- if (retro_remove_par_files_raw %in% c("", "auto")) {
+    isTRUE(retro_makepar_start)
+  } else {
+    truthy(retro_remove_par_files_raw, isTRUE(retro_makepar_start))
+  }
   retro_start_par_name <- env("RETRO_START_PAR_NAME", if (isTRUE(retro_use_doitall)) "auto" else "")
   write_run_manifest(list(
     retro_peels = paste(peels, collapse = " "),
     n_mixing_periods = n_mixing_periods,
     retro_use_doitall = retro_use_doitall,
+    retro_makepar_start = retro_makepar_start,
     retro_remove_par_files = retro_remove_par_files,
     retro_start_par_name = retro_start_par_name
   ))
@@ -1366,6 +1378,7 @@ if (identical(check_type, "jitter")) {
     allow_new_ini_version_write = truthy(env("RETRO_ALLOW_NEW_INI_VERSION_WRITE", "false"), FALSE),
     remove_par_files = isTRUE(retro_remove_par_files),
     rewrite_par = !isTRUE(retro_use_doitall),
+    makepar_start = isTRUE(retro_makepar_start),
     run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
   )
   if (nzchar(retro_start_par_name)) {
