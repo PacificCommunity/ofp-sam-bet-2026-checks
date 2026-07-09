@@ -16,6 +16,42 @@ normalize_check_type <- function(value) {
   sub("_merge$", "", value)
 }
 
+read_attached_index <- function(model_dir) {
+  rds <- file.path(model_dir, "attached-checks-index.rds")
+  csv <- file.path(model_dir, "attached-checks-index.csv")
+  out <- if (file.exists(rds)) {
+    tryCatch(readRDS(rds), error = function(e) NULL)
+  } else {
+    NULL
+  }
+  if (is.null(out) && file.exists(csv)) {
+    out <- read_csv_safe(csv)
+  }
+  out <- as.data.frame(out %||% data.frame(), stringsAsFactors = FALSE)
+  if (!nrow(out)) data.frame() else out
+}
+
+expand_attached_index <- function(dat, state = "preserved") {
+  dat <- as.data.frame(dat %||% data.frame(), stringsAsFactors = FALSE)
+  if (!nrow(dat)) return(data.frame())
+  rows <- list()
+  for (i in seq_len(nrow(dat))) {
+    row <- dat[i, , drop = FALSE]
+    values <- split_values(row$check_type %||% "")
+    values <- unique(normalize_check_type(values))
+    values <- values[nzchar(values)]
+    if (!length(values)) next
+    for (value in values) {
+      one <- row
+      one$check_type <- value
+      one$attachment_state <- state
+      one$updated_in_this_attach <- identical(state, "updated")
+      rows[[length(rows) + 1L]] <- one
+    }
+  }
+  bind_rows_fill(rows)
+}
+
 job_dir <- function(root, job) {
   job <- as.character(job %||% "")
   if (!nzchar(job)) return(character())
@@ -102,6 +138,22 @@ model_key <- gsub("[^A-Za-z0-9_.-]+", "_", as.character(base_selected$model_key 
 if (!nzchar(model_key)) model_key <- "model"
 target_dir <- file.path(output_dir, "models", model_key)
 invisible(copy_dir(base_dir, target_dir))
+diagnostic_names <- diagnostic_dir_names()
+
+previous_attached <- read_attached_index(target_dir)
+if (!nrow(previous_attached)) {
+  preserved_dirs <- diagnostic_names[dir.exists(file.path(target_dir, diagnostic_names))]
+  if (length(preserved_dirs)) {
+    previous_attached <- data.frame(
+      check_type = preserved_dirs,
+      source_input_root = normalize_loose(base_roots[[1L]] %||% ""),
+      source_check_dir = normalize_loose(base_dir),
+      attached_model_dir = normalize_loose(target_dir),
+      attached_at = as.character(base_selected$attached_at %||% ""),
+      stringsAsFactors = FALSE
+    )
+  }
+}
 
 requested_types <- normalize_check_type(attach_check_types)
 requested_types <- requested_types[nzchar(requested_types)]
@@ -132,8 +184,6 @@ check_candidates <- check_candidates[matches, , drop = FALSE]
 if (!nrow(check_candidates)) {
   stop("No check outputs matched MODEL_SELECTOR=", shQuote(model_selector), call. = FALSE)
 }
-
-diagnostic_names <- diagnostic_dir_names()
 
 candidate_check_types <- function(row) {
   compact_dir <- as.character(row$compact_dir %||% "")
@@ -205,10 +255,27 @@ for (i in seq_len(nrow(check_candidates))) {
   )
 }
 
-attached <- bind_rows_fill(attached_rows)
+updated_attached <- bind_rows_fill(attached_rows)
+if (!nrow(updated_attached)) {
+  stop("No diagnostic folders were attached.", call. = FALSE)
+}
+updated_attached <- expand_attached_index(updated_attached, state = "updated")
+updated_types <- unique(normalize_check_type(updated_attached$check_type %||% ""))
+
+preserved_attached <- expand_attached_index(previous_attached, state = "preserved")
+if (nrow(preserved_attached) && length(updated_types)) {
+  preserved_attached <- preserved_attached[
+    !normalize_check_type(preserved_attached$check_type %||% "") %in% updated_types,
+    ,
+    drop = FALSE
+  ]
+}
+
+attached <- bind_rows_fill(list(preserved_attached, updated_attached))
 if (!nrow(attached)) {
   stop("No diagnostic folders were attached.", call. = FALSE)
 }
+attached$attached_model_dir <- normalize_loose(target_dir)
 
 write.csv(attached, file.path(output_dir, "attached-checks-index.csv"), row.names = FALSE)
 write.csv(attached, file.path(target_dir, "attached-checks-index.csv"), row.names = FALSE)
