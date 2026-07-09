@@ -982,6 +982,9 @@ write_check_report_selection <- function(output_dir) {
 }
 
 build_report_payloads <- function() {
+  if (!truthy(env("CHECK_BUILD_PAYLOADS", env("CHECK_ENRICH_PAYLOADS", "true")), TRUE)) {
+    return(invisible(data.frame()))
+  }
   if (!requireNamespace("mfclshiny", quietly = TRUE)) {
     warning("mfclshiny is not installed; skipping report-ready payload build.", call. = FALSE)
     return(invisible(data.frame()))
