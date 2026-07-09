@@ -12,7 +12,8 @@ require_mfclkit <- function(required_for = check_type) {
   stop("mfclkit is required to merge ", required_for, " outputs.", call. = FALSE)
 }
 
-if (check_type %in% c("jitter", "profile", "retro")) {
+if (check_type %in% c("jitter", "profile", "retro") &&
+    truthy(env("CHECK_REQUIRE_MFCLKIT", env("CHECK_ENRICH_PAYLOADS", "true")), TRUE)) {
   require_mfclkit(check_type)
 }
 
@@ -190,7 +191,8 @@ copy_check_units <- function(source_dirs, target_dir, check_type) {
 }
 
 collect_aspm_status <- function(model_dir) {
-  if ("mfk_collect_aspm" %in% getNamespaceExports("mfclkit")) {
+  if (requireNamespace("mfclkit", quietly = TRUE) &&
+      "mfk_collect_aspm" %in% getNamespaceExports("mfclkit")) {
     return(getExportedValue("mfclkit", "mfk_collect_aspm")(model_dir))
   }
   info_file <- file.path(model_dir, "aspm", "aspm_info.rds")
@@ -261,12 +263,15 @@ check_status_success <- function(dat) {
 collect_check_unit_status <- function(model_dir, check_type, source_dirs = character()) {
   out <- tryCatch({
     if (identical(check_type, "jitter")) {
+      if (!requireNamespace("mfclkit", quietly = TRUE)) return(data.frame(stringsAsFactors = FALSE))
       mfclkit::mfk_collect_jitter(model_dir)
     } else if (identical(check_type, "retro")) {
+      if (!requireNamespace("mfclkit", quietly = TRUE)) return(data.frame(stringsAsFactors = FALSE))
       mfclkit::mfk_collect_retro(model_dir)
     } else if (identical(check_type, "aspm")) {
       collect_aspm_status(model_dir)
     } else if (identical(check_type, "profile")) {
+      if (!requireNamespace("mfclkit", quietly = TRUE)) return(data.frame(stringsAsFactors = FALSE))
       roots <- list.dirs(file.path(model_dir, "profile"), recursive = FALSE, full.names = TRUE)
       bind_rows_fill_local(lapply(roots, mfclkit::mfk_read_profile_points))
     } else if (identical(check_type, "selftest")) {
@@ -684,7 +689,11 @@ if (isTRUE(smoke_only)) {
   try(write.csv(collect_aspm_status(model_dir), file.path(model_dir, "aspm-index.csv"), row.names = FALSE), silent = TRUE)
 } else if (identical(check_type, "profile")) {
   profile_roots <- list.dirs(file.path(model_dir, "profile"), recursive = FALSE, full.names = TRUE)
-  points <- bind_rows_fill_local(lapply(profile_roots, mfclkit::mfk_read_profile_points))
+  points <- if (requireNamespace("mfclkit", quietly = TRUE)) {
+    bind_rows_fill_local(lapply(profile_roots, mfclkit::mfk_read_profile_points))
+  } else {
+    data.frame(stringsAsFactors = FALSE)
+  }
   write.csv(points, file.path(model_dir, "profile-points.csv"), row.names = FALSE)
   if (nrow(points)) {
     write.csv(mfclkit::mfk_profile_conflict_metrics(points), file.path(model_dir, "profile-qc.csv"), row.names = FALSE)
