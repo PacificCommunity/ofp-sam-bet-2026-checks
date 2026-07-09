@@ -1325,6 +1325,7 @@ if (identical(check_type, "jitter")) {
     jitter_args = list(include_slots = slots),
     par = check_start_par,
     start_par_name = "00.par",
+    output_par_name = "jitter.par",
     run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
   )
   if (!is.null(jitter_command)) jitter_args$command <- jitter_command
