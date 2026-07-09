@@ -13,11 +13,20 @@ from typing import Any
 
 
 MERGE_CHECKS = {
+    "aspm": "aspm-merge",
     "jitter": "jitter-merge",
     "retro": "retro-merge",
     "selftest": "selftest-merge",
     "profile": "profile-merge",
     "hessian": "hessian-merge",
+}
+
+CHECK_ALIASES = {
+    "jiter": "jitter",
+    "jitters": "jitter",
+    "self": "selftest",
+    "self-test": "selftest",
+    "selftest": "selftest",
 }
 
 DEFAULT_RUNTIME_PACKAGES = (
@@ -28,6 +37,11 @@ DEFAULT_RUNTIME_PACKAGES = (
 
 def split_values(raw: str) -> list[str]:
     return [part for part in re.split(r"[,\s]+", raw.strip()) if part]
+
+
+def normalize_check_name(check: str) -> str:
+    key = re.sub(r"[_\s]+", "-", str(check or "").strip().lower())
+    return CHECK_ALIASES.get(key, key)
 
 
 def truthy(raw: str, default: bool = False) -> bool:
@@ -94,7 +108,7 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
     if not parallel_units:
         return [{"label": "", "env": {}, "metadata": {}}]
 
-    check_key = check.replace("_", "-").lower()
+    check_key = normalize_check_name(check)
     if check_key == "jitter":
         seeds = split_values(env_first("JITTER_SEEDS", "JITTER_SEED"))
         return [
@@ -182,7 +196,7 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
 
 
 def merge_check_for(check: str) -> str:
-    return MERGE_CHECKS.get(check.replace("_", "-").lower(), "")
+    return MERGE_CHECKS.get(normalize_check_name(check), "")
 
 
 def api_json(method: str, url: str, token: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -233,7 +247,11 @@ def main() -> int:
     if not token and not args.dry_run:
         raise SystemExit("Set KFLOW_API_TOKEN before submitting Kflow jobs.")
 
-    checks = split_values(args.checks)
+    checks = []
+    for raw_check in split_values(args.checks):
+        check = normalize_check_name(raw_check)
+        if check and check not in checks:
+            checks.append(check)
     models = split_values(args.models)
     if not checks:
         raise SystemExit("No checks selected.")

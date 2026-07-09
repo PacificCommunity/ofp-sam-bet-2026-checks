@@ -1,14 +1,15 @@
-name: ofp-sam-bet-2026-check-hessian-merge
-description: Merge split mfclkit Hessian parts after parallel Hessian jobs complete.
+name: ofp-sam-bet-2026-check-aspm-merge
+description: Merge mfclkit ASPM check outputs after ASPM jobs complete.
 command: bash run.sh
-target_folder: hessian-merge
+target_folder: aspm-merge
 docker_image: ghcr.io/pacificcommunity/tuna-flow:v2.1
 resources:
   cpus: 2
   memory: 12GB
   disk: 10GB
 env:
-  CHECK_TYPE: hessian_merge
+  CHECK_TYPE: aspm-merge
+  CHECK_MERGE_TYPE: aspm
   MODEL_SELECTOR: ""
   PROGRAM_PATH: /home/mfcl/mfclo64
   KFLOW_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@main,mfclshiny=PacificCommunity/mfclshiny@main
@@ -20,11 +21,8 @@ env:
   KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS: "0"
   KFLOW_RUNTIME_GITHUB_AUTH: "true"
   KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME: "true"
-  HESSIAN_NSPLIT: "30"
-  HESSIAN_MERGE_RUN: "true"
-  HESSIAN_MERGE_EIGEN: "true"
-  HESSIAN_KEEP_MATRIX: "false"
   CHECK_COMPACT_OUTPUTS: "true"
+  CHECK_ENRICH_PAYLOADS: "true"
   CHECK_KEEP_RAW_OUTPUTS: "false"
 output_patterns:
   - outputs/**
@@ -32,16 +30,25 @@ metadata:
   job_config:
     optional:
       - CHECK_TYPE
+      - CHECK_MERGE_TYPE
+      - CHECK_COMPACT_OUTPUTS
+      - CHECK_ENRICH_PAYLOADS
+      - CHECK_KEEP_RAW_OUTPUTS
       - MODEL_SELECTOR
       - MODEL_INPUT_ROOT
       - PROGRAM_PATH
       - FLOW_GROUP
-      - HESSIAN_NSPLIT
-      - HESSIAN_MERGE_RUN
-      - HESSIAN_MERGE_EIGEN
-      - HESSIAN_KEEP_MATRIX
-      - CHECK_COMPACT_OUTPUTS
-      - CHECK_KEEP_RAW_OUTPUTS
+      - CHECK_BUILD_REPORT_FIGURES
+      - CHECK_REPORT_FIGURE_KEYS
+      - CHECK_RENDER_REVIEW_HTML
+      - ASPM_MAX_EVALS
+      - ASPM_FIX_SELECTIVITY
+      - ASPM_LF_FLAG_311
+      - ASPM_WF_FLAG_301
+      - ASPM_MIN_LF_SAMPLE_SIZE
+      - ASPM_MIN_WF_SAMPLE_SIZE
+      - ASPM_OUTPUT_PAR
+      - ASPM_EXTRA_SWITCH_LINES
       - MFK_RUN_MESSAGES
       - KFLOW_RUNTIME_UPDATE
       - TUNA_FLOW_RUNTIME_UPDATE
@@ -54,4 +61,4 @@ metadata:
       - KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME
 tags:
   stage: checks
-  check_type: hessian-merge
+  check_type: aspm-merge

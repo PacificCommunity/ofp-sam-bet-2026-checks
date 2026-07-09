@@ -4,7 +4,7 @@ suppressPackageStartupMessages(library(mfclkit))
 raw_check_type <- tolower(env("CHECK_MERGE_TYPE", env("CHECK_TYPE", "")))
 check_type <- gsub("[-_]merge$", "", raw_check_type)
 check_type <- gsub("_", "-", check_type)
-if (!check_type %in% c("jitter", "profile", "retro", "selftest")) {
+if (!check_type %in% c("aspm", "jitter", "profile", "retro", "selftest")) {
   stop("Unsupported merge CHECK_TYPE: ", raw_check_type, call. = FALSE)
 }
 
@@ -127,6 +127,12 @@ copy_check_units <- function(source_dirs, target_dir, check_type) {
         }
       }
     }
+  } else if (identical(check_type, "aspm")) {
+    for (src in source_dirs) {
+      src_root <- file.path(src, "aspm")
+      if (!dir.exists(src_root)) next
+      copied <- c(copied, copy_dir_contents_checked(src_root, file.path(target_dir, "aspm")))
+    }
   } else if (identical(check_type, "selftest")) {
     selftest_rows <- list()
     for (src in source_dirs) {
@@ -173,6 +179,30 @@ copy_check_units <- function(source_dirs, target_dir, check_type) {
     warning("No ", check_type, " unit outputs found to merge; writing summary-only merge.", call. = FALSE)
   }
   copied
+}
+
+collect_aspm_status <- function(model_dir) {
+  if ("mfk_collect_aspm" %in% getNamespaceExports("mfclkit")) {
+    return(getExportedValue("mfclkit", "mfk_collect_aspm")(model_dir))
+  }
+  info_file <- file.path(model_dir, "aspm", "aspm_info.rds")
+  if (!file.exists(info_file)) return(data.frame(stringsAsFactors = FALSE))
+  info <- tryCatch(readRDS(info_file), error = function(e) NULL)
+  if (is.null(info)) return(data.frame(stringsAsFactors = FALSE))
+  data.frame(
+    model = basename(normalize_loose(model_dir)),
+    run_status = as.character(info$run_status %||% NA_character_),
+    run_completed = isTRUE(info$run_completed),
+    convergence_status = as.character(info$convergence_status %||% NA_character_),
+    converged = isTRUE(info$converged),
+    obj_fun = suppressWarnings(as.numeric(info$obj_fun %||% NA_real_)),
+    max_grad = suppressWarnings(as.numeric(info$max_grad %||% NA_real_)),
+    input_par = as.character(info$input_par %||% NA_character_),
+    output_par = as.character(info$output_par %||% NA_character_),
+    failure_reason = as.character(info$failure_reason %||% NA_character_),
+    folder = normalize_loose(file.path(model_dir, "aspm")),
+    stringsAsFactors = FALSE
+  )
 }
 
 check_status_success <- function(dat) {
@@ -226,6 +256,8 @@ collect_check_unit_status <- function(model_dir, check_type, source_dirs = chara
       mfclkit::mfk_collect_jitter(model_dir)
     } else if (identical(check_type, "retro")) {
       mfclkit::mfk_collect_retro(model_dir)
+    } else if (identical(check_type, "aspm")) {
+      collect_aspm_status(model_dir)
     } else if (identical(check_type, "profile")) {
       roots <- list.dirs(file.path(model_dir, "profile"), recursive = FALSE, full.names = TRUE)
       bind_rows_fill_local(lapply(roots, mfclkit::mfk_read_profile_points))
@@ -339,6 +371,7 @@ check_report_figure_keys <- function(check_type) {
       "figure:jitter-derived-quantities"
     ),
     retro = "figure:retrospective-diagnostics",
+    aspm = "figure:aspm-diagnostics",
     selftest = c(
       "figure:selftest-recovery",
       "figure:selftest-simulation",
@@ -359,6 +392,7 @@ write_check_report_selection <- function(report_dir, check_type) {
     check_type,
     jitter = "Jitter",
     retro = "Retro",
+    aspm = "ASPM",
     selftest = "Self-test",
     profile = "Profile",
     "Checks"
@@ -529,6 +563,23 @@ enrich_merged_check_payloads <- function() {
       }
     }
   }
+  if (identical(check_type, "aspm")) {
+    aspm_dir <- file.path(model_dir, "aspm")
+    if (!dir.exists(aspm_dir)) return(invisible(data.frame()))
+    tool_env <- mfclshiny_payload_tool_env("aspm")
+    payload <- tool_env$mp_build_model_payload(aspm_dir)
+    payload_file <- file.path(aspm_dir, "model_payload.rds")
+    saveRDS(payload, payload_file, compress = "xz")
+    if ("write_model_payload_manifest" %in% getNamespaceExports("mfclshiny")) {
+      mfclshiny::write_model_payload_manifest(payload = payload, folder = aspm_dir, payload_file = payload_file)
+    }
+    return(invisible(data.frame(
+      payload_role = "aspm_model_payload",
+      folder = normalize_loose(aspm_dir),
+      payload = normalize_loose(payload_file),
+      stringsAsFactors = FALSE
+    )))
+  }
   invisible(data.frame())
 }
 
@@ -561,6 +612,21 @@ compact_merged_check_outputs <- function() {
       keep_patterns = c(log_patterns, "(^|/)neigenvalues$"),
       recursive = TRUE
     )
+  } else if (identical(check_type, "aspm")) {
+    deleted <- list(compact_prune_files(
+      file.path(model_dir, "aspm"),
+      keep_names = c(
+        "aspm_info.rds",
+        "aspm-index.csv",
+        "aspm_control.txt",
+        "run_aspm.sh",
+        "model_payload.rds",
+        "model_payload_manifest.json",
+        "model_payload_manifest.csv"
+      ),
+      keep_patterns = c(log_patterns, "(^|/)neigenvalues$"),
+      recursive = TRUE
+    ))
   }
 
   out <- bind_rows_fill_local(deleted)
@@ -606,6 +672,8 @@ if (isTRUE(smoke_only)) {
   try(write.csv(mfclkit::mfk_collect_jitter(model_dir), file.path(model_dir, "jitter-index.csv"), row.names = FALSE), silent = TRUE)
 } else if (identical(check_type, "retro")) {
   try(write.csv(mfclkit::mfk_collect_retro(model_dir), file.path(model_dir, "retro-index.csv"), row.names = FALSE), silent = TRUE)
+} else if (identical(check_type, "aspm")) {
+  try(write.csv(collect_aspm_status(model_dir), file.path(model_dir, "aspm-index.csv"), row.names = FALSE), silent = TRUE)
 } else if (identical(check_type, "profile")) {
   profile_roots <- list.dirs(file.path(model_dir, "profile"), recursive = FALSE, full.names = TRUE)
   points <- bind_rows_fill_local(lapply(profile_roots, mfclkit::mfk_read_profile_points))
