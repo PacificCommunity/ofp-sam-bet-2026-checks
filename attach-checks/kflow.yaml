@@ -24,8 +24,8 @@ env:
   KFLOW_REPORT_COMMIT_GENERATED: "false"
   KFLOW_REPORT_PUSH_GENERATED: "false"
   KFLOW_REPORT_PUBLISH_REQUIRED: "false"
-  KFLOW_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@main,mfclshiny=PacificCommunity/mfclshiny@main
-  KFLOW_REPO_RUNTIME_PACKAGES: none
+  KFLOW_RUNTIME_PACKAGES: none
+  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@main,mfclshiny=PacificCommunity/mfclshiny@main
   KFLOW_REPO_RUNTIME_UPDATE: always
   KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
   KFLOW_RUNTIME_UPDATE: always
