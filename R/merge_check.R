@@ -1,11 +1,19 @@
 source("R/model_output_adapter.R")
-suppressPackageStartupMessages(library(mfclkit))
 
 raw_check_type <- tolower(env("CHECK_MERGE_TYPE", env("CHECK_TYPE", "")))
 check_type <- gsub("[-_]merge$", "", raw_check_type)
 check_type <- gsub("_", "-", check_type)
 if (!check_type %in% c("aspm", "jitter", "profile", "retro", "selftest")) {
   stop("Unsupported merge CHECK_TYPE: ", raw_check_type, call. = FALSE)
+}
+
+require_mfclkit <- function(required_for = check_type) {
+  if (requireNamespace("mfclkit", quietly = TRUE)) return(invisible(TRUE))
+  stop("mfclkit is required to merge ", required_for, " outputs.", call. = FALSE)
+}
+
+if (check_type %in% c("jitter", "profile", "retro")) {
+  require_mfclkit(check_type)
 }
 
 message("[checks] merging split ", check_type, " jobs")
