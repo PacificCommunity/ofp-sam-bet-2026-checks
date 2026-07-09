@@ -30,7 +30,7 @@ env:
   RETRO_ALLOW_NEW_INI_VERSION_WRITE: "true"
   RETRO_USE_DOITALL: "false"
   RETRO_REMOVE_PAR_FILES: "false"
-  RETRO_START_PAR_NAME: "00.par"
+  RETRO_START_PAR_NAME: "auto"
 output_patterns:
   - outputs/**
 metadata:

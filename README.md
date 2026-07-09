@@ -116,8 +116,9 @@ which diagnostic folders are copied.
   retro run. Default is `false`; enable only for model folders whose `doitall.sh`
   does not need staged par files.
 - `RETRO_START_PAR_NAME`: when a `doitall.sh` run needs a conventional start
-  par such as `00.par`, stage the fitted start par under this name if it is
-  missing. Default is `00.par` for `doitall.sh` retro runs.
+  par such as `00.par` or `02.par`, stage the fitted start par under this name
+  if it is missing. Default is `auto` for `doitall.sh` retro runs, which uses
+  the first input `.par` referenced by `doitall.sh`.
 - `HESSIAN_NSPLIT`: number of Hessian parts, default `30`.
 - `HESSIAN_PARTS`: comma/space list of Hessian parts. If unset, all parts are
   submitted as parallel Kflow jobs when parallel units are enabled.

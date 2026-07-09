@@ -1348,7 +1348,7 @@ if (identical(check_type, "jitter")) {
     truthy(retro_use_doitall_raw, FALSE)
   }
   retro_remove_par_files <- truthy(env("RETRO_REMOVE_PAR_FILES", "false"), FALSE)
-  retro_start_par_name <- env("RETRO_START_PAR_NAME", if (isTRUE(retro_use_doitall)) "00.par" else "")
+  retro_start_par_name <- env("RETRO_START_PAR_NAME", if (isTRUE(retro_use_doitall)) "auto" else "")
   write_run_manifest(list(
     retro_peels = paste(peels, collapse = " "),
     n_mixing_periods = n_mixing_periods,
