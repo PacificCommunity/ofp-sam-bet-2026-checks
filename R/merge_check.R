@@ -182,24 +182,28 @@ check_status_success <- function(dat) {
     success[is.na(success)] <- FALSE
     return(success)
   }
-  if ("n_failed" %in% names(dat)) {
+  status_names <- intersect(c("run_status", "status", "convergence_status"), names(dat))
+  if (!length(status_names) && "n_failed" %in% names(dat)) {
     failed <- suppressWarnings(as.integer(dat$n_failed))
     success <- is.finite(failed) & failed == 0L
     success[is.na(success)] <- FALSE
     return(success)
   }
-  status <- rep("", nrow(dat))
-  for (name in c("run_status", "status", "convergence_status")) {
+  bad_status <- rep(FALSE, nrow(dat))
+  for (name in status_names) {
     if (name %in% names(dat)) {
       value <- tolower(trimws(as.character(dat[[name]])))
-      status[nzchar(value)] <- value[nzchar(value)]
+      value <- value[nzchar(value)]
+      if (!length(value)) next
+      bad <- value %in% c(
+        "failed", "error", "model_run_failed", "completed_with_nonzero_status",
+        "completed_not_converged", "not_completed", "not_converged",
+        "blocked_by_previous_profile_point", "unknown", "status_collect_failed"
+      ) | grepl("failed|error|not[-_ ]?converged|not[-_ ]?completed|blocked", value)
+      idx <- which(nzchar(tolower(trimws(as.character(dat[[name]])))))
+      bad_status[idx] <- bad_status[idx] | bad
     }
   }
-  bad_status <- status %in% c(
-    "failed", "error", "model_run_failed", "completed_with_nonzero_status",
-    "completed_not_converged", "not_completed", "not_converged",
-    "blocked_by_previous_profile_point", "unknown", "status_collect_failed"
-  )
   success <- !bad_status
   if ("run_completed" %in% names(dat)) {
     completed <- suppressWarnings(as.logical(dat$run_completed))
@@ -257,7 +261,9 @@ collect_check_unit_status <- function(model_dir, check_type, source_dirs = chara
   if (!is.data.frame(out)) out <- data.frame(stringsAsFactors = FALSE)
   if (nrow(out)) {
     out$check_type <- check_type
-    out$success <- check_status_success(out)
+    success <- check_status_success(out)
+    if (length(success) != nrow(out)) success <- rep(FALSE, nrow(out))
+    out$success <- success
   }
   out
 }
