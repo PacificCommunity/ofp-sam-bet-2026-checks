@@ -286,7 +286,7 @@ write_check_status_summary <- function(model_dir, check_type, source_dirs = char
   n_failed <- if (n_units) sum(!(units$success %in% TRUE), na.rm = TRUE) else 0L
   n_source_units <- nrow(source_summaries)
   n_source_failed <- if (n_source_units) sum(!(source_summaries$success %in% TRUE), na.rm = TRUE) else 0L
-  requires_all_units <- check_type %in% c("profile")
+  requires_all_units <- check_type %in% c("hessian", "profile")
   total_failed <- n_failed + n_source_failed
   merge_status <- if (!n_units && !n_source_units) {
     "no_units"
