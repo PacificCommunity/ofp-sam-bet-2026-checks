@@ -216,6 +216,39 @@ def api_json(method: str, url: str, token: str, payload: dict[str, Any]) -> dict
     return json.loads(raw.decode("utf-8")) if raw else {}
 
 
+def api_get_json(url: str, token: str) -> dict[str, Any]:
+    request = urllib.request.Request(
+        url,
+        headers={"Authorization": f"Bearer {token}"},
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            raw = response.read()
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"GET {url} failed: HTTP {exc.code}: {detail}") from exc
+    return json.loads(raw.decode("utf-8")) if raw else {}
+
+
+def latest_attached_output_job(base_url: str, token: str, base_job: str) -> str:
+    if not str(base_job or "").strip():
+        return ""
+    try:
+        response = api_get_json(f"{base_url}/api/job/{str(base_job).lstrip('#')}", token)
+    except Exception:
+        return ""
+    job = response.get("job", response)
+    metadata = job.get("metadata") if isinstance(job.get("metadata"), dict) else {}
+    latest = metadata.get("attached_work_latest")
+    if not isinstance(latest, dict):
+        return ""
+    output_job = str(latest.get("output_job") or "").strip().lstrip("#")
+    if not output_job or output_job == str(base_job).strip().lstrip("#"):
+        return ""
+    return output_job
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--kflow-url", default=os.environ.get("KFLOW_URL", "http://127.0.0.1:8089"))
@@ -262,6 +295,7 @@ def main() -> int:
     parallel_units = truthy(args.parallel_units, default=True)
     auto_merge = truthy(args.auto_merge, default=True)
     auto_attach = truthy(args.auto_attach, default=True)
+    attach_merge_with_latest = truthy(os.environ.get("KFLOW_ATTACH_MERGE_WITH_LATEST", "true"), default=True)
     base_input_job = input_jobs[0] if input_jobs else ""
     submitter_fields = {
         "remote_host": args.submitter or args.remote_host,
@@ -474,14 +508,25 @@ def main() -> int:
             if not final_job_ids:
                 continue
             checks_text = " ".join(item["checks"])
+            previous_attached_job = ""
+            attach_base_input_job = base_input_job
+            if attach_merge_with_latest and not args.dry_run and token:
+                previous_attached_job = latest_attached_output_job(base_url, token, base_input_job)
+                if previous_attached_job and previous_attached_job not in final_job_ids:
+                    attach_base_input_job = previous_attached_job
+            attach_input_jobs = [base_input_job]
+            if previous_attached_job and previous_attached_job not in attach_input_jobs:
+                attach_input_jobs.append(previous_attached_job)
+            attach_input_jobs.extend(job_id for job_id in final_job_ids if job_id not in attach_input_jobs)
             task = f"{args.task_prefix}-attach-checks"
             title = f"diagnostics update: {model}"
             description = f"Attach completed model-check outputs to the base job for {model}."
             env = {
                 "CHECK_TYPE": "attach-checks",
                 "MODEL_SELECTOR": model,
-                "MODEL_BASE_INPUT_JOB": base_input_job,
-                "BASE_MODEL_JOB": base_input_job,
+                "MODEL_BASE_INPUT_JOB": attach_base_input_job,
+                "BASE_MODEL_JOB": attach_base_input_job,
+                "MODEL_ORIGINAL_BASE_INPUT_JOB": base_input_job,
                 "CHECK_INPUT_JOBS": " ".join(final_job_ids),
                 "ATTACH_CHECK_TYPES": checks_text,
                 "KFLOW_JOB_TITLE": title,
@@ -511,7 +556,7 @@ def main() -> int:
                 "env": {key: value for key, value in env.items() if value not in (None, "")},
                 "title": title,
                 "description": description,
-                "input_jobs": [base_input_job, *final_job_ids],
+                "input_jobs": attach_input_jobs,
                 "metadata": {
                     "flow_group": args.flow_group,
                     "job_title": title,
@@ -519,9 +564,11 @@ def main() -> int:
                     "check_type": "attach-checks",
                     "model_selector": model,
                     "base_job": base_input_job,
-                    "input_jobs": [base_input_job, *final_job_ids],
+                    "input_jobs": attach_input_jobs,
                     "check_input_jobs": final_job_ids,
                     "attach_check_types": item["checks"],
+                    "previous_attached_output_job": previous_attached_job,
+                    "attach_base_input_job": attach_base_input_job,
                     "attached_work_parent_job": base_input_job,
                     "attached_work_latest": True,
                     "attached_work_group": f"{args.flow_group}:{model}:diagnostics",
