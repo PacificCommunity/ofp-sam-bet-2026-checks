@@ -221,6 +221,14 @@ check_status_success <- function(dat) {
     converged <- suppressWarnings(as.logical(dat$converged))
     success <- success & (is.na(converged) | converged)
   }
+  if ("input_built" %in% names(dat)) {
+    input_built <- suppressWarnings(as.logical(dat$input_built))
+    success <- success & !is.na(input_built) & input_built
+  }
+  for (name in intersect(c("sim_status", "refit_status"), names(dat))) {
+    value <- suppressWarnings(as.integer(dat[[name]]))
+    success <- success & (is.na(value) | value == 0L)
+  }
   if ("total_nll" %in% names(dat)) {
     total_nll <- suppressWarnings(as.numeric(dat$total_nll))
     success <- success & is.finite(total_nll)
@@ -1554,7 +1562,7 @@ if (identical(check_type, "jitter")) {
     Sys.setenv(selftest_source_mode = env("SELFTEST_SOURCE_MODE", "last_par"))
   }
   if (!nzchar(Sys.getenv("selftest_refit_mode", ""))) {
-    Sys.setenv(selftest_refit_mode = env("SELFTEST_REFIT_MODE", "doitall"))
+    Sys.setenv(selftest_refit_mode = env("SELFTEST_REFIT_MODE", "last_par"))
   }
   if (nzchar(runner)) args$runner <- runner
   if (nzchar(runner_work_dir)) args$runner_work_dir <- runner_work_dir
