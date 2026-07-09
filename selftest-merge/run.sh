@@ -7,4 +7,4 @@ export CHECK_MERGE_TYPE=selftest
 export OUTPUT_DIR="${OUTPUT_DIR:-${TASK_DIR}/outputs}"
 export WORK_DIR="${WORK_DIR:-${TASK_DIR}/work}"
 cd "$ROOT"
-Rscript R/merge_check.R
+bash run.sh "$CHECK_TYPE"

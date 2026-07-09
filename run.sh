@@ -155,6 +155,12 @@ case "$CHECK_TYPE" in
   attach|attach_checks|attach-checks)
     Rscript R/attach_checks.R
     ;;
+  hessian_merge|hessian-merge)
+    Rscript R/merge_hessian.R
+    ;;
+  *-merge|*_merge)
+    Rscript R/merge_check.R
+    ;;
   *)
     Rscript R/run_check.R "$CHECK_TYPE"
     ;;

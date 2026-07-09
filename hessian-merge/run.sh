@@ -6,4 +6,4 @@ export CHECK_TYPE=hessian_merge
 export OUTPUT_DIR="${OUTPUT_DIR:-${TASK_DIR}/outputs}"
 export WORK_DIR="${WORK_DIR:-${TASK_DIR}/work}"
 cd "$ROOT"
-Rscript R/merge_hessian.R
+bash run.sh "$CHECK_TYPE"
