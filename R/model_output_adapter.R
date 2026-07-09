@@ -148,7 +148,11 @@ write_attached_model_output <- function(check_model_dir,
   write.csv(attached, file.path(output_dir, "attached-checks-index.csv"), row.names = FALSE)
   write.csv(attached, file.path(target_dir, "attached-checks-index.csv"), row.names = FALSE)
   saveRDS(attached, file.path(target_dir, "attached-checks-index.rds"), compress = "xz")
-  refresh_diagnostic_model_bundle(target_dir)
+  refresh_ok <- refresh_diagnostic_model_bundle(target_dir)
+  if (!isTRUE(refresh_ok) && truthy(env("CHECK_REQUIRE_PAYLOAD_REFRESH", "true"), TRUE)) {
+    stop("Attached diagnostic payload refresh failed for ", target_dir,
+         "; see diagnostic-refresh-status.csv", call. = FALSE)
+  }
 
   index <- as.data.frame(index %||% data.frame(), stringsAsFactors = FALSE)
   if (!nrow(index)) {

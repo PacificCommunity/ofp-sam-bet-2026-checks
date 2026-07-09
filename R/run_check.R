@@ -234,6 +234,8 @@ collect_check_unit_status <- function(model_dir, check_type) {
       mfclkit::mfk_collect_jitter(model_dir)
     } else if (identical(check_type, "retro")) {
       mfclkit::mfk_collect_retro(model_dir)
+    } else if (identical(check_type, "aspm")) {
+      mfclkit::mfk_collect_aspm(model_dir)
     } else if (identical(check_type, "profile")) {
       roots <- list.dirs(file.path(model_dir, "profile"), recursive = FALSE, full.names = TRUE)
       bind_rows_fill(lapply(roots, mfclkit::mfk_read_profile_points))
@@ -325,6 +327,7 @@ write_check_status_summary <- function(model_dir, check_type) {
   n_success <- if (n_units) sum(units$success %in% TRUE, na.rm = TRUE) else 0L
   n_failed <- if (n_units) sum(!(units$success %in% TRUE), na.rm = TRUE) else 0L
   requires_all_units <- check_type %in% c("profile", "hessian")
+  has_failures <- n_failed > 0L || n_units == 0L
   merge_status <- if (!n_units) {
     "no_units"
   } else if (requires_all_units && n_failed > 0L) {
@@ -340,7 +343,7 @@ write_check_status_summary <- function(model_dir, check_type) {
     n_units = n_units,
     n_success = n_success,
     n_failed = n_failed,
-    has_failures = n_failed > 0L,
+    has_failures = has_failures,
     requires_all_units = requires_all_units,
     all_required_units_successful = !requires_all_units || (n_units > 0L && n_failed == 0L),
     merge_status = merge_status,
