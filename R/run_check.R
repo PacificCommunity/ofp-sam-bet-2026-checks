@@ -1225,7 +1225,7 @@ compact_check_outputs <- function() {
     peel_dirs <- peel_dirs[grepl("^peel_[0-9]+$", basename(peel_dirs))]
     deleted <- lapply(peel_dirs, compact_prune_files,
       keep_names = c("retro_info.rds", "retro_metrics.rds", "retro_input_info.rds", "hessian_info.rds"),
-      keep_patterns = c(log_patterns, "(^|/)neigenvalues$"),
+      keep_patterns = c(log_patterns, "(^|/)neigenvalues$", "[.]rep$"),
       recursive = TRUE
     )
   } else if (identical(check_type, "profile")) {
@@ -1246,9 +1246,10 @@ compact_check_outputs <- function() {
         "aspm_info.rds",
         "aspm-index.csv",
         "aspm_control.txt",
-        "run_aspm.sh"
+        "run_aspm.sh",
+        "aspm.par"
       ),
-      keep_patterns = log_patterns,
+      keep_patterns = c(log_patterns, "(^|/)neigenvalues$", "[.]rep$"),
       recursive = TRUE
     ))
   } else if (identical(check_type, "hessian")) {
@@ -1339,8 +1340,18 @@ if (identical(check_type, "jitter")) {
 } else if (identical(check_type, "retro")) {
   peels <- as.integer(split_numbers(env("RETRO_PEELS", env("RETRO_PEEL", "1")), default = 1))
   n_mixing_periods <- as.integer(split_numbers(env("N_MIXING_PERIODS", "2"), default = 2)[[1L]])
-  write_run_manifest(list(retro_peels = paste(peels, collapse = " "), n_mixing_periods = n_mixing_periods))
   retro_command <- split_values(env("RETRO_COMMAND", ""))
+  retro_use_doitall_raw <- tolower(trimws(env("RETRO_USE_DOITALL", "auto")))
+  retro_use_doitall <- if (retro_use_doitall_raw %in% c("", "auto")) {
+    file.exists(file.path(prepared$case_dir, "doitall.sh"))
+  } else {
+    truthy(retro_use_doitall_raw, FALSE)
+  }
+  write_run_manifest(list(
+    retro_peels = paste(peels, collapse = " "),
+    n_mixing_periods = n_mixing_periods,
+    retro_use_doitall = retro_use_doitall
+  ))
   retro_args <- list(
     backend = backend,
     input_dir = prepared$case_dir,
@@ -1348,11 +1359,13 @@ if (identical(check_type, "jitter")) {
     peel = peels,
     n_mixing_periods = n_mixing_periods,
     allow_new_ini_version_write = truthy(env("RETRO_ALLOW_NEW_INI_VERSION_WRITE", "false"), FALSE),
+    remove_par_files = isTRUE(retro_use_doitall),
+    rewrite_par = !isTRUE(retro_use_doitall),
     run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
   )
   if (length(retro_command)) {
     retro_args$command <- retro_command
-  } else if (!truthy(env("RETRO_USE_DOITALL", "false"), FALSE)) {
+  } else if (!isTRUE(retro_use_doitall)) {
     retro_args$command <- mfcl_command(output_par = "retro.par")
   }
   result <- do.call(mfk_run_retro, retro_args)

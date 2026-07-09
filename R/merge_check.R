@@ -614,7 +614,7 @@ compact_merged_check_outputs <- function() {
     peel_dirs <- peel_dirs[grepl("^peel_[0-9]+$", basename(peel_dirs))]
     deleted <- lapply(peel_dirs, compact_prune_files,
       keep_names = c("retro_info.rds", "retro_metrics.rds", "retro_input_info.rds", "hessian_info.rds"),
-      keep_patterns = c(log_patterns, "(^|/)neigenvalues$"),
+      keep_patterns = c(log_patterns, "(^|/)neigenvalues$", "[.]rep$"),
       recursive = TRUE
     )
   } else if (identical(check_type, "profile")) {
@@ -633,11 +633,12 @@ compact_merged_check_outputs <- function() {
         "aspm-index.csv",
         "aspm_control.txt",
         "run_aspm.sh",
+        "aspm.par",
         "model_payload.rds",
         "model_payload_manifest.json",
         "model_payload_manifest.csv"
       ),
-      keep_patterns = c(log_patterns, "(^|/)neigenvalues$"),
+      keep_patterns = c(log_patterns, "(^|/)neigenvalues$", "[.]rep$"),
       recursive = TRUE
     ))
   }
