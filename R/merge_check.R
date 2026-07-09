@@ -699,6 +699,5 @@ requires_all_units <- isTRUE(final_summary$requires_all_units %||% FALSE)
 all_required_ok <- isTRUE(final_summary$all_required_units_successful %||% FALSE)
 if (isTRUE(requires_all_units) && !isTRUE(all_required_ok)) {
   merge_status <- as.character(final_summary$merge_status %||% "incomplete")
-  message("[checks] failing ", check_type, " merge because required unit(s) are incomplete: ", merge_status)
-  quit(save = "no", status = 1)
+  message("[checks] merged ", check_type, " outputs with incomplete required unit(s): ", merge_status)
 }

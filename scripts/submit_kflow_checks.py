@@ -22,7 +22,7 @@ MERGE_CHECKS = {
 
 DEFAULT_RUNTIME_PACKAGES = (
     "mfclkit=PacificCommunity/ofp-sam-mfclkit@main,"
-    "mfclshiny=PacificCommunity/mfclshiny@2dfa656dab9cd4c8eadfbfe959f76dc8eae81fe5"
+    "mfclshiny=PacificCommunity/mfclshiny@main"
 )
 
 
@@ -43,6 +43,14 @@ def env_first(*names: str) -> str:
         if str(value).strip():
             return str(value)
     return ""
+
+
+def remote_base_dir_value(base_dir: str, remote_user: str, remote_host: str) -> str:
+    text = str(base_dir or "").strip()
+    if not text or text.startswith("/") or not str(remote_host or "").strip():
+        return text
+    user = str(remote_user or os.environ.get("USER") or "").strip() or "kyuhank"
+    return f"/home/{user}/{text.strip('/')}"
 
 
 def numeric_values(raw: str) -> list[float]:
@@ -240,7 +248,11 @@ def main() -> int:
     submitter_fields = {
         "remote_host": args.submitter or args.remote_host,
         "remote_user": args.remote_user,
-        "remote_base_dir": args.remote_base_dir,
+        "remote_base_dir": remote_base_dir_value(
+            args.remote_base_dir,
+            args.remote_user,
+            args.submitter or args.remote_host,
+        ),
     }
     submitter_fields = {key: value for key, value in submitter_fields.items() if str(value or "").strip()}
 
@@ -355,7 +367,7 @@ def main() -> int:
         check = group["check"]
         merge_check = merge_check_for(check)
         unit_job_ids = group["unit_job_ids"]
-        if not auto_merge or not parallel_units or not merge_check or len(unit_job_ids) <= 1:
+        if not auto_merge or not merge_check or not unit_job_ids:
             continue
         model = group["model"]
         task = f"{args.task_prefix}-{merge_check}"
@@ -406,6 +418,7 @@ def main() -> int:
                 "parallel_units": parallel_units,
                 "auto_merge": True,
                 "allow_failed_input_jobs": True,
+                "nested_work_group": check,
             },
             "tags": {
                 "stage": "checks",
@@ -494,10 +507,12 @@ def main() -> int:
                     "attached_work_parent_job": base_input_job,
                     "attached_work_latest": True,
                     "attached_work_group": f"{args.flow_group}:{model}:diagnostics",
+                    "attached_work_headline": os.environ.get("KFLOW_ATTACHED_WORK_HEADLINE", "Diagnostics"),
                     "attached_work_label": f"{model} diagnostics",
                     "attached_work_summary": "Latest model-check outputs attached to the base job output bundle.",
                     "attached_work_role": "updated output",
                     "auto_attach": True,
+                    "allow_failed_input_jobs": True,
                 },
                 "tags": {
                     "stage": "checks",
