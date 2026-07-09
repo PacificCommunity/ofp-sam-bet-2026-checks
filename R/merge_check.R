@@ -234,11 +234,15 @@ collect_check_unit_status <- function(model_dir, check_type, source_dirs = chara
         file.path(model_dir, "selftest", "selftest_runs.rds"),
         file.path(model_dir, "selftest_runs.rds")
       )
+      found <- data.frame(stringsAsFactors = FALSE)
       for (path in candidates[file.exists(candidates)]) {
         dat <- tryCatch(readRDS(path), error = function(e) NULL)
-        if (is.data.frame(dat)) return(dat)
+        if (is.data.frame(dat)) {
+          found <- dat
+          break
+        }
       }
-      data.frame(stringsAsFactors = FALSE)
+      found
     } else {
       data.frame(stringsAsFactors = FALSE)
     }

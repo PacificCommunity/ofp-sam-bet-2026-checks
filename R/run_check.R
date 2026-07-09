@@ -248,27 +248,35 @@ collect_check_unit_status <- function(model_dir, check_type) {
         file.path(model_dir, "selftest", "selftest_runs.rds"),
         file.path(model_dir, "selftest_runs.rds")
       )
+      found <- data.frame(stringsAsFactors = FALSE)
       for (path in candidates[file.exists(candidates)]) {
         dat <- tryCatch(readRDS(path), error = function(e) NULL)
-        if (is.data.frame(dat)) return(dat)
+        if (is.data.frame(dat)) {
+          found <- dat
+          break
+        }
       }
-      refits <- list.dirs(file.path(model_dir, "selftest", "refit"),
-                          recursive = FALSE, full.names = TRUE)
-      rows <- lapply(refits, function(dir) {
-        info <- tryCatch(readRDS(file.path(dir, "model_info.rds")),
-                         error = function(e) NULL)
-        data.frame(
-          rep = sub("^rep_", "", basename(dir)),
-          run_status = as.character(info$run_status %||% info$status %||% "unknown"),
-          run_completed = isTRUE(info$run_completed %||% FALSE),
-          convergence_status = as.character(info$convergence_status %||% ""),
-          converged = isTRUE(info$converged %||% FALSE),
-          failure_reason = as.character(info$failure_reason %||% ""),
-          folder = normalize_loose(dir),
-          stringsAsFactors = FALSE
-        )
-      })
-      bind_rows_fill(rows)
+      if (nrow(found)) {
+        found
+      } else {
+        refits <- list.dirs(file.path(model_dir, "selftest", "refit"),
+                            recursive = FALSE, full.names = TRUE)
+        rows <- lapply(refits, function(dir) {
+          info <- tryCatch(readRDS(file.path(dir, "model_info.rds")),
+                           error = function(e) NULL)
+          data.frame(
+            rep = sub("^rep_", "", basename(dir)),
+            run_status = as.character(info$run_status %||% info$status %||% "unknown"),
+            run_completed = isTRUE(info$run_completed %||% FALSE),
+            convergence_status = as.character(info$convergence_status %||% ""),
+            converged = isTRUE(info$converged %||% FALSE),
+            failure_reason = as.character(info$failure_reason %||% ""),
+            folder = normalize_loose(dir),
+            stringsAsFactors = FALSE
+          )
+        })
+        bind_rows_fill(rows)
+      }
     } else if (identical(check_type, "hessian")) {
       part_dirs <- list.dirs(file.path(model_dir, "hessian"), recursive = FALSE, full.names = TRUE)
       part_dirs <- part_dirs[grepl("^part_[0-9]+$", basename(part_dirs))]
