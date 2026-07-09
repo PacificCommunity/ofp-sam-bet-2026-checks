@@ -30,6 +30,7 @@ env:
   RETRO_ALLOW_NEW_INI_VERSION_WRITE: "true"
   RETRO_USE_DOITALL: "false"
   RETRO_REMOVE_PAR_FILES: "false"
+  RETRO_START_PAR_NAME: "00.par"
 output_patterns:
   - outputs/**
 metadata:
@@ -61,6 +62,7 @@ metadata:
       - RETRO_ALLOW_NEW_INI_VERSION_WRITE
       - RETRO_USE_DOITALL
       - RETRO_REMOVE_PAR_FILES
+      - RETRO_START_PAR_NAME
       - RETRO_COMMAND
       - MFK_RUN_MESSAGES
       - KFLOW_RUNTIME_UPDATE

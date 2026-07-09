@@ -1348,23 +1348,29 @@ if (identical(check_type, "jitter")) {
     truthy(retro_use_doitall_raw, FALSE)
   }
   retro_remove_par_files <- truthy(env("RETRO_REMOVE_PAR_FILES", "false"), FALSE)
+  retro_start_par_name <- env("RETRO_START_PAR_NAME", if (isTRUE(retro_use_doitall)) "00.par" else "")
   write_run_manifest(list(
     retro_peels = paste(peels, collapse = " "),
     n_mixing_periods = n_mixing_periods,
     retro_use_doitall = retro_use_doitall,
-    retro_remove_par_files = retro_remove_par_files
+    retro_remove_par_files = retro_remove_par_files,
+    retro_start_par_name = retro_start_par_name
   ))
   retro_args <- list(
     backend = backend,
     input_dir = prepared$case_dir,
     model_dir = model_dir,
     peel = peels,
+    par = check_start_par,
     n_mixing_periods = n_mixing_periods,
     allow_new_ini_version_write = truthy(env("RETRO_ALLOW_NEW_INI_VERSION_WRITE", "false"), FALSE),
     remove_par_files = isTRUE(retro_remove_par_files),
     rewrite_par = !isTRUE(retro_use_doitall),
     run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
   )
+  if (nzchar(retro_start_par_name)) {
+    retro_args$start_par_name <- retro_start_par_name
+  }
   if (length(retro_command)) {
     retro_args$command <- retro_command
   } else if (!isTRUE(retro_use_doitall)) {
