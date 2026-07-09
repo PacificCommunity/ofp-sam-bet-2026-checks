@@ -15,7 +15,7 @@ export WORK_DIR="${WORK_DIR:-work}"
 export PROGRAM_PATH="${PROGRAM_PATH:-/home/mfcl/mfclo64}"
 export KFLOW_RUNTIME_UPDATE="${KFLOW_RUNTIME_UPDATE:-always}"
 export TUNA_FLOW_RUNTIME_UPDATE="${TUNA_FLOW_RUNTIME_UPDATE:-always}"
-export KFLOW_RUNTIME_PACKAGES="${KFLOW_RUNTIME_PACKAGES:-mfclkit=PacificCommunity/ofp-sam-mfclkit@main,mfclshiny=PacificCommunity/mfclshiny@ba995733d134289006b67aa4747d19edbfb5bdb3}"
+export KFLOW_RUNTIME_PACKAGES="${KFLOW_RUNTIME_PACKAGES:-mfclkit=PacificCommunity/ofp-sam-mfclkit@main,mfclshiny=PacificCommunity/mfclshiny@98a5cbc53b79f6d9e43ca5d44bef09cd16ca7b4a}"
 export KFLOW_REPO_RUNTIME_PACKAGES="${KFLOW_REPO_RUNTIME_PACKAGES:-none}"
 export KFLOW_REPO_RUNTIME_UPDATE="${KFLOW_REPO_RUNTIME_UPDATE:-always}"
 
