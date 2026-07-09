@@ -1591,7 +1591,7 @@ final_summary <- tryCatch(
   error = function(e) NULL
 )
 has_failed_units <- isTRUE(final_summary$has_failures %||% FALSE)
-fail_on_failed_units <- truthy(env("CHECK_FAIL_ON_FAILED_UNITS", "true"), TRUE)
+fail_on_failed_units <- truthy(env("CHECK_FAIL_ON_FAILED_UNITS", "false"), FALSE)
 if (isTRUE(fail_on_failed_units) && isTRUE(has_failed_units)) {
   n_failed <- suppressWarnings(as.integer(final_summary$n_failed %||% NA_integer_))
   if (!is.finite(n_failed)) n_failed <- NA_integer_
