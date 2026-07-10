@@ -215,6 +215,12 @@ make kflow CHECK_TYPE=model-bundle \
 - `HESSIAN_KEEP_MATRIX`: keep final merged Hessian matrix files in the
   `hessian-merge` archive. Default is `false`; Shiny/report diagnostics use
   `hessian_info.rds`.
+- Each merged Hessian always records compact eigenvalue diagnostics in
+  `hessian_info.rds` and `check-summary.csv`: the legacy native
+  `n_negative_eigenvalues` field (which means nonpositive, `<= 0`), plus
+  separate strictly-negative, zero, and positive counts parsed from native
+  `sorted eigenvectors`. The large raw eigenvector report can still be compacted
+  safely after those factual counts have been saved.
 
 ## Local examples
 

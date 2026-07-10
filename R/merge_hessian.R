@@ -42,6 +42,248 @@ bind_rows_fill_local <- function(rows) {
   do.call(rbind, rows)
 }
 
+# Native MFCL writes the first value in `neigenvalues` by counting eigenvalues
+# <= 0.  Older workflows called that field `n_negative_eigenvalues`; retain the
+# old field unchanged for compatibility and add unambiguous counts below.
+hessian_scalar_integer <- function(value) {
+  if (is.null(value) || !length(value)) return(NA_integer_)
+  out <- suppressWarnings(as.integer(value[[1L]]))
+  if (length(out) != 1L || is.na(out)) NA_integer_ else out
+}
+
+hessian_scalar_character <- function(value, default = NA_character_) {
+  if (is.null(value) || !length(value)) return(default)
+  out <- as.character(value[[1L]])
+  if (!length(out) || is.na(out) || !nzchar(out)) default else out
+}
+
+read_native_sorted_eigenvalue_counts <- function(hessian_dir) {
+  result <- list(
+    n_nonpositive_eigenvalues = NA_integer_,
+    n_strictly_negative_eigenvalues = NA_integer_,
+    n_zero_eigenvalues = NA_integer_,
+    n_positive_eigenvalues = NA_integer_,
+    n_parsed_eigenvalues = NA_integer_,
+    source = "not_available",
+    status = "not_available",
+    failure_reason = NA_character_,
+    source_file = NA_character_
+  )
+  if (is.null(hessian_dir) || !length(hessian_dir) || is.na(hessian_dir[[1L]]) ||
+      !nzchar(as.character(hessian_dir[[1L]]))) {
+    result$failure_reason <- "Hessian directory is not available."
+    return(result)
+  }
+
+  path <- file.path(as.character(hessian_dir[[1L]]), "sorted eigenvectors")
+  result$source_file <- normalizePath(path, winslash = "/", mustWork = FALSE)
+  if (!file.exists(path)) {
+    result$failure_reason <- "Native sorted eigenvectors file is not available."
+    return(result)
+  }
+
+  result$source <- "native_sorted_eigenvectors_first_column"
+  connection <- tryCatch(file(path, open = "r"), error = function(e) e)
+  if (inherits(connection, "error")) {
+    result$status <- "read_failed"
+    result$failure_reason <- paste0("Could not open native sorted eigenvectors: ", conditionMessage(connection))
+    return(result)
+  }
+  on.exit(close(connection), add = TRUE)
+
+  # Each native row carries a full eigenvector and can be very large.  Stream
+  # one row at a time so a Hessian diagnostic never materialises the full
+  # O(n^2) report just to inspect its first column.
+  n_rows <- 0L
+  n_invalid <- 0L
+  n_strictly_negative <- 0L
+  n_zero <- 0L
+  n_positive <- 0L
+  read_error <- NA_character_
+  repeat {
+    line <- tryCatch(
+      readLines(connection, n = 1L, warn = FALSE),
+      error = function(e) {
+        read_error <<- conditionMessage(e)
+        character()
+      }
+    )
+    if (!is.na(read_error) || !length(line)) break
+    line <- trimws(line[[1L]])
+    if (!nzchar(line)) next
+
+    n_rows <- n_rows + 1L
+    first_column <- sub("^[[:space:]]*([^[:space:]]+).*$", "\\1", line, perl = TRUE)
+    # Native output normally uses e notation; accepting Fortran D notation
+    # makes the parser robust to compatible executables without changing the
+    # meaning.
+    value <- suppressWarnings(as.numeric(gsub("[dD]", "E", first_column)))
+    if (!is.finite(value)) {
+      n_invalid <- n_invalid + 1L
+    } else if (value < 0) {
+      n_strictly_negative <- n_strictly_negative + 1L
+    } else if (value == 0) {
+      n_zero <- n_zero + 1L
+    } else {
+      n_positive <- n_positive + 1L
+    }
+  }
+
+  if (!is.na(read_error)) {
+    result$status <- if (n_rows > 0L) "partial" else "read_failed"
+    result$failure_reason <- paste0("Could not read native sorted eigenvectors: ", read_error)
+    return(result)
+  }
+  if (!n_rows) {
+    result$status <- "empty"
+    result$failure_reason <- "Native sorted eigenvectors file is empty."
+    return(result)
+  }
+  if (n_invalid > 0L) {
+    result$status <- if (n_invalid < n_rows) "partial" else "unparseable"
+    result$failure_reason <- paste0(
+      "Could not parse the first eigenvalue column for ", n_invalid,
+      " row(s) in native sorted eigenvectors."
+    )
+    return(result)
+  }
+
+  # Use exact zero: this reports the native eigenvalues as written, rather than
+  # applying an undocumented numerical tolerance.
+  result$n_strictly_negative_eigenvalues <- n_strictly_negative
+  result$n_zero_eigenvalues <- n_zero
+  result$n_positive_eigenvalues <- n_positive
+  result$n_nonpositive_eigenvalues <- n_strictly_negative + n_zero
+  result$n_parsed_eigenvalues <- n_rows
+  result$status <- "complete"
+  result
+}
+
+annotate_native_hessian_eigenvalue_counts <- function(info, hessian_dir) {
+  if (!is.list(info)) return(info)
+  if (is.null(info$eigen) || !is.list(info$eigen)) info$eigen <- list()
+
+  eigen <- info$eigen
+  # Do not change this legacy field: consuming code historically reads it even
+  # though native MFCL defines it as a nonpositive (<= 0) count.
+  legacy_nonpositive <- hessian_scalar_integer(eigen$n_negative_eigenvalues)
+  native_total <- hessian_scalar_integer(eigen$n_total_eigenvalues)
+  parsed <- read_native_sorted_eigenvalue_counts(hessian_dir)
+
+  source_parts <- character()
+  if (!is.na(legacy_nonpositive)) source_parts <- c(source_parts, "native_neigenvalues")
+  if (identical(parsed$status, "complete")) {
+    source_parts <- c(source_parts, "native_sorted_eigenvectors_first_column")
+  }
+
+  # `n_nonpositive_eigenvalues` is deliberately the legacy native count where
+  # it exists.  Only fall back to the fully parsed file when neigenvalues is
+  # absent, and record that fact in the source/status fields.
+  nonpositive <- legacy_nonpositive
+  if (is.na(nonpositive) && identical(parsed$status, "complete")) {
+    nonpositive <- parsed$n_nonpositive_eigenvalues
+  }
+
+  issues <- character()
+  if (!identical(parsed$status, "complete")) {
+    reason <- hessian_scalar_character(parsed$failure_reason, "Native eigenvalue counts are unavailable.")
+    issues <- c(issues, reason)
+  }
+  if (identical(parsed$status, "complete") && !is.na(legacy_nonpositive) &&
+      legacy_nonpositive != parsed$n_nonpositive_eigenvalues) {
+    issues <- c(
+      issues,
+      paste0(
+        "Native neigenvalues reports ", legacy_nonpositive,
+        " nonpositive eigenvalue(s), but sorted eigenvectors contains ",
+        parsed$n_nonpositive_eigenvalues, "."
+      )
+    )
+  }
+  if (identical(parsed$status, "complete") && !is.na(native_total) &&
+      native_total != parsed$n_parsed_eigenvalues) {
+    issues <- c(
+      issues,
+      paste0(
+        "Native neigenvalues reports ", native_total,
+        " total eigenvalue(s), but sorted eigenvectors contains ",
+        parsed$n_parsed_eigenvalues, "."
+      )
+    )
+  }
+
+  counts_status <- if (length(issues) && identical(parsed$status, "complete")) {
+    "inconsistent"
+  } else if (identical(parsed$status, "complete")) {
+    "complete"
+  } else if (!is.na(legacy_nonpositive)) {
+    "legacy_only"
+  } else {
+    parsed$status
+  }
+
+  eigen$n_nonpositive_eigenvalues <- nonpositive
+  eigen$n_strictly_negative_eigenvalues <- parsed$n_strictly_negative_eigenvalues
+  eigen$n_zero_eigenvalues <- parsed$n_zero_eigenvalues
+  eigen$n_positive_eigenvalues <- parsed$n_positive_eigenvalues
+  eigen$eigenvalue_counts_source <- if (length(source_parts)) {
+    paste(source_parts, collapse = ";")
+  } else {
+    "not_available"
+  }
+  eigen$eigenvalue_counts_status <- counts_status
+  eigen$eigenvalue_counts_failure_reason <- if (length(issues)) {
+    paste(issues, collapse = " ")
+  } else {
+    NA_character_
+  }
+  eigen$eigenvalue_counts_file <- parsed$source_file
+  info$eigen <- eigen
+
+  if (is.null(info$diagnostics) || !is.list(info$diagnostics)) info$diagnostics <- list()
+  if (is.null(info$diagnostics$summary) || !is.list(info$diagnostics$summary)) {
+    info$diagnostics$summary <- list()
+  }
+  info$diagnostics$summary$n_nonpositive_eigenvalues <- eigen$n_nonpositive_eigenvalues
+  info$diagnostics$summary$n_strictly_negative_eigenvalues <- eigen$n_strictly_negative_eigenvalues
+  info$diagnostics$summary$n_zero_eigenvalues <- eigen$n_zero_eigenvalues
+  info$diagnostics$summary$n_positive_eigenvalues <- eigen$n_positive_eigenvalues
+  info$diagnostics$summary$eigenvalue_counts_source <- eigen$eigenvalue_counts_source
+  info$diagnostics$summary$eigenvalue_counts_status <- eigen$eigenvalue_counts_status
+  info$diagnostics$summary$eigenvalue_counts_failure_reason <- eigen$eigenvalue_counts_failure_reason
+  info
+}
+
+hessian_diagnostic_failure_reason <- function(eigen) {
+  if (is.null(eigen) || !is.list(eigen)) return("Native Hessian diagnostic is unavailable.")
+  nonpositive <- hessian_scalar_integer(eigen$n_nonpositive_eigenvalues)
+  strict_negative <- hessian_scalar_integer(eigen$n_strictly_negative_eigenvalues)
+  zero <- hessian_scalar_integer(eigen$n_zero_eigenvalues)
+  status <- hessian_scalar_character(eigen$hessian_status, "unknown")
+  counts_status <- hessian_scalar_character(eigen$eigenvalue_counts_status)
+  counts_reason <- hessian_scalar_character(eigen$eigenvalue_counts_failure_reason)
+
+  if (identical(counts_status, "inconsistent")) {
+    return(paste0(
+      "Native Hessian eigenvalue-count inconsistency: ",
+      hessian_scalar_character(counts_reason, "see eigenvalue_counts_failure_reason"), "."
+    ))
+  }
+
+  if (!is.na(nonpositive) && nonpositive > 0L) {
+    detail <- c(paste0(nonpositive, " nonpositive"))
+    if (!is.na(strict_negative)) detail <- c(detail, paste0(strict_negative, " strictly negative"))
+    if (!is.na(zero)) detail <- c(detail, paste0(zero, " zero"))
+    return(paste0("Native Hessian ", status, ": ", paste(detail, collapse = "; "), " eigenvalue(s)."))
+  }
+  failed_status <- tolower(status) %in% c(
+    "failed", "model_run_failed", "missing", "no_units", "incomplete",
+    "incomplete_parts", "stitch_failed"
+  )
+  if (isTRUE(failed_status)) return(paste0("Native Hessian status: ", status, "."))
+  NA_character_
+}
+
 check_compact_outputs_enabled <- function() {
   if (truthy(env("CHECK_KEEP_RAW_OUTPUTS", "false"), FALSE)) return(FALSE)
   truthy(env("CHECK_COMPACT_OUTPUTS", "true"), TRUE)
@@ -412,6 +654,19 @@ incomplete_info <- function(status, reliability, reason) {
   )
 }
 
+# mfclkit clears neigenvalues before a fresh stitch, but older MFCL runs can
+# leave the much larger sorted-eigenvector report behind.  Remove it whenever
+# this job is about to run a new stitch so a failed/new eigen calculation can
+# never be diagnosed from stale values.
+if (isTRUE(run_stitch)) {
+  stale_eigen_reports <- file.path(hessian_dir, c("sorted eigenvectors", "xsorted eigenvectors"))
+  stale_eigen_reports <- stale_eigen_reports[file.exists(stale_eigen_reports)]
+  if (length(stale_eigen_reports)) {
+    unlink(stale_eigen_reports, force = TRUE)
+    message("[checks] removed stale native eigenvector report(s) before Hessian stitch")
+  }
+}
+
 info <- if (isTRUE(smoke_only)) {
   incomplete_info("smoke_only", "SMOKE", "CHECK_SMOKE_ONLY=true")
 } else if (!complete_for_stitch) {
@@ -434,8 +689,16 @@ info <- if (isTRUE(smoke_only)) {
     }
   )
 }
+info_hessian_dir <- if (is.list(info) && is.list(info$meta)) {
+  hessian_scalar_character(info$meta$hessian_dir, hessian_dir)
+} else {
+  hessian_dir
+}
+info <- annotate_native_hessian_eigenvalue_counts(info, info_hessian_dir)
 saveRDS(info, file.path(model_dir, "hessian_merge.rds"), compress = "xz")
 saveRDS(info, file.path(hessian_dir, "hessian_info.rds"), compress = "xz")
+
+eigen_info <- if (is.list(info) && is.list(info$eigen)) info$eigen else list()
 
 summary <- data.frame(
   check_type = "hessian",
@@ -448,6 +711,19 @@ summary <- data.frame(
   requires_all_units = TRUE,
   all_required_units_successful = n_units > 0L && n_failed == 0L,
   merge_status = merge_status,
+  hessian_status = hessian_scalar_character(eigen_info$hessian_status),
+  hessian_reliability = hessian_scalar_character(eigen_info$reliability),
+  # Backward-compatible legacy name.  Native MFCL defines this as <= 0.
+  n_negative_eigenvalues = hessian_scalar_integer(eigen_info$n_negative_eigenvalues),
+  n_nonpositive_eigenvalues = hessian_scalar_integer(eigen_info$n_nonpositive_eigenvalues),
+  n_strictly_negative_eigenvalues = hessian_scalar_integer(eigen_info$n_strictly_negative_eigenvalues),
+  n_zero_eigenvalues = hessian_scalar_integer(eigen_info$n_zero_eigenvalues),
+  n_positive_eigenvalues = hessian_scalar_integer(eigen_info$n_positive_eigenvalues),
+  n_total_eigenvalues = hessian_scalar_integer(eigen_info$n_total_eigenvalues),
+  eigenvalue_counts_source = hessian_scalar_character(eigen_info$eigenvalue_counts_source),
+  eigenvalue_counts_status = hessian_scalar_character(eigen_info$eigenvalue_counts_status),
+  eigenvalue_counts_failure_reason = hessian_scalar_character(eigen_info$eigenvalue_counts_failure_reason),
+  hessian_diagnostic_failure_reason = hessian_diagnostic_failure_reason(eigen_info),
   created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
   stringsAsFactors = FALSE
 )
