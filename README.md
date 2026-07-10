@@ -100,9 +100,11 @@ to the completed check/merge jobs, and optionally `ATTACH_CHECK_TYPES` to limit
 which diagnostic folders are copied.
 
 Use `model-bundle` when someone needs a portable MFCL run zip from an existing
-model job. It restores the fitted par as `11.par`, regenerates plot/report files,
-and writes `outputs/model-bundles/<model>/<model>-mfcl-run-bundle.zip` with
-`.frq`, `.ini`, `.tag`, `doitall.sh`, `11.par`, `plot.rep`, and a manifest.
+model job. It restores the fitted par as `11.par`, copies the `mfclo64`
+executable from the Kflow runtime, regenerates plot/report files, verifies the
+zip by extracting it and running `./make-plot-rep.sh`, and writes
+`outputs/model-bundles/<model>/<model>-mfcl-run-bundle.zip` with `.frq`, `.ini`,
+`.tag`, `doitall.sh`, `11.par`, `plot.rep`, `mfclo64`, and a manifest.
 
 ```sh
 make kflow CHECK_TYPE=model-bundle \

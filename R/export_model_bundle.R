@@ -24,6 +24,12 @@ report_output_par <- env("BUNDLE_REPORT_OUTPUT_PAR", "report.par")
 report_output_par <- basename(report_output_par)
 if (!nzchar(report_output_par)) report_output_par <- "report.par"
 
+include_exe <- truthy(env("BUNDLE_INCLUDE_EXE", "true"), TRUE)
+verify_zip_run <- truthy(env("BUNDLE_VERIFY_ZIP_RUN", "true"), TRUE)
+exe_name <- basename(env("BUNDLE_EXE_NAME", basename(program_path)))
+exe_name <- gsub("[^A-Za-z0-9_.-]+", "_", exe_name)
+if (!nzchar(exe_name)) exe_name <- "mfclo64"
+
 run_dir <- file.path(work_dir, "bundle-run", model_key)
 bundle_dir <- file.path(output_dir, "model-bundles", model_key)
 bundle_root <- file.path(bundle_dir, bundle_name)
@@ -56,6 +62,19 @@ if (!nzchar(frq_name) || !file.exists(file.path(run_dir, frq_name))) {
   stop("Bundled model case has no .frq file.", call. = FALSE)
 }
 
+bundled_exe <- ""
+if (isTRUE(include_exe)) {
+  if (!file.exists(program_path)) {
+    stop("BUNDLE_INCLUDE_EXE=true but PROGRAM_PATH does not exist: ", program_path, call. = FALSE)
+  }
+  bundled_exe <- file.path(run_dir, exe_name)
+  ok <- file.copy(program_path, bundled_exe, overwrite = TRUE, copy.mode = TRUE, copy.date = TRUE)
+  if (!isTRUE(ok) || !file.exists(bundled_exe)) {
+    stop("Could not copy MFCL executable into bundle: ", program_path, call. = FALSE)
+  }
+  Sys.chmod(bundled_exe, mode = "0755")
+}
+
 report_status <- NA_integer_
 report_command <- ""
 report_log <- file.path(run_dir, "bundle-report.log")
@@ -63,12 +82,10 @@ generated_plot_rep <- ""
 generated_rep <- ""
 default_report_switches <- "-switch 6 1 1 1 1 189 1 1 190 1 1 188 1 1 187 1 1 186 0"
 report_switch_text <- env("BUNDLE_REPORT_SWITCHES", default_report_switches)
+report_switch_tokens <- split_values(report_switch_text)
+if (!length(report_switch_tokens)) report_switch_tokens <- split_values(default_report_switches)
 if (truthy(env("BUNDLE_GENERATE_REPORTS", "true"), TRUE)) {
-  switch_tokens <- split_values(report_switch_text)
-  if (!length(switch_tokens)) {
-    switch_tokens <- split_values(default_report_switches)
-  }
-  args <- c(frq_name, final_par_name, report_output_par, switch_tokens)
+  args <- c(frq_name, final_par_name, report_output_par, report_switch_tokens)
   report_command <- paste(c(program_path, args), collapse = " ")
   message("[checks] regenerating MFCL report files: ", report_command)
   old <- setwd(run_dir)
@@ -99,17 +116,18 @@ if (!file.exists(file.path(run_dir, "plot.rep")) &&
   stop("MFCL report regeneration did not produce a plot .rep file.", call. = FALSE)
 }
 
+script_program_default <- if (nzchar(bundled_exe)) paste0("./", exe_name) else "mfclo64"
 plot_script <- c(
   "#!/usr/bin/env bash",
   "set -euo pipefail",
   "cd \"$(dirname \"${BASH_SOURCE[0]}\")\"",
-  "PROGRAM_PATH=\"${PROGRAM_PATH:-mfclo64}\"",
+  paste0("PROGRAM_PATH=\"${PROGRAM_PATH:-", script_program_default, "}\""),
   paste(
     "\"${PROGRAM_PATH}\"",
     shQuote(frq_name),
     shQuote(final_par_name),
     shQuote(report_output_par),
-    paste(shQuote(split_values(report_switch_text)), collapse = " ")
+    paste(shQuote(report_switch_tokens), collapse = " ")
   ),
   "latest_rep=\"$(find . -maxdepth 1 -type f \\( -iname 'plot*.rep' -o -iname '*.rep' \\) -printf '%T@ %p\\n' | sort -nr | awk 'NR == 1 {sub(/^[^ ]+ /, \"\"); sub(/^\\.\\//, \"\"); print}')\"",
   "if [[ -n \"${latest_rep}\" && \"${latest_rep}\" != \"plot.rep\" ]]; then",
@@ -126,15 +144,16 @@ readme <- c(
   "",
   "Key files:",
   paste0("- `", final_par_name, "`: fitted final par restored from the selected Kflow model output."),
+  if (nzchar(bundled_exe)) paste0("- `", exe_name, "`: MFCL executable copied from the Kflow runtime image.") else NULL,
   "- `plot.rep`: convenience copy of the latest regenerated plot report.",
-  "- `make-plot-rep.sh`: regenerates report files directly from the fitted final par.",
+  paste0("- `make-plot-rep.sh`: regenerates report files directly from `", final_par_name, "`."),
   "- `doitall.sh`: source model run script when present; it is for a full rerun and may recreate the final par.",
   "- `bundle-report.log`: log from regenerating report files.",
   "",
   "To regenerate reports from the fitted par:",
   "",
   "```sh",
-  "PROGRAM_PATH=/path/to/mfclo64 ./make-plot-rep.sh",
+  "./make-plot-rep.sh",
   "```",
   "",
   "To rerun the full model from the original starting files, use the included `doitall.sh` if present."
@@ -161,6 +180,9 @@ manifest <- data.frame(
   report_status = suppressWarnings(as.integer(report_status)),
   report_command = report_command,
   program_path = program_path,
+  bundled_exe = if (nzchar(bundled_exe)) exe_name else "",
+  bundled_exe_size = if (nzchar(bundled_exe) && file.exists(bundled_exe)) file.info(bundled_exe)$size else NA_real_,
+  bundled_exe_md5 = if (nzchar(bundled_exe) && file.exists(bundled_exe)) unname(tools::md5sum(bundled_exe)) else "",
   stringsAsFactors = FALSE
 )
 write.csv(manifest, file.path(run_dir, "bundle-manifest.csv"), row.names = FALSE)
@@ -178,6 +200,77 @@ if (!identical(as.integer(zip_status), 0L) || !file.exists(zip_file)) {
   stop("Could not create zip bundle: ", zip_file, call. = FALSE)
 }
 
+verification <- data.frame(
+  schema = "ofp-sam.checks.mfcl-run-bundle-verification.v1",
+  created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+  model_key = model_key,
+  bundle_zip = normalize_loose(zip_file),
+  zip_run_status = NA_integer_,
+  plot_rep = "",
+  plot_rep_size = NA_real_,
+  command = "",
+  log = "",
+  stringsAsFactors = FALSE
+)
+if (isTRUE(verify_zip_run)) {
+  if (!nzchar(bundled_exe)) {
+    stop("BUNDLE_VERIFY_ZIP_RUN=true requires BUNDLE_INCLUDE_EXE=true.", call. = FALSE)
+  }
+  verify_dir <- file.path(work_dir, "bundle-verify", model_key)
+  unlink(verify_dir, recursive = TRUE, force = TRUE)
+  dir.create(verify_dir, recursive = TRUE, showWarnings = FALSE)
+  verify_log <- file.path(bundle_dir, "bundle-verify.log")
+  unzip_bin <- Sys.which("unzip")
+  if (nzchar(unzip_bin)) {
+    unzip_status <- system2(unzip_bin, c("-q", normalize_loose(zip_file), "-d", normalize_loose(verify_dir)))
+  } else {
+    unzip_status <- tryCatch({
+      utils::unzip(zip_file, exdir = verify_dir)
+      0L
+    }, error = function(e) {
+      writeLines(conditionMessage(e), verify_log)
+      1L
+    })
+  }
+  if (!identical(as.integer(unzip_status), 0L)) {
+    stop("Could not extract zip bundle for verification: ", zip_file, call. = FALSE)
+  }
+  extracted_root <- file.path(verify_dir, bundle_name)
+  if (!dir.exists(extracted_root)) {
+    roots <- list.files(verify_dir, full.names = TRUE, no.. = TRUE)
+    roots <- roots[dir.exists(roots)]
+    if (length(roots) == 1L) extracted_root <- roots[[1L]]
+  }
+  if (!dir.exists(extracted_root)) {
+    stop("Zip verification could not find extracted bundle root.", call. = FALSE)
+  }
+  extracted_exe <- file.path(extracted_root, exe_name)
+  if (!file.exists(extracted_exe)) {
+    stop("Zip verification could not find bundled executable: ", exe_name, call. = FALSE)
+  }
+  Sys.chmod(extracted_exe, mode = "0755")
+  unlink(file.path(extracted_root, c("plot.rep", paste0("plot-", report_output_par, ".rep"))), force = TRUE)
+  verify_command <- paste("bash ./make-plot-rep.sh")
+  message("[checks] verifying extracted bundle with bundled executable: ", verify_command)
+  old <- setwd(extracted_root)
+  on.exit(setwd(old), add = TRUE)
+  verify_status <- system2("bash", "./make-plot-rep.sh", stdout = verify_log, stderr = verify_log)
+  setwd(old)
+  verification$zip_run_status <- suppressWarnings(as.integer(verify_status))
+  verification$plot_rep <- if (file.exists(file.path(extracted_root, "plot.rep"))) "plot.rep" else ""
+  verification$plot_rep_size <- if (nzchar(verification$plot_rep[[1L]])) file.info(file.path(extracted_root, "plot.rep"))$size else NA_real_
+  verification$command <- verify_command
+  verification$log <- normalize_loose(verify_log)
+  if (!identical(as.integer(verify_status), 0L)) {
+    stop("Extracted bundle verification failed with status ", verify_status, "; see ", verify_log, call. = FALSE)
+  }
+  if (!nzchar(verification$plot_rep[[1L]]) || !is.finite(verification$plot_rep_size[[1L]]) ||
+      verification$plot_rep_size[[1L]] <= 0) {
+    stop("Extracted bundle verification did not regenerate plot.rep.", call. = FALSE)
+  }
+}
+write.csv(verification, file.path(bundle_dir, "bundle-verification.csv"), row.names = FALSE)
+
 index <- data.frame(
   schema = manifest$schema[[1L]],
   created_at = manifest$created_at[[1L]],
@@ -189,6 +282,8 @@ index <- data.frame(
   final_par = final_par_name,
   plot_rep = manifest$plot_rep[[1L]],
   report_status = manifest$report_status[[1L]],
+  bundled_exe = manifest$bundled_exe[[1L]],
+  zip_run_status = verification$zip_run_status[[1L]],
   stringsAsFactors = FALSE
 )
 write.csv(index, file.path(bundle_dir, "bundle-index.csv"), row.names = FALSE)
