@@ -317,14 +317,24 @@ def main() -> int:
             for unit in unit_specs:
                 task = f"{args.task_prefix}-{check}"
                 unit_label = str(unit.get("label") or "").strip()
-                title = args.job_title or (
-                    f"{check} {unit_label}: {model}" if unit_label else f"{check}: {model}"
-                )
-                description = args.job_description or (
-                    f"Run {check} {unit_label} check for {model}."
-                    if unit_label else
-                    f"Run {check} check for {model}."
-                )
+                if check == "model-bundle":
+                    title = args.job_title or f"MFCL bundle: {model}"
+                    description = args.job_description or f"Build a portable MFCL run bundle zip for {model}."
+                    runtime_packages_default = "none"
+                    repo_runtime_packages_default = "none"
+                    repo_runtime_update_default = "never"
+                else:
+                    title = args.job_title or (
+                        f"{check} {unit_label}: {model}" if unit_label else f"{check}: {model}"
+                    )
+                    description = args.job_description or (
+                        f"Run {check} {unit_label} check for {model}."
+                        if unit_label else
+                        f"Run {check} check for {model}."
+                    )
+                    runtime_packages_default = DEFAULT_RUNTIME_PACKAGES
+                    repo_runtime_packages_default = "none"
+                    repo_runtime_update_default = "always"
                 env = {
                     "CHECK_TYPE": check,
                     "MODEL_SELECTOR": model,
@@ -338,15 +348,15 @@ def main() -> int:
                     "KFLOW_RUNTIME_UPDATE": os.environ.get("KFLOW_RUNTIME_UPDATE", "always"),
                     "TUNA_FLOW_RUNTIME_UPDATE": os.environ.get("TUNA_FLOW_RUNTIME_UPDATE", "always"),
                     "KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS": os.environ.get("KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS", "0"),
-                    "KFLOW_RUNTIME_PACKAGES": os.environ.get("KFLOW_RUNTIME_PACKAGES", DEFAULT_RUNTIME_PACKAGES),
-                    "KFLOW_REPO_RUNTIME_PACKAGES": os.environ.get("KFLOW_REPO_RUNTIME_PACKAGES", "none"),
-                    "KFLOW_REPO_RUNTIME_UPDATE": os.environ.get("KFLOW_REPO_RUNTIME_UPDATE", "always"),
+                    "KFLOW_RUNTIME_PACKAGES": os.environ.get("KFLOW_RUNTIME_PACKAGES", runtime_packages_default),
+                    "KFLOW_REPO_RUNTIME_PACKAGES": os.environ.get("KFLOW_REPO_RUNTIME_PACKAGES", repo_runtime_packages_default),
+                    "KFLOW_REPO_RUNTIME_UPDATE": os.environ.get("KFLOW_REPO_RUNTIME_UPDATE", repo_runtime_update_default),
                     "KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES": os.environ.get("KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES", "true"),
                     "KFLOW_RUNTIME_GITHUB_AUTH": os.environ.get("KFLOW_RUNTIME_GITHUB_AUTH", "true"),
                     "KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME": os.environ.get("KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME", "true"),
                 }
                 env_prefixes = (
-                    "BET_", "JITTER_", "RETRO_", "HESSIAN_", "PROFILE_", "ASPM_",
+                    "BET_", "JITTER_", "RETRO_", "HESSIAN_", "PROFILE_", "ASPM_", "BUNDLE_",
                     "SELFTEST_", "MFK_", "CHECK_", "selftest_",
                 )
                 passthrough_env = {"TRIGGER_NEXT"}
@@ -449,7 +459,7 @@ def main() -> int:
         for key, value in os.environ.items():
             if key in {"CHECK_TYPE", "MODEL_SELECTOR", "KFLOW_JOB_TITLE", "KFLOW_JOB_DESCRIPTION"}:
                 continue
-            if key.startswith(("BET_", "JITTER_", "RETRO_", "HESSIAN_", "PROFILE_", "ASPM_", "SELFTEST_", "MFK_", "CHECK_", "selftest_")) or key in {"TRIGGER_NEXT"} or key == "program_path":
+            if key.startswith(("BET_", "JITTER_", "RETRO_", "HESSIAN_", "PROFILE_", "ASPM_", "BUNDLE_", "SELFTEST_", "MFK_", "CHECK_", "selftest_")) or key in {"TRIGGER_NEXT"} or key == "program_path":
                 env[key] = value
         if check == "hessian":
             env["CHECK_TYPE"] = "hessian_merge"
@@ -549,7 +559,7 @@ def main() -> int:
             for key, value in os.environ.items():
                 if key in {"CHECK_TYPE", "MODEL_SELECTOR", "KFLOW_JOB_TITLE", "KFLOW_JOB_DESCRIPTION"}:
                     continue
-                if key.startswith(("BET_", "JITTER_", "RETRO_", "HESSIAN_", "PROFILE_", "ASPM_", "SELFTEST_", "MFK_", "CHECK_", "selftest_")) or key in {"TRIGGER_NEXT"} or key == "program_path":
+                if key.startswith(("BET_", "JITTER_", "RETRO_", "HESSIAN_", "PROFILE_", "ASPM_", "BUNDLE_", "SELFTEST_", "MFK_", "CHECK_", "selftest_")) or key in {"TRIGGER_NEXT"} or key == "program_path":
                     env[key] = value
             payload = {
                 **submitter_fields,

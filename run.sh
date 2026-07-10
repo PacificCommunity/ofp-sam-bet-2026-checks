@@ -155,6 +155,9 @@ case "$CHECK_TYPE" in
   attach|attach_checks|attach-checks)
     Rscript R/attach_checks.R
     ;;
+  model_bundle|model-bundle|bundle|export-bundle|mfcl-bundle)
+    Rscript R/export_model_bundle.R
+    ;;
   hessian_merge|hessian-merge)
     Rscript R/merge_hessian.R
     ;;

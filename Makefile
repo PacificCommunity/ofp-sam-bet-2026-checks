@@ -1,7 +1,7 @@
 SHELL := /usr/bin/env bash
 
 CHECK_TYPES ?= profile jitter hessian retro selftest aspm
-KFLOW_REGISTER_CHECK_TYPES ?= profile jitter hessian hessian-merge jitter-merge profile-merge retro-merge selftest-merge retro selftest aspm aspm-merge attach-checks
+KFLOW_REGISTER_CHECK_TYPES ?= profile jitter hessian hessian-merge jitter-merge profile-merge retro-merge selftest-merge retro selftest aspm aspm-merge attach-checks model-bundle
 CHECK_TYPE ?= jitter
 MODEL_SELECTOR ?=
 MODEL_SELECTORS ?= $(MODEL_SELECTOR)
@@ -47,12 +47,21 @@ ASPM_FIX_SELECTIVITY ?=
 ASPM_MIN_LF_SAMPLE_SIZE ?=
 ASPM_MIN_WF_SAMPLE_SIZE ?=
 ASPM_EXTRA_SWITCH_LINES ?=
+BUNDLE_NAME ?=
+BUNDLE_FRQ ?=
+BUNDLE_FINAL_PAR_NAME ?= 11.par
+BUNDLE_REPORT_OUTPUT_PAR ?= report.par
+BUNDLE_REPORT_SWITCHES ?=
+BUNDLE_GENERATE_REPORTS ?= true
+BUNDLE_REQUIRE_PLOT_REP ?= true
+BUNDLE_ALLOW_REPORT_FAILURE ?= false
 TRIGGER_NEXT ?=
 
 export JITTER_SEEDS JITTER_SEED RETRO_PEELS RETRO_PEEL RETRO_MAKEPAR_START RETRO_REMOVE_PAR_FILES RETRO_START_PAR_NAME SELFTEST_REPS SELFTEST_REP
 export PROFILE_VALUES PROFILE_NAME PROFILE_PARALLEL_MODE PROFILE_CENTER PROFILE_CHAIN PROFILE_CHAIN_SIDE MFK_SCALAR
 export HESSIAN_NSPLIT HESSIAN_PARTS HESSIAN_PART NSPLIT
 export ASPM_MAX_EVALS ASPM_FIX_SELECTIVITY ASPM_MIN_LF_SAMPLE_SIZE ASPM_MIN_WF_SAMPLE_SIZE ASPM_EXTRA_SWITCH_LINES
+export BUNDLE_NAME BUNDLE_FRQ BUNDLE_FINAL_PAR_NAME BUNDLE_REPORT_OUTPUT_PAR BUNDLE_REPORT_SWITCHES BUNDLE_GENERATE_REPORTS BUNDLE_REQUIRE_PLOT_REP BUNDLE_ALLOW_REPORT_FAILURE
 export TRIGGER_NEXT
 
 .PHONY: help local clean kflow-register kflow kflow-batch
@@ -70,6 +79,9 @@ help:
 	  'make kflow-batch CHECK_TYPES="jitter retro hessian aspm" MODEL_SELECTORS="08-RegionalCPUE 15-DataWeighting" KFLOW_INPUT_JOBS=603' \
 	  '  Submit check x model jobs; seed/peel/rep/hessian units split by default; profile splits into downstream/upstream chains.' \
 	  '' \
+	  'make kflow CHECK_TYPE=model-bundle MODEL_SELECTOR=12-OrthogonalPoly KFLOW_INPUT_JOBS=1926 KFLOW_AUTO_MERGE=false KFLOW_AUTO_ATTACH=false' \
+	  '  Create a portable MFCL run bundle zip for a fitted model job.' \
+	  '' \
 	  'KFLOW_PARALLEL_UNITS=false make kflow CHECK_TYPE=jitter JITTER_SEEDS="1 2 3"' \
 	  '  Keep multiple check units in one Kflow job instead of splitting them.' \
 	  '' \
@@ -86,7 +98,7 @@ local:
 	bash run.sh '$(CHECK_TYPE)'
 
 clean:
-	rm -rf outputs work profile/outputs profile/work jitter/outputs jitter/work hessian/outputs hessian/work hessian-merge/outputs hessian-merge/work jitter-merge/outputs jitter-merge/work profile-merge/outputs profile-merge/work retro-merge/outputs retro-merge/work selftest-merge/outputs selftest-merge/work retro/outputs retro/work selftest/outputs selftest/work aspm/outputs aspm/work attach-checks/outputs attach-checks/work .R-library .kflow-runtime-cache .docker-home
+	rm -rf outputs work profile/outputs profile/work jitter/outputs jitter/work hessian/outputs hessian/work hessian-merge/outputs hessian-merge/work jitter-merge/outputs jitter-merge/work profile-merge/outputs profile-merge/work retro-merge/outputs retro-merge/work selftest-merge/outputs selftest-merge/work retro/outputs retro/work selftest/outputs selftest/work aspm/outputs aspm/work attach-checks/outputs attach-checks/work model-bundle/outputs model-bundle/work .R-library .kflow-runtime-cache .docker-home
 
 kflow-register:
 	@test -n "$${KFLOW_API_TOKEN:-}" || { echo 'Set KFLOW_API_TOKEN before running make kflow-register.' >&2; exit 2; }

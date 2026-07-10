@@ -12,6 +12,7 @@ Kflow tasks for running `mfclkit` diagnostics on fitted MFCL model outputs:
 - `retro`
 - `selftest`
 - `aspm`
+- `model-bundle`
 
 The tasks are intentionally model-output driven, not stepwise-specific. A run can
 consume either:
@@ -97,6 +98,20 @@ a final compact model bundle from one base model output plus completed check
 outputs. Set `MODEL_BASE_INPUT_JOB` to the fitted model job, `CHECK_INPUT_JOBS`
 to the completed check/merge jobs, and optionally `ATTACH_CHECK_TYPES` to limit
 which diagnostic folders are copied.
+
+Use `model-bundle` when someone needs a portable MFCL run zip from an existing
+model job. It restores the fitted par as `11.par`, regenerates plot/report files,
+and writes `outputs/model-bundles/<model>/<model>-mfcl-run-bundle.zip` with
+`.frq`, `.ini`, `.tag`, `doitall.sh`, `11.par`, `plot.rep`, and a manifest.
+
+```sh
+make kflow CHECK_TYPE=model-bundle \
+  MODEL_SELECTOR=12-OrthogonalPoly \
+  KFLOW_INPUT_JOBS=1926 \
+  MODEL_SOURCE_REPO=PacificCommunity/ofp-sam-bet-2026-stepwise \
+  MODEL_SOURCE_REF=6226c5387d921290535512c79d8a92ff7e4addd3 \
+  KFLOW_AUTO_MERGE=false KFLOW_AUTO_ATTACH=false
+```
 
 ## Check-specific fields
 

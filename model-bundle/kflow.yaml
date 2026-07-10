@@ -1,0 +1,65 @@
+name: ofp-sam-bet-2026-check-model-bundle
+description: Build a portable MFCL run bundle zip from a fitted Kflow model output.
+command: bash run.sh
+target_folder: model-bundle
+docker_image: ghcr.io/pacificcommunity/tuna-flow:v2.1
+resources:
+  cpus: 2
+  memory: 8GB
+  disk: 10GB
+env:
+  CHECK_TYPE: model-bundle
+  MODEL_SELECTOR: ""
+  MODEL_SOURCE_REPO: PacificCommunity/ofp-sam-bet-2026-stepwise
+  MODEL_SOURCE_REF: main
+  PROGRAM_PATH: /home/mfcl/mfclo64
+  BUNDLE_FINAL_PAR_NAME: 11.par
+  BUNDLE_REPORT_OUTPUT_PAR: report.par
+  BUNDLE_GENERATE_REPORTS: "true"
+  BUNDLE_REQUIRE_PLOT_REP: "true"
+  BUNDLE_ALLOW_REPORT_FAILURE: "false"
+  KFLOW_RUNTIME_PACKAGES: none
+  KFLOW_REPO_RUNTIME_PACKAGES: none
+  KFLOW_REPO_RUNTIME_UPDATE: never
+  KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
+  KFLOW_RUNTIME_UPDATE: always
+  TUNA_FLOW_RUNTIME_UPDATE: always
+  KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS: "0"
+  KFLOW_RUNTIME_GITHUB_AUTH: "true"
+  KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME: "true"
+output_patterns:
+  - outputs/**
+metadata:
+  job_config:
+    optional:
+      - CHECK_TYPE
+      - MODEL_SELECTOR
+      - MODEL_INPUT_ROOT
+      - MODEL_SOURCE_REPO
+      - MODEL_SOURCE_REF
+      - MODEL_SOURCE_PATH
+      - MODEL_SOURCE_ROOT
+      - MODEL_FINAL_PAR
+      - CHECK_START_PAR_NAME
+      - PROGRAM_PATH
+      - FLOW_GROUP
+      - BUNDLE_NAME
+      - BUNDLE_FRQ
+      - BUNDLE_FINAL_PAR_NAME
+      - BUNDLE_REPORT_OUTPUT_PAR
+      - BUNDLE_REPORT_SWITCHES
+      - BUNDLE_GENERATE_REPORTS
+      - BUNDLE_REQUIRE_PLOT_REP
+      - BUNDLE_ALLOW_REPORT_FAILURE
+      - KFLOW_RUNTIME_UPDATE
+      - TUNA_FLOW_RUNTIME_UPDATE
+      - KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS
+      - KFLOW_RUNTIME_PACKAGES
+      - KFLOW_REPO_RUNTIME_PACKAGES
+      - KFLOW_REPO_RUNTIME_UPDATE
+      - KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES
+      - KFLOW_RUNTIME_GITHUB_AUTH
+      - KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME
+tags:
+  stage: checks
+  check_type: model-bundle
