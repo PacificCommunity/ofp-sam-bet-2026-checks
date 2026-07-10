@@ -231,14 +231,21 @@ def api_get_json(url: str, token: str) -> dict[str, Any]:
     return json.loads(raw.decode("utf-8")) if raw else {}
 
 
+def api_job(base_url: str, token: str, ref: str) -> dict[str, Any]:
+    if not str(ref or "").strip():
+        return {}
+    try:
+        response = api_get_json(f"{base_url}/api/job/{str(ref).lstrip('#')}", token)
+    except Exception:
+        return {}
+    job = response.get("job", response)
+    return job if isinstance(job, dict) else {}
+
+
 def latest_attached_output_job(base_url: str, token: str, base_job: str) -> str:
     if not str(base_job or "").strip():
         return ""
-    try:
-        response = api_get_json(f"{base_url}/api/job/{str(base_job).lstrip('#')}", token)
-    except Exception:
-        return ""
-    job = response.get("job", response)
+    job = api_job(base_url, token, base_job)
     metadata = job.get("metadata") if isinstance(job.get("metadata"), dict) else {}
     latest = metadata.get("attached_work_latest")
     if not isinstance(latest, dict):
@@ -247,6 +254,44 @@ def latest_attached_output_job(base_url: str, token: str, base_job: str) -> str:
     if not output_job or output_job == str(base_job).strip().lstrip("#"):
         return ""
     return output_job
+
+
+def job_check_kind(job: dict[str, Any]) -> str:
+    metadata = job.get("metadata") if isinstance(job.get("metadata"), dict) else {}
+    tags = job.get("tags") if isinstance(job.get("tags"), dict) else {}
+    values = [
+        metadata.get("merged_check_type"),
+        tags.get("merge_for"),
+        metadata.get("check_type"),
+        tags.get("check_type"),
+    ]
+    for value in values:
+        text = normalize_check_name(str(value or ""))
+        if text:
+            return text.removesuffix("-merge")
+    return ""
+
+
+def metadata_refs(value: Any) -> list[str]:
+    if isinstance(value, (list, tuple, set)):
+        return split_values(" ".join(str(item) for item in value if str(item).strip()))
+    return split_values(str(value or ""))
+
+
+def previous_check_merge_jobs(base_url: str, token: str, attached_job_ref: str, check: str) -> list[str]:
+    attached = api_job(base_url, token, attached_job_ref)
+    metadata = attached.get("metadata") if isinstance(attached.get("metadata"), dict) else {}
+    refs = metadata_refs(metadata.get("check_input_jobs"))
+    if not refs:
+        refs = metadata_refs(metadata.get("input_jobs"))
+    out: list[str] = []
+    for ref in refs:
+        linked = api_job(base_url, token, ref)
+        if job_check_kind(linked) == normalize_check_name(check):
+            code = str(linked.get("job_number") or linked.get("number") or ref).strip().lstrip("#")
+            if code and code not in out:
+                out.append(code)
+    return out
 
 
 def parse_args() -> argparse.Namespace:
@@ -297,6 +342,9 @@ def main() -> int:
     auto_attach = truthy(args.auto_attach, default=True)
     attach_merge_with_latest = truthy(os.environ.get("KFLOW_ATTACH_MERGE_WITH_LATEST", "true"), default=True)
     base_input_job = input_jobs[0] if input_jobs else ""
+    previous_attached_job_for_base = ""
+    if base_input_job and not args.dry_run and token:
+        previous_attached_job_for_base = latest_attached_output_job(base_url, token, base_input_job)
     submitter_fields = {
         "remote_host": args.submitter or args.remote_host,
         "remote_user": args.remote_user,
@@ -463,6 +511,26 @@ def main() -> int:
                 env[key] = value
         if check == "hessian":
             env["CHECK_TYPE"] = "hessian_merge"
+        previous_merge_jobs = (
+            previous_check_merge_jobs(base_url, token, previous_attached_job_for_base, check)
+            if previous_attached_job_for_base and not args.dry_run and token
+            else []
+        )
+        input_history = []
+        if previous_merge_jobs:
+            input_history.append(
+                {
+                    "label": f"Previous {check} merge",
+                    "jobs": previous_merge_jobs,
+                }
+            )
+        if previous_attached_job_for_base:
+            input_history.append(
+                {
+                    "label": "Previous attached output",
+                    "jobs": [previous_attached_job_for_base],
+                }
+            )
         payload = {
             **submitter_fields,
             "env": {key: value for key, value in env.items() if value not in (None, "")},
@@ -481,6 +549,9 @@ def main() -> int:
                 "auto_merge": True,
                 "allow_failed_input_jobs": True,
                 "nested_work_group": check,
+                "previous_attached_output_job": previous_attached_job_for_base,
+                "previous_check_merge_jobs": previous_merge_jobs,
+                "input_history": input_history,
             },
             "tags": {
                 "stage": "checks",
@@ -518,10 +589,9 @@ def main() -> int:
             if not final_job_ids:
                 continue
             checks_text = " ".join(item["checks"])
-            previous_attached_job = ""
+            previous_attached_job = previous_attached_job_for_base
             attach_base_input_job = base_input_job
             if attach_merge_with_latest and not args.dry_run and token:
-                previous_attached_job = latest_attached_output_job(base_url, token, base_input_job)
                 if previous_attached_job and previous_attached_job not in final_job_ids:
                     attach_base_input_job = previous_attached_job
             attach_input_jobs = [base_input_job]
