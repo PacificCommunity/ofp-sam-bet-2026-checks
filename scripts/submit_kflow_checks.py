@@ -36,6 +36,9 @@ DEFAULT_RUNTIME_PACKAGES = (
 
 DEFAULT_PROFILE_VALUES = [float(value) for value in range(60, 145, 5)]
 DEFAULT_PROFILE_CENTER = "100"
+DEFAULT_JITTER_SEEDS = ["1", "2"]
+DEFAULT_RETRO_PEELS = ["1", "2", "3", "4", "5"]
+DEFAULT_SELFTEST_REPS = ["1", "2"]
 
 
 def split_values(raw: str) -> list[str]:
@@ -121,6 +124,8 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
     check_key = normalize_check_name(check)
     if check_key == "jitter":
         seeds = split_values(env_first("JITTER_SEEDS", "JITTER_SEED"))
+        if not seeds:
+            seeds = list(DEFAULT_JITTER_SEEDS)
         return [
             {
                 "label": f"seed {seed}",
@@ -132,6 +137,8 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
 
     if check_key == "retro":
         peels = split_values(env_first("RETRO_PEELS", "RETRO_PEEL"))
+        if not peels:
+            peels = list(DEFAULT_RETRO_PEELS)
         return [
             {
                 "label": f"peel {peel}",
@@ -143,6 +150,8 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
 
     if check_key == "selftest":
         reps = split_values(env_first("SELFTEST_REPS", "SELFTEST_REP"))
+        if not reps:
+            reps = list(DEFAULT_SELFTEST_REPS)
         return [
             {
                 "label": f"rep {rep}",

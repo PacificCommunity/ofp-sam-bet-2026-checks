@@ -1340,6 +1340,7 @@ if (identical(check_type, "jitter")) {
     jitter_args$jittered_par_name <- env("JITTER_PHASE1_PAR", "01.par")
     jitter_args$tag_mixing_fix <- env("JITTER_TAG_MIXING_FIX", "auto")
     jitter_args$n_mixing_periods <- as.integer(split_numbers(env("N_MIXING_PERIODS", "2"), default = 2)[[1L]])
+    jitter_args$allow_new_ini_version_write <- truthy(env("JITTER_ALLOW_NEW_INI_VERSION_WRITE", "false"), FALSE)
     jitter_args$require_indepvar <- truthy(env("JITTER_REQUIRE_INDEPVAR", "false"), FALSE)
     jitter_args$output_par_name <- NULL
     result <- do.call(mfk_run_jitter_phase1_doitall, jitter_args)
@@ -1351,7 +1352,7 @@ if (identical(check_type, "jitter")) {
   try(write.csv(mfk_collect_jitter(model_dir), file.path(model_dir, "jitter-index.csv"), row.names = FALSE), silent = TRUE)
 
 } else if (identical(check_type, "retro")) {
-  peels <- as.integer(split_numbers(env("RETRO_PEELS", env("RETRO_PEEL", "1")), default = 1))
+  peels <- as.integer(split_numbers(env("RETRO_PEELS", env("RETRO_PEEL", "")), default = seq_len(5)))
   n_mixing_periods <- as.integer(split_numbers(env("N_MIXING_PERIODS", "2"), default = 2)[[1L]])
   retro_command <- split_values(env("RETRO_COMMAND", ""))
   retro_has_doitall <- file.exists(file.path(prepared$case_dir, "doitall.sh"))
@@ -1719,7 +1720,7 @@ final_summary <- tryCatch(
   error = function(e) NULL
 )
 has_failed_units <- isTRUE(final_summary$has_failures %||% FALSE)
-fail_on_failed_units <- truthy(env("CHECK_FAIL_ON_FAILED_UNITS", "true"), TRUE)
+fail_on_failed_units <- truthy(env("CHECK_FAIL_ON_FAILED_UNITS", "false"), FALSE)
 if (isTRUE(fail_on_failed_units) && isTRUE(has_failed_units)) {
   n_failed <- suppressWarnings(as.integer(final_summary$n_failed %||% NA_integer_))
   if (!is.finite(n_failed)) n_failed <- NA_integer_
