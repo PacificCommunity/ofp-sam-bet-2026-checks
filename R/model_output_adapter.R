@@ -605,6 +605,13 @@ stage_selected_model <- function(row, work_dir = env("WORK_DIR", "work"), output
   for (payload in compact_payloads[file.exists(compact_payloads)]) {
     file.copy(payload, file.path(stage_dir, basename(payload)), overwrite = TRUE, copy.date = TRUE)
   }
+  compact_aux <- file.path(compact_dir, c("indepvar.rpt", "doitall.sh"))
+  for (aux in compact_aux[file.exists(compact_aux)]) {
+    target <- file.path(stage_dir, basename(aux))
+    if (!file.exists(target)) {
+      file.copy(aux, target, overwrite = TRUE, copy.date = TRUE)
+    }
+  }
   if (!isTRUE(start_par_restored)) {
     file.copy(start_par_source, start_par, overwrite = TRUE, copy.date = TRUE)
   }

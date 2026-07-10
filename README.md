@@ -121,12 +121,18 @@ make kflow CHECK_TYPE=model-bundle \
 
 - `JITTER_SEEDS`: comma/space list of seeds, default `1`.
 - `JITTER_CV`: jitter CV, default `0.2`.
+- `JITTER_METHOD`: `phase1_doitall` by default. This builds a fresh
+  `00.par`, runs the staged `doitall.sh` through PHASE1, jitters the resulting
+  `01.par` starting values, then resumes the remaining phases. Use `simple` to
+  run the older direct fitted-par jitter path.
 - `JITTER_SLOTS`: optional comma/space list of `MFCLPar` slots to perturb. If
   unset, the runner uses a conservative set of continuous dev/coefficient slots
-  and leaves structural, tag-reporting, maturity, movement, and fishery metadata
-  untouched.
+  and leaves structural metadata untouched. This is used by the `simple`
+  method and as a conservative writer fallback.
+- `JITTER_TAG_MIXING_FIX`: `auto` by default. The tag/ini mixing-period patch is
+  applied only when the staged model has a `.tag` file.
 - `BET_JITTER_MAX_EVALS`: maximum evaluations for the final-phase jitter fit,
-  default `5000`. Use a smaller value for quick smoke tests.
+  default `5000`. This applies to `JITTER_METHOD=simple`.
 - `RETRO_PEELS`: comma/space list of peels, default `1`.
 - `N_MIXING_PERIODS`: MFCL retrospective mixing periods, default `2`.
 - `RETRO_USE_DOITALL`: use the staged `doitall.sh` when available. Default is
@@ -149,6 +155,13 @@ make kflow CHECK_TYPE=model-bundle \
   submitted as parallel Kflow jobs when parallel units are enabled.
 - `PROFILE_TYPE`: `quantity` or `fixed_parameter`.
 - `PROFILE_VALUES`: comma/space list of profile values.
+- `PROFILE_STYLE`: `bet` by default for quantity profiles. This runs a
+  multi-stage BET-style penalty/reps ramp and refreshes the profiled quantity
+  after the final fit. Use `simple` for the older one-call profile point.
+- `PROFILE_PENALTIES`: three ramp penalty weights, default
+  `50000 500000 5000000`.
+- `PROFILE_RAMP_REPS`: six ramp iteration counts, default
+  `5 10 15 200 50 200`.
 - `PROFILE_PARALLEL_MODE`: profile jobs run as downstream/upstream chains when
   split for Kflow. Point-by-point scalar splitting is intentionally unsupported
   because each side should continue from the previous profile point.

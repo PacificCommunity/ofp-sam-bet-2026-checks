@@ -48,7 +48,7 @@ check_final_phase_command <- function(script_name = "jitter.final.sh") {
     "echo \"[checks] jitter final phase max evals: $max_evals\"",
     "echo \"[checks] jitter final phase convergence criterion: $phase10_11_convergence\"",
     "",
-    "$program_path bet.frq 00.par jitter.par -file - <<JITTER_FINAL",
+    sprintf("$program_path %s 00.par jitter.par -file - <<JITTER_FINAL", shQuote(frq_name)),
     "  1 1 $max_evals",
     "  1 50 $phase10_11_convergence",
     "  1 190 1",
@@ -1312,12 +1312,15 @@ if (identical(check_type, "jitter")) {
   seeds <- as.integer(split_numbers(env("JITTER_SEEDS", env("JITTER_SEED", "1")), default = 1))
   cv <- split_numbers(env("JITTER_CV", "0.2"), default = 0.2)[[1L]]
   slots <- check_jitter_slots()
-  jitter_use_doitall <- truthy(env("JITTER_USE_DOITALL", "false"), FALSE)
+  jitter_method <- tolower(trimws(env("JITTER_METHOD", env("JITTER_STYLE", "phase1_doitall"))))
+  if (!nzchar(jitter_method)) jitter_method <- "phase1_doitall"
+  jitter_use_doitall <- truthy(env("JITTER_USE_DOITALL", if (jitter_method %in% c("phase1", "phase1_doitall", "bet")) "true" else "false"), FALSE)
   jitter_command <- if (isTRUE(jitter_use_doitall)) NULL else check_final_phase_command()
   write_run_manifest(list(
     jitter_seeds = paste(seeds, collapse = " "),
     jitter_cv = cv,
     jitter_slots = paste(slots, collapse = " "),
+    jitter_method = jitter_method,
     jitter_use_doitall = jitter_use_doitall
   ))
   jitter_args <- list(
@@ -1332,8 +1335,18 @@ if (identical(check_type, "jitter")) {
     output_par_name = "jitter.par",
     run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
   )
-  if (!is.null(jitter_command)) jitter_args$command <- jitter_command
-  result <- do.call(mfk_run_jitter, jitter_args)
+  if (jitter_method %in% c("phase1", "phase1_doitall", "bet")) {
+    jitter_args$start_par_name <- env("JITTER_MAKEPAR_PAR", "00.par")
+    jitter_args$jittered_par_name <- env("JITTER_PHASE1_PAR", "01.par")
+    jitter_args$tag_mixing_fix <- env("JITTER_TAG_MIXING_FIX", "auto")
+    jitter_args$n_mixing_periods <- as.integer(split_numbers(env("N_MIXING_PERIODS", "2"), default = 2)[[1L]])
+    jitter_args$require_indepvar <- truthy(env("JITTER_REQUIRE_INDEPVAR", "false"), FALSE)
+    jitter_args$output_par_name <- NULL
+    result <- do.call(mfk_run_jitter_phase1_doitall, jitter_args)
+  } else {
+    if (!is.null(jitter_command)) jitter_args$command <- jitter_command
+    result <- do.call(mfk_run_jitter, jitter_args)
+  }
   saveRDS(result, file.path(model_dir, "jitter_runs.rds"), compress = "xz")
   try(write.csv(mfk_collect_jitter(model_dir), file.path(model_dir, "jitter-index.csv"), row.names = FALSE), silent = TRUE)
 
@@ -1459,6 +1472,12 @@ if (identical(check_type, "jitter")) {
   profile_name <- env("PROFILE_NAME", if (identical(profile_type, "quantity")) "adult_biomass" else "profile")
   profile_values <- split_numbers(env("PROFILE_VALUES", env("MFK_SCALAR", "")), default = seq(70, 130, by = 10))
   profile_label <- env("PROFILE_LABEL", profile_name)
+  profile_style <- tolower(trimws(env("PROFILE_STYLE", env("PROFILE_RUNNER", "bet"))))
+  if (!nzchar(profile_style)) profile_style <- "bet"
+  profile_use_ramp_raw <- tolower(trimws(env("PROFILE_USE_RAMP", "")))
+  if (nzchar(profile_use_ramp_raw)) {
+    profile_style <- if (truthy(profile_use_ramp_raw, TRUE)) "bet" else "simple"
+  }
 
   if (identical(profile_type, "quantity")) {
     quantity <- env("PROFILE_QUANTITY", "avg_bio")
@@ -1479,18 +1498,51 @@ if (identical(check_type, "jitter")) {
       reps = env("PROFILE_REPS", "15 25 25 500 500 200"),
       extra_switch = env("PROFILE_EXTRA_SWITCH", "")
     )
-    write_run_manifest(list(profile_type = profile_type, profile_name = profile_name, profile_quantity = quantity))
+    profile_penalties <- split_numbers(env("PROFILE_PENALTIES", env("PROFILE_RAMP_PENALTIES", env("PROFILE_PENALTY_SCHEDULE", "50000 500000 5000000"))), default = c(5e4, 5e5, 5e6))
+    profile_ramp_reps <- split_numbers(env("PROFILE_RAMP_REPS", env("PROFILE_REPS", "5 10 15 200 50 200")), default = c(5, 10, 15, 200, 50, 200))
+    profile_distance_breaks <- split_numbers(env("PROFILE_DISTANCE_BREAKS", env("PROFILE_RAMP_DISTANCE_BREAKS", "20 35")), default = c(20, 35))
+    profile_penalty_scales <- split_numbers(env("PROFILE_PENALTY_SCALES", env("PROFILE_RAMP_PENALTY_SCALES", "1 2 4")), default = c(1, 2, 4))
+    profile_reps_scales <- split_numbers(env("PROFILE_REPS_SCALES", env("PROFILE_RAMP_REPS_SCALES", "1 1.25 1.5")), default = c(1, 1.25, 1.5))
+    profile_extra_far_refine <- truthy(env("PROFILE_EXTRA_FAR_REFINE", env("PROFILE_RAMP_EXTRA_FAR_REFINE", "true")), TRUE)
+    profile_include_flag55 <- truthy(env("PROFILE_INCLUDE_FLAG55", env("PROFILE_INCLUDE_LEGACY_FLAG55", "true")), TRUE)
+    write_run_manifest(list(
+      profile_type = profile_type,
+      profile_name = profile_name,
+      profile_quantity = quantity,
+      profile_style = profile_style,
+      profile_penalties = paste(profile_penalties, collapse = " "),
+      profile_ramp_reps = paste(profile_ramp_reps, collapse = " ")
+    ))
     result <- mfk_run_profile(
       backend,
       input_dir = prepared$case_dir,
       model_dir = model_dir,
       profile = profile,
-      command_fun = function(profile_row, chain_start_par = NULL, ...) {
-        mfcl_command(
-          input_par = profile_input_par(chain_start_par),
-          output_par = "profile.par",
-          extra = mfk_quantity_profile_switch(profile_row)
-        )
+      command_fun = function(profile_row, chain_start_par = NULL, point_dir, ...) {
+        input_par <- profile_input_par(chain_start_par)
+        if (profile_style %in% c("bet", "ramp", "quantity_ramp")) {
+          mfk_quantity_profile_ramp_command(
+            point_dir = point_dir,
+            profile_row = profile_row,
+            program = program_path,
+            frq = frq_name,
+            input_par = input_par,
+            output_par = "profile.par",
+            penalties = profile_penalties,
+            reps = profile_ramp_reps,
+            distance_breaks = profile_distance_breaks,
+            penalty_scales = profile_penalty_scales,
+            reps_scales = profile_reps_scales,
+            extra_far_refine = profile_extra_far_refine,
+            include_legacy_flag55 = profile_include_flag55
+          )
+        } else {
+          mfcl_command(
+            input_par = input_par,
+            output_par = "profile.par",
+            extra = mfk_quantity_profile_switch(profile_row)
+          )
+        }
       },
       chain = truthy(env("PROFILE_CHAIN", "false"), FALSE),
       run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
