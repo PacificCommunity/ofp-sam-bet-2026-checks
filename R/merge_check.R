@@ -105,7 +105,187 @@ copy_base_model_files <- function(source_dir, target_dir) {
   )) {
     copy_file_if_exists(file.path(source_dir, name), target_dir)
   }
+  for (par_file in list.files(source_dir, pattern = "[.]par$", full.names = TRUE, recursive = FALSE)) {
+    copy_file_if_exists(par_file, target_dir)
+  }
   copy_existing_diagnostic_dirs(source_dir, target_dir, exclude = check_type)
+}
+
+format_profile_scalar <- function(value) {
+  value <- suppressWarnings(as.numeric(value[[1L]]))
+  if (!is.finite(value)) return("100")
+  if (abs(value - round(value)) < .Machine$double.eps^0.5) {
+    as.character(as.integer(round(value)))
+  } else {
+    format(value, scientific = FALSE, trim = TRUE)
+  }
+}
+
+profile_anchor_scalar <- function() {
+  center <- split_numbers(env("PROFILE_CENTER", ""), default = numeric())
+  if (length(center)) return(center[[1L]])
+  values <- split_numbers(env("PROFILE_VALUES", env("MFK_SCALAR", "")), default = numeric())
+  if (length(values)) return(values[[which.min(abs(values - 100))]])
+  100
+}
+
+profile_payload_number <- function(payload, fields, default = NA_real_) {
+  if (!is.list(payload)) return(default)
+  for (field in fields) {
+    value <- suppressWarnings(as.numeric(tryCatch(payload[[field]], error = function(e) NA_real_)))
+    value <- value[is.finite(value)]
+    if (length(value)) return(value[[1L]])
+  }
+  default
+}
+
+profile_base_payload <- function(root) {
+  path <- file.path(root, "model_payload.rds")
+  if (!file.exists(path)) return(NULL)
+  tryCatch(readRDS(path), error = function(e) NULL)
+}
+
+profile_base_par <- function(root) {
+  candidates <- c(
+    file.path(root, "final.par"),
+    list.files(root, pattern = "[.]par$", full.names = TRUE, recursive = FALSE)
+  )
+  candidates <- unique(candidates[file.exists(candidates)])
+  if (length(candidates)) candidates[[1L]] else NA_character_
+}
+
+profile_base_quantity <- function(root, quantity, Af172, Af173, Af174) {
+  explicit <- split_numbers(env("PROFILE_BASE_QUANTITY", ""), default = numeric())
+  if (length(explicit)) return(explicit[[1L]])
+  if (requireNamespace("mfclkit", quietly = TRUE)) {
+    value <- tryCatch(
+      mfclkit::mfk_model_quantity(
+        model_dir = root,
+        quantity = quantity,
+        Af172 = Af172,
+        Af173 = Af173,
+        Af174 = Af174,
+        required = FALSE
+      ),
+      error = function(e) NA_real_
+    )
+    value <- suppressWarnings(as.numeric(value[[1L]]))
+    if (is.finite(value)) return(value)
+  }
+  payload <- profile_base_payload(root)
+  profile_payload_number(
+    payload,
+    c("actual_quantity", "reference_quantity", "avg_bio", "quantity_profile_actual"),
+    default = NA_real_
+  )
+}
+
+write_profile_base_anchor <- function(root) {
+  if (!identical(check_type, "profile")) return(invisible(FALSE))
+  if (!truthy(env("PROFILE_INCLUDE_BASE_ANCHOR", "true"), TRUE)) return(invisible(FALSE))
+  profile_type <- tolower(trimws(env("PROFILE_TYPE", "quantity")))
+  if (!identical(profile_type, "quantity")) return(invisible(FALSE))
+
+  profile_name <- env("PROFILE_NAME", "adult_biomass")
+  quantity <- env("PROFILE_QUANTITY", "avg_bio")
+  scalar <- profile_anchor_scalar()
+  scalar_token <- format_profile_scalar(scalar)
+  quantity_type <- suppressWarnings(as.integer(split_numbers(env("PROFILE_QUANTITY_TYPE", ""), default = NA_real_)[[1L]]))
+  Af172 <- suppressWarnings(as.integer(split_numbers(env("PROFILE_AF172", "1"), default = 1)[[1L]]))
+  Af173 <- suppressWarnings(as.integer(split_numbers(env("PROFILE_AF173", "0"), default = 0)[[1L]]))
+  Af174 <- suppressWarnings(as.integer(split_numbers(env("PROFILE_AF174", "0"), default = 0)[[1L]]))
+  base_quantity <- profile_base_quantity(root, quantity, Af172, Af173, Af174)
+  target_quantity <- if (is.finite(base_quantity)) base_quantity * scalar / 100 else NA_real_
+  payload <- profile_base_payload(root)
+  obj_fun <- profile_payload_number(payload, "obj_fun")
+  max_grad <- profile_payload_number(payload, "max_grad")
+  base_par <- profile_base_par(root)
+
+  profile_root <- file.path(root, "profile", profile_name)
+  scalar_dir <- file.path(profile_root, paste0("scalar_", scalar_token))
+  if (dir.exists(scalar_dir)) unlink(scalar_dir, recursive = TRUE, force = TRUE)
+  dir.create(scalar_dir, recursive = TRUE, showWarnings = FALSE)
+  for (name in c("model_payload.rds", "model_payload_manifest.json", "model_payload_manifest.csv")) {
+    copy_file_if_exists(file.path(root, name), scalar_dir)
+  }
+  output_par <- NA_character_
+  if (file.exists(base_par)) {
+    copy_file_if_exists(base_par, scalar_dir)
+    output_par <- basename(base_par)
+  }
+
+  row <- data.frame(
+    profile = profile_name,
+    scalar = scalar,
+    label = env("PROFILE_LABEL", profile_name),
+    type = "quantity",
+    quantity = quantity,
+    quantity_label = env("PROFILE_LABEL", profile_name),
+    quantity_type = quantity_type,
+    quantity_target = target_quantity,
+    base_quantity = base_quantity,
+    Af172 = Af172,
+    Af173 = Af173,
+    Af174 = Af174,
+    scalar_is_percent = TRUE,
+    use_quantity_penalty = TRUE,
+    stringsAsFactors = FALSE
+  )
+  info <- list(
+    engine = "base",
+    profile = profile_name,
+    profile_set_key = profile_name,
+    profile_set_label = env("PROFILE_LABEL", profile_name),
+    scalar = scalar,
+    row = row,
+    chain = TRUE,
+    chain_index = 0L,
+    chain_start_par = NA_character_,
+    point_dir = normalize_loose(scalar_dir),
+    total_nll = obj_fun,
+    obj_fun = obj_fun,
+    max_grad = max_grad,
+    output_par = output_par,
+    run_status = "base_anchor",
+    run_completed = TRUE,
+    convergence_status = "base_model",
+    converged = if (is.finite(max_grad)) abs(max_grad) <= 0.01 else NA,
+    failure_reason = NA_character_,
+    error = NA_character_,
+    base_anchor = TRUE
+  )
+  profile_payload <- c(
+    info,
+    list(
+      version = "v1",
+      source = "mfclkit",
+      created_at = as.character(Sys.time()),
+      scalar_dir = normalize_loose(scalar_dir),
+      scaler = scalar,
+      quantity_label = env("PROFILE_LABEL", profile_name),
+      quantity_type = quantity_type,
+      quantity_target = target_quantity,
+      reference_quantity = base_quantity,
+      target_quantity = target_quantity,
+      actual_quantity = base_quantity,
+      actual_quantity_source = "base_model",
+      target_rel_err = if (is.finite(base_quantity) && is.finite(target_quantity) && abs(target_quantity) > 0) {
+        (base_quantity - target_quantity) / abs(target_quantity)
+      } else {
+        NA_real_
+      },
+      avg_bio = base_quantity,
+      has_test_plot_output = FALSE,
+      lik_out = NULL,
+      lik_raw = NULL,
+      mfclkit = info
+    )
+  )
+  saveRDS(info, file.path(scalar_dir, "profile_point_info.rds"), compress = "xz")
+  saveRDS(info, file.path(scalar_dir, "info.rds"), compress = "xz")
+  saveRDS(profile_payload, file.path(scalar_dir, "profile_payload.rds"), compress = "xz")
+  message("[checks] wrote base profile anchor scalar ", scalar_token, " from fitted model output")
+  invisible(TRUE)
 }
 
 copy_check_units <- function(source_dirs, target_dir, check_type) {
@@ -260,6 +440,38 @@ check_status_success <- function(dat) {
   success
 }
 
+dedupe_profile_points <- function(points) {
+  if (!is.data.frame(points) || !nrow(points) || !all(c("profile", "scalar") %in% names(points))) {
+    return(points)
+  }
+  points$.success_rank <- check_status_success(points)
+  if ("run_status" %in% names(points)) {
+    points$.anchor_rank <- tolower(as.character(points$run_status)) == "base_anchor"
+  } else {
+    points$.anchor_rank <- FALSE
+  }
+  if ("folder" %in% names(points)) {
+    points$.folder_rank <- as.character(points$folder)
+  } else {
+    points$.folder_rank <- ""
+  }
+  points <- points[order(
+    points$profile,
+    suppressWarnings(as.numeric(points$scalar)),
+    -as.integer(points$.anchor_rank),
+    -as.integer(points$.success_rank),
+    points$.folder_rank,
+    na.last = TRUE
+  ), , drop = FALSE]
+  key <- paste(points$profile, suppressWarnings(as.numeric(points$scalar)), sep = "\r")
+  out <- points[!duplicated(key), , drop = FALSE]
+  out$.success_rank <- NULL
+  out$.anchor_rank <- NULL
+  out$.folder_rank <- NULL
+  rownames(out) <- NULL
+  out
+}
+
 collect_check_unit_status <- function(model_dir, check_type, source_dirs = character()) {
   out <- tryCatch({
     if (identical(check_type, "jitter")) {
@@ -310,6 +522,9 @@ collect_check_unit_status <- function(model_dir, check_type, source_dirs = chara
   if (!is.data.frame(out)) out <- data.frame(stringsAsFactors = FALSE)
   if (nrow(out)) {
     out$check_type <- check_type
+    if (identical(check_type, "profile")) {
+      out <- dedupe_profile_points(out)
+    }
     success <- check_status_success(out)
     if (length(success) != nrow(out)) success <- rep(FALSE, nrow(out))
     out$success <- success
@@ -668,6 +883,9 @@ dir.create(model_dir, recursive = TRUE, showWarnings = FALSE)
 
 copy_base_model_files(source_model_dirs[[1L]], model_dir)
 copied <- copy_check_units(source_model_dirs, model_dir, check_type)
+if (identical(check_type, "profile")) {
+  write_profile_base_anchor(model_dir)
+}
 
 if (isTRUE(smoke_only)) {
   write.csv(
@@ -695,6 +913,7 @@ if (isTRUE(smoke_only)) {
   } else {
     data.frame(stringsAsFactors = FALSE)
   }
+  points <- dedupe_profile_points(points)
   write.csv(points, file.path(model_dir, "profile-points.csv"), row.names = FALSE)
   if (nrow(points)) {
     write.csv(mfclkit::mfk_profile_conflict_metrics(points), file.path(model_dir, "profile-qc.csv"), row.names = FALSE)

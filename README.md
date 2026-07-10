@@ -165,6 +165,11 @@ make kflow CHECK_TYPE=model-bundle \
 - `PROFILE_PARALLEL_MODE`: profile jobs run as downstream/upstream chains when
   split for Kflow. Point-by-point scalar splitting is intentionally unsupported
   because each side should continue from the previous profile point.
+- `PROFILE_CENTER`: profile anchor scalar, default `100`. The center is the
+  fitted base model and is not re-run as a profile unit; merge writes it once as
+  the base-anchor point.
+- `PROFILE_INCLUDE_BASE_ANCHOR`: include the fitted base model as the center
+  profile point during merge. Default is `true`.
 - `PROFILE_CHAIN`: run profile values sequentially within a job. Default is
   `true`.
 - `PROFILE_NAME`: profile folder name.

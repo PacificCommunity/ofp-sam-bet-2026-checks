@@ -94,7 +94,7 @@ def split_profile_chains(values: list[float], center_raw: str) -> dict[str, list
             raise SystemExit(f"PROFILE_CENTER must be numeric, got {center_raw!r}.") from exc
     if center is None:
         center = min(values, key=lambda value: abs(value - 100.0))
-    downstream = sorted([value for value in values if value <= center], reverse=True)
+    downstream = sorted([value for value in values if value < center], reverse=True)
     upstream = sorted([value for value in values if value > center])
     out = {}
     if downstream:
@@ -164,7 +164,7 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
                     },
                 }
                 for side, chain_values in chains.items()
-            ] or [{"label": "", "env": {}, "metadata": {}}]
+            ]
         if mode in {"scalar", "scalars", "point", "points"}:
             raise SystemExit(
                 "PROFILE_PARALLEL_MODE=scalars is not supported for these checks. "
