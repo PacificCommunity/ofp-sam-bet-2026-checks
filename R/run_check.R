@@ -348,7 +348,7 @@ write_check_status_summary <- function(model_dir, check_type) {
   n_units <- nrow(units)
   n_success <- if (n_units) sum(units$success %in% TRUE, na.rm = TRUE) else 0L
   n_failed <- if (n_units) sum(!(units$success %in% TRUE), na.rm = TRUE) else 0L
-  requires_all_units <- check_type %in% c("profile", "hessian")
+  requires_all_units <- TRUE
   has_failures <- n_failed > 0L || n_units == 0L
   merge_status <- if (!n_units) {
     "no_units"
@@ -367,7 +367,7 @@ write_check_status_summary <- function(model_dir, check_type) {
     n_failed = n_failed,
     has_failures = has_failures,
     requires_all_units = requires_all_units,
-    all_required_units_successful = !requires_all_units || (n_units > 0L && n_failed == 0L),
+    all_required_units_successful = n_units > 0L && n_failed == 0L,
     merge_status = merge_status,
     created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
     stringsAsFactors = FALSE
@@ -1664,6 +1664,26 @@ if (identical(check_type, "jitter")) {
   if (!nzchar(Sys.getenv("selftest_refit_mode", ""))) {
     Sys.setenv(selftest_refit_mode = env("SELFTEST_REFIT_MODE", "last_par"))
   }
+  selftest_env_defaults <- c(
+    selftest_refit_fevals = env("SELFTEST_REFIT_FEVALS", ""),
+    selftest_require_native_tags = env("SELFTEST_REQUIRE_NATIVE_TAGS", "auto"),
+    selftest_update_tags = env("SELFTEST_UPDATE_TAGS", "auto"),
+    selftest_update_catch = env("SELFTEST_UPDATE_CATCH", "auto"),
+    selftest_update_effort = env("SELFTEST_UPDATE_EFFORT", "auto"),
+    selftest_update_lw = env("SELFTEST_UPDATE_LW", "1"),
+    selftest_update_cpue = env("SELFTEST_UPDATE_CPUE", "1"),
+    selftest_update_age_length = env("SELFTEST_UPDATE_AGE_LENGTH", "1"),
+    selftest_native_tag_nsims = env("SELFTEST_NATIVE_TAG_NSIMS", "1"),
+    selftest_native_tag_projection_years = env("SELFTEST_NATIVE_TAG_PROJECTION_YEARS", ""),
+    selftest_projection_average_years = env("SELFTEST_PROJECTION_AVERAGE_YEARS", ""),
+    selftest_age_length_draw_size = env("SELFTEST_AGE_LENGTH_DRAW_SIZE", "")
+  )
+  for (nm in names(selftest_env_defaults)) {
+    value <- as.character(selftest_env_defaults[[nm]] %||% "")
+    if (nzchar(value) && !nzchar(Sys.getenv(nm, ""))) {
+      do.call(Sys.setenv, setNames(list(value), nm))
+    }
+  }
   if (nzchar(runner)) args$runner <- runner
   if (nzchar(runner_work_dir)) args$runner_work_dir <- runner_work_dir
   if ("fail_on_error" %in% names(formals(mfk_run_selftest))) {
@@ -1699,7 +1719,7 @@ final_summary <- tryCatch(
   error = function(e) NULL
 )
 has_failed_units <- isTRUE(final_summary$has_failures %||% FALSE)
-fail_on_failed_units <- truthy(env("CHECK_FAIL_ON_FAILED_UNITS", "false"), FALSE)
+fail_on_failed_units <- truthy(env("CHECK_FAIL_ON_FAILED_UNITS", "true"), TRUE)
 if (isTRUE(fail_on_failed_units) && isTRUE(has_failed_units)) {
   n_failed <- suppressWarnings(as.integer(final_summary$n_failed %||% NA_integer_))
   if (!is.finite(n_failed)) n_failed <- NA_integer_
