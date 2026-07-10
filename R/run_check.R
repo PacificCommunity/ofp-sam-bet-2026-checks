@@ -1341,9 +1341,10 @@ if (identical(check_type, "jitter")) {
   peels <- as.integer(split_numbers(env("RETRO_PEELS", env("RETRO_PEEL", "1")), default = 1))
   n_mixing_periods <- as.integer(split_numbers(env("N_MIXING_PERIODS", "2"), default = 2)[[1L]])
   retro_command <- split_values(env("RETRO_COMMAND", ""))
+  retro_has_doitall <- file.exists(file.path(prepared$case_dir, "doitall.sh"))
   retro_use_doitall_raw <- tolower(trimws(env("RETRO_USE_DOITALL", "auto")))
   retro_use_doitall <- if (retro_use_doitall_raw %in% c("", "auto")) {
-    file.exists(file.path(prepared$case_dir, "doitall.sh"))
+    retro_has_doitall
   } else {
     truthy(retro_use_doitall_raw, FALSE)
   }
@@ -1359,14 +1360,22 @@ if (identical(check_type, "jitter")) {
   } else {
     truthy(retro_remove_par_files_raw, isTRUE(retro_makepar_start))
   }
-  retro_start_par_name <- env("RETRO_START_PAR_NAME", if (isTRUE(retro_use_doitall)) "auto" else "")
+  retro_start_par_name <- env("RETRO_START_PAR_NAME", if (isTRUE(retro_use_doitall)) "auto" else "retro-start.par")
+  retro_rewrite_par_raw <- tolower(trimws(env("RETRO_REWRITE_PAR", "auto")))
+  retro_rewrite_par <- if (retro_rewrite_par_raw %in% c("", "auto")) {
+    !isTRUE(retro_use_doitall)
+  } else {
+    truthy(retro_rewrite_par_raw, !isTRUE(retro_use_doitall))
+  }
   write_run_manifest(list(
     retro_peels = paste(peels, collapse = " "),
     n_mixing_periods = n_mixing_periods,
+    retro_has_doitall = retro_has_doitall,
     retro_use_doitall = retro_use_doitall,
     retro_makepar_start = retro_makepar_start,
     retro_remove_par_files = retro_remove_par_files,
-    retro_start_par_name = retro_start_par_name
+    retro_start_par_name = retro_start_par_name,
+    retro_rewrite_par = retro_rewrite_par
   ))
   retro_args <- list(
     backend = backend,
@@ -1377,7 +1386,7 @@ if (identical(check_type, "jitter")) {
     n_mixing_periods = n_mixing_periods,
     allow_new_ini_version_write = truthy(env("RETRO_ALLOW_NEW_INI_VERSION_WRITE", "false"), FALSE),
     remove_par_files = isTRUE(retro_remove_par_files),
-    rewrite_par = !isTRUE(retro_use_doitall),
+    rewrite_par = isTRUE(retro_rewrite_par),
     makepar_start = isTRUE(retro_makepar_start),
     run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
   )
@@ -1387,7 +1396,8 @@ if (identical(check_type, "jitter")) {
   if (length(retro_command)) {
     retro_args$command <- retro_command
   } else if (!isTRUE(retro_use_doitall)) {
-    retro_args$command <- mfcl_command(output_par = "retro.par")
+    retro_input_par <- if (nzchar(retro_start_par_name)) retro_start_par_name else start_par_name
+    retro_args$command <- mfcl_command(input_par = retro_input_par, output_par = "retro.par")
   }
   result <- do.call(mfk_run_retro, retro_args)
   saveRDS(result, file.path(model_dir, "retro_runs.rds"), compress = "xz")

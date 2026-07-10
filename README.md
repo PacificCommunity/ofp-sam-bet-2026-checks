@@ -130,14 +130,20 @@ make kflow CHECK_TYPE=model-bundle \
 - `RETRO_PEELS`: comma/space list of peels, default `1`.
 - `N_MIXING_PERIODS`: MFCL retrospective mixing periods, default `2`.
 - `RETRO_USE_DOITALL`: use the staged `doitall.sh` when available. Default is
-  `auto`.
+  `auto`, which uses `doitall.sh` when the staged MFCL case provides one and
+  otherwise falls back to a direct fitted-par peel.
+- `RETRO_MAKEPAR_START`: build the retro start `.par` from the peeled `.frq`
+  and `.ini` before a `doitall.sh` retro run. Default is `auto`, enabled when
+  `RETRO_USE_DOITALL` is active.
 - `RETRO_REMOVE_PAR_FILES`: remove copied `.par` files before a `doitall.sh`
-  retro run. Default is `false`; enable only for model folders whose `doitall.sh`
-  does not need staged par files.
+  retro run. Default is `auto`, enabled when `RETRO_MAKEPAR_START` is active so
+  stale fitted `.par` files do not conflict with peeled inputs.
 - `RETRO_START_PAR_NAME`: when a `doitall.sh` run needs a conventional start
   par such as `00.par` or `02.par`, stage the fitted start par under this name
   if it is missing. Default is `auto` for `doitall.sh` retro runs, which uses
   the first input `.par` referenced by `doitall.sh`.
+- `RETRO_REWRITE_PAR`: rewrite the fitted `.par` range for direct fitted-par
+  retro runs. Default is `auto`, enabled only when `RETRO_USE_DOITALL=false`.
 - `HESSIAN_NSPLIT`: number of Hessian parts, default `30`.
 - `HESSIAN_PARTS`: comma/space list of Hessian parts. If unset, all parts are
   submitted as parallel Kflow jobs when parallel units are enabled.
@@ -159,6 +165,11 @@ make kflow CHECK_TYPE=model-bundle \
   checks use the native self-test runner bundled with `mfclkit`.
 - `SELFTEST_RUN_REFIT`: run self-test refits and write
   `selftest/refit/rep_*` outputs for mfclshiny. Default is `true`.
+- `selftest_update_tags` / `SELFTEST_UPDATE_TAGS`: `auto` by default. Tag
+  pseudo-data are generated only when the staged MFCL case has a `.tag` file.
+- `selftest_require_native_tags` / `SELFTEST_REQUIRE_NATIVE_TAGS`: `auto` by
+  default. Native tag simulation output is required only when tag pseudo-data
+  are enabled for a model that actually has tag inputs.
 - `ASPM_MAX_EVALS`: maximum evaluations for the ASPM refit, default `10000`.
 - `ASPM_FIX_SELECTIVITY`: fix selectivity to the fitted values before excluding
   composition data. Default is `true`.

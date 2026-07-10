@@ -32,6 +32,7 @@ env:
   RETRO_MAKEPAR_START: "auto"
   RETRO_REMOVE_PAR_FILES: "auto"
   RETRO_START_PAR_NAME: "auto"
+  RETRO_REWRITE_PAR: "auto"
 output_patterns:
   - outputs/**
 metadata:
@@ -65,6 +66,7 @@ metadata:
       - RETRO_MAKEPAR_START
       - RETRO_REMOVE_PAR_FILES
       - RETRO_START_PAR_NAME
+      - RETRO_REWRITE_PAR
       - RETRO_COMMAND
       - MFK_RUN_MESSAGES
       - KFLOW_RUNTIME_UPDATE
