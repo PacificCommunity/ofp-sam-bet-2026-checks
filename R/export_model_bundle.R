@@ -137,6 +137,20 @@ plot_script <- c(
 writeLines(plot_script, file.path(run_dir, "make-plot-rep.sh"))
 Sys.chmod(file.path(run_dir, "make-plot-rep.sh"), mode = "0755")
 
+doitall_present <- file.exists(file.path(run_dir, "doitall.sh"))
+if (isTRUE(doitall_present)) {
+  Sys.chmod(file.path(run_dir, "doitall.sh"), mode = "0755")
+  doitall_wrapper <- c(
+    "#!/usr/bin/env bash",
+    "set -euo pipefail",
+    "cd \"$(dirname \"${BASH_SOURCE[0]}\")\"",
+    paste0("export PROGRAM_PATH=\"${PROGRAM_PATH:-", script_program_default, "}\""),
+    "exec ./doitall.sh \"$@\""
+  )
+  writeLines(doitall_wrapper, file.path(run_dir, "run-doitall.sh"))
+  Sys.chmod(file.path(run_dir, "run-doitall.sh"), mode = "0755")
+}
+
 readme <- c(
   paste0("# MFCL Run Bundle: ", model_key),
   "",
@@ -148,6 +162,7 @@ readme <- c(
   "- `plot.rep`: convenience copy of the latest regenerated plot report.",
   paste0("- `make-plot-rep.sh`: regenerates report files directly from `", final_par_name, "`."),
   "- `doitall.sh`: source model run script when present; it is for a full rerun and may recreate the final par.",
+  if (isTRUE(doitall_present)) "- `run-doitall.sh`: wrapper that runs `doitall.sh` with the bundled MFCL executable." else NULL,
   "- `bundle-report.log`: log from regenerating report files.",
   "",
   "To regenerate reports from the fitted par:",
@@ -156,7 +171,11 @@ readme <- c(
   "./make-plot-rep.sh",
   "```",
   "",
-  "To rerun the full model from the original starting files, use the included `doitall.sh` if present."
+  "To rerun the full model from the original starting files:",
+  "",
+  "```sh",
+  "./run-doitall.sh",
+  "```"
 )
 writeLines(readme, file.path(run_dir, "README-bundle.md"))
 
@@ -183,6 +202,8 @@ manifest <- data.frame(
   bundled_exe = if (nzchar(bundled_exe)) exe_name else "",
   bundled_exe_size = if (nzchar(bundled_exe) && file.exists(bundled_exe)) file.info(bundled_exe)$size else NA_real_,
   bundled_exe_md5 = if (nzchar(bundled_exe) && file.exists(bundled_exe)) unname(tools::md5sum(bundled_exe)) else "",
+  doitall = if (isTRUE(doitall_present)) "doitall.sh" else "",
+  doitall_wrapper = if (isTRUE(doitall_present)) "run-doitall.sh" else "",
   stringsAsFactors = FALSE
 )
 write.csv(manifest, file.path(run_dir, "bundle-manifest.csv"), row.names = FALSE)
