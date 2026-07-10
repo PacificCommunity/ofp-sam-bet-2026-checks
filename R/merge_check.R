@@ -45,6 +45,55 @@ copy_dir_contents_checked <- function(from, to) {
   normalize_loose(to)
 }
 
+profile_duplicate_records <- list()
+
+profile_point_score <- function(dir) {
+  info <- tryCatch(readRDS(file.path(dir, "profile_point_info.rds")),
+                   error = function(e) NULL)
+  payload <- tryCatch(readRDS(file.path(dir, "profile_payload.rds")),
+                      error = function(e) NULL)
+  value <- function(name, default = NA) {
+    out <- tryCatch(info[[name]], error = function(e) NULL)
+    if (is.null(out) || !length(out) || (length(out) == 1L && is.na(out))) {
+      out <- tryCatch(payload[[name]], error = function(e) NULL)
+    }
+    if (is.null(out) || !length(out)) default else out[[1L]]
+  }
+  nll <- suppressWarnings(as.numeric(value("profile_nll", value("total_nll", NA_real_))))
+  c(
+    valid = as.integer(isTRUE(as.logical(value("point_valid", FALSE)))),
+    completed = as.integer(isTRUE(as.logical(value("run_completed", FALSE)))),
+    converged = as.integer(isTRUE(as.logical(value("converged", FALSE)))),
+    nll_rank = if (is.finite(nll)) -nll else -Inf
+  )
+}
+
+copy_profile_point_checked <- function(from, to) {
+  if (!dir.exists(to)) return(copy_dir_contents_checked(from, to))
+  incoming <- profile_point_score(from)
+  existing <- profile_point_score(to)
+  replace <- FALSE
+  for (index in seq_along(incoming)) {
+    if (incoming[[index]] == existing[[index]]) next
+    replace <- incoming[[index]] > existing[[index]]
+    break
+  }
+  action <- if (replace) "replaced_with_better_point" else "kept_existing_point"
+  profile_duplicate_records[[length(profile_duplicate_records) + 1L]] <<- data.frame(
+    source_dir = normalize_loose(from),
+    target_dir = normalize_loose(to),
+    action = action,
+    incoming_valid = incoming[["valid"]],
+    existing_valid = existing[["valid"]],
+    incoming_nll_rank = incoming[["nll_rank"]],
+    existing_nll_rank = existing[["nll_rank"]],
+    stringsAsFactors = FALSE
+  )
+  if (!replace) return(normalize_loose(to))
+  unlink(to, recursive = TRUE, force = TRUE)
+  copy_dir_contents_checked(from, to)
+}
+
 bind_rows_fill_local <- function(rows) {
   rows <- rows[vapply(rows, function(x) is.data.frame(x) && nrow(x), logical(1))]
   if (!length(rows)) return(data.frame(stringsAsFactors = FALSE))
@@ -78,6 +127,16 @@ discover_check_model_dirs <- function(root, check_type) {
   }), use.names = FALSE))
   marker <- paste0("/checks/", check_type, "/")
   dirs <- dirs[grepl(marker, normalize_loose(dirs), fixed = TRUE)]
+  # A prior merge can be present in an attached-output bundle.  It is a
+  # derivative of profile side jobs, not an input unit for this merge, and
+  # must not hide a failed current-side point with an older valid copy.
+  dirs <- dirs[!vapply(dirs, function(dir) {
+    manifest <- tryCatch(readRDS(file.path(dir, "check_manifest.rds")),
+                         error = function(e) NULL)
+    is.list(manifest) && !is.null(manifest$source_model_dirs) &&
+      length(manifest$source_model_dirs) &&
+      nzchar(as.character(manifest$source_model_dirs[[1L]]))
+  }, logical(1L))]
   unique(normalize_loose(dirs))
 }
 
@@ -175,9 +234,171 @@ profile_base_quantity <- function(root, quantity, Af172, Af173, Af174) {
   payload <- profile_base_payload(root)
   profile_payload_number(
     payload,
-    c("actual_quantity", "reference_quantity", "avg_bio", "quantity_profile_actual"),
+    c("actual_quantity", "avg_bio", "quantity_profile_actual"),
     default = NA_real_
   )
+}
+
+profile_first_point_row <- function(root) {
+  scalar_dirs <- list.dirs(file.path(root, "profile"), recursive = TRUE, full.names = TRUE)
+  scalar_dirs <- scalar_dirs[grepl("^scalar_", basename(scalar_dirs))]
+  for (scalar_dir in scalar_dirs) {
+    info <- tryCatch(
+      readRDS(file.path(scalar_dir, "profile_point_info.rds")),
+      error = function(e) NULL
+    )
+    row <- tryCatch(info$row, error = function(e) NULL)
+    if (is.data.frame(row) && nrow(row)) return(row[1L, , drop = FALSE])
+  }
+  NULL
+}
+
+profile_row_text <- function(row, field, default = "") {
+  if (!is.data.frame(row) || !nrow(row) || !field %in% names(row)) return(default)
+  value <- as.character(row[[field]][[1L]])
+  if (!length(value) || is.na(value) || !nzchar(trimws(value))) default else value
+}
+
+profile_row_number <- function(row, field, default = NA_real_) {
+  if (!is.data.frame(row) || !nrow(row) || !field %in% names(row)) return(default)
+  value <- suppressWarnings(as.numeric(row[[field]][[1L]]))
+  if (length(value) && is.finite(value[[1L]])) value[[1L]] else default
+}
+
+profile_env_or_text <- function(name, fallback) {
+  value <- trimws(Sys.getenv(name, unset = ""))
+  if (nzchar(value)) value else fallback
+}
+
+profile_env_or_number <- function(name, fallback) {
+  value <- split_numbers(Sys.getenv(name, unset = ""), default = numeric())
+  if (length(value) && is.finite(value[[1L]])) value[[1L]] else fallback
+}
+
+profile_expected_values <- function() {
+  values <- split_numbers(
+    env("PROFILE_EXPECTED_VALUES", env("MFK_PROFILE_EXPECTED_VALUES", "")),
+    default = numeric()
+  )
+  if (!length(values)) {
+    values <- split_numbers(
+      env("PROFILE_VALUES", env("MFK_PROFILE_VALUES", env("MFK_SCALAR", ""))),
+      default = numeric()
+    )
+  }
+  if (truthy(env("PROFILE_INCLUDE_BASE_ANCHOR", "true"), TRUE)) {
+    center <- profile_anchor_scalar()
+    if (is.finite(center) && !any(abs(values - center) <= 1e-10)) {
+      values <- c(values, center)
+    }
+  }
+  sort(unique(values[is.finite(values)]))
+}
+
+profile_add_missing_expected <- function(points) {
+  expected <- profile_expected_values()
+  if (!length(expected)) return(points)
+  observed <- if (is.data.frame(points) && nrow(points) && "scalar" %in% names(points)) {
+    suppressWarnings(as.numeric(points$scalar))
+  } else {
+    numeric()
+  }
+  missing <- expected[!vapply(expected, function(value) {
+    any(is.finite(observed) & abs(observed - value) <= 1e-8)
+  }, logical(1L))]
+  if (!length(missing)) return(points)
+
+  profile_name <- if (is.data.frame(points) && nrow(points) && "profile" %in% names(points)) {
+    value <- as.character(points$profile[[1L]])
+    if (!is.na(value) && nzchar(value)) value else env("PROFILE_NAME", "adult_biomass")
+  } else {
+    env("PROFILE_NAME", "adult_biomass")
+  }
+  missing_rows <- data.frame(
+    profile = profile_name,
+    scalar = missing,
+    total_nll = NA_real_,
+    profile_nll = NA_real_,
+    penalized_nll = NA_real_,
+    constraint_penalty = NA_real_,
+    run_status = "missing_profile_point",
+    run_completed = FALSE,
+    convergence_status = "not_completed",
+    converged = FALSE,
+    point_valid = FALSE,
+    target_attained = FALSE,
+    failure_reason = paste0(
+      "Expected profile scalar was not present in merged Kflow outputs: ", missing
+    ),
+    folder = NA_character_,
+    stringsAsFactors = FALSE
+  )
+  bind_rows_fill_local(list(points, missing_rows))
+}
+
+write_merged_profile_spec <- function(root, points = NULL) {
+  row <- profile_first_point_row(root)
+  profile_name <- profile_env_or_text(
+    "PROFILE_NAME", profile_row_text(row, "profile", "adult_biomass")
+  )
+  profile_dir <- file.path(root, "profile", profile_name)
+  dir.create(profile_dir, recursive = TRUE, showWarnings = FALSE)
+  observed_values <- if (is.data.frame(points) && "scalar" %in% names(points)) {
+    keep <- rep(TRUE, nrow(points))
+    if ("run_status" %in% names(points)) {
+      keep <- tolower(as.character(points$run_status)) != "missing_profile_point"
+      keep[is.na(keep)] <- TRUE
+    }
+    values <- suppressWarnings(as.numeric(points$scalar[keep]))
+    sort(unique(values[is.finite(values)]))
+  } else {
+    numeric()
+  }
+  spec <- list(
+    version = env("PROFILE_SPEC_VERSION", "mfclkit.quantity-profile.v2"),
+    profile = profile_name,
+    label = profile_env_or_text("PROFILE_LABEL", profile_row_text(row, "label", profile_name)),
+    quantity = profile_env_or_text("PROFILE_QUANTITY", profile_row_text(row, "quantity", "avg_bio")),
+    quantity_type = as.integer(profile_env_or_number(
+      "PROFILE_QUANTITY_TYPE", profile_row_number(row, "quantity_type", 2L)
+    )),
+    Af172 = as.integer(profile_env_or_number("PROFILE_AF172", profile_row_number(row, "Af172", 0L))),
+    Af173 = as.integer(profile_env_or_number("PROFILE_AF173", profile_row_number(row, "Af173", 0L))),
+    Af174 = as.integer(profile_env_or_number("PROFILE_AF174", profile_row_number(row, "Af174", 0L))),
+    base_quantity = profile_row_number(row, "base_quantity", NA_real_),
+    expected_values = profile_expected_values(),
+    observed_values = observed_values,
+    center = profile_anchor_scalar(),
+    side = "merged",
+    preset = env("PROFILE_PRESET", env("MFK_PROFILE_PRESET", NA_character_)),
+    created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+  )
+  saveRDS(spec, file.path(profile_dir, "profile_spec.rds"), compress = "xz")
+  point_valid <- if (is.data.frame(points) && "point_valid" %in% names(points)) {
+    suppressWarnings(as.logical(points$point_valid))
+  } else {
+    rep(NA, if (is.data.frame(points)) nrow(points) else 0L)
+  }
+  point_scalar <- if (is.data.frame(points) && "scalar" %in% names(points)) {
+    suppressWarnings(as.numeric(points$scalar))
+  } else {
+    numeric()
+  }
+  invalid_values <- point_scalar[is.finite(point_scalar) & (is.na(point_valid) | !point_valid)]
+  profile_status <- list(
+    status = if (!length(setdiff(spec$expected_values, observed_values)) &&
+                 !length(invalid_values)) "complete" else "incomplete",
+    expected_values = spec$expected_values,
+    observed_values = observed_values,
+    missing_values = setdiff(spec$expected_values, observed_values),
+    invalid_values = sort(unique(invalid_values)),
+    n_expected = length(spec$expected_values),
+    n_observed = length(observed_values),
+    n_valid = sum(!is.na(point_valid) & point_valid),
+    n_invalid = sum(is.na(point_valid) | !point_valid)
+  )
+  saveRDS(profile_status, file.path(profile_dir, "profile_status.rds"), compress = "xz")
+  invisible(spec)
 }
 
 write_profile_base_anchor <- function(root) {
@@ -186,15 +407,36 @@ write_profile_base_anchor <- function(root) {
   profile_type <- tolower(trimws(env("PROFILE_TYPE", "quantity")))
   if (!identical(profile_type, "quantity")) return(invisible(FALSE))
 
-  profile_name <- env("PROFILE_NAME", "adult_biomass")
-  quantity <- env("PROFILE_QUANTITY", "avg_bio")
+  point_row <- profile_first_point_row(root)
+  profile_name <- profile_env_or_text(
+    "PROFILE_NAME", profile_row_text(point_row, "profile", "adult_biomass")
+  )
+  quantity <- profile_env_or_text(
+    "PROFILE_QUANTITY", profile_row_text(point_row, "quantity", "avg_bio")
+  )
+  profile_label <- profile_env_or_text(
+    "PROFILE_LABEL", profile_row_text(point_row, "label", profile_name)
+  )
   scalar <- profile_anchor_scalar()
   scalar_token <- format_profile_scalar(scalar)
-  quantity_type <- suppressWarnings(as.integer(split_numbers(env("PROFILE_QUANTITY_TYPE", ""), default = NA_real_)[[1L]]))
-  Af172 <- suppressWarnings(as.integer(split_numbers(env("PROFILE_AF172", "1"), default = 1)[[1L]]))
-  Af173 <- suppressWarnings(as.integer(split_numbers(env("PROFILE_AF173", "0"), default = 0)[[1L]]))
-  Af174 <- suppressWarnings(as.integer(split_numbers(env("PROFILE_AF174", "0"), default = 0)[[1L]]))
-  base_quantity <- profile_base_quantity(root, quantity, Af172, Af173, Af174)
+  quantity_type <- as.integer(profile_env_or_number(
+    "PROFILE_QUANTITY_TYPE", profile_row_number(point_row, "quantity_type", 2L)
+  ))
+  Af172 <- as.integer(profile_env_or_number(
+    "PROFILE_AF172", profile_row_number(point_row, "Af172", 0L)
+  ))
+  Af173 <- as.integer(profile_env_or_number(
+    "PROFILE_AF173", profile_row_number(point_row, "Af173", 0L)
+  ))
+  Af174 <- as.integer(profile_env_or_number(
+    "PROFILE_AF174", profile_row_number(point_row, "Af174", 0L)
+  ))
+  base_quantity <- profile_env_or_number(
+    "PROFILE_BASE_QUANTITY", profile_row_number(point_row, "base_quantity", NA_real_)
+  )
+  if (!is.finite(base_quantity)) {
+    base_quantity <- profile_base_quantity(root, quantity, Af172, Af173, Af174)
+  }
   target_quantity <- if (is.finite(base_quantity)) base_quantity * scalar / 100 else NA_real_
   payload <- profile_base_payload(root)
   obj_fun <- profile_payload_number(payload, "obj_fun")
@@ -203,7 +445,9 @@ write_profile_base_anchor <- function(root) {
 
   profile_root <- file.path(root, "profile", profile_name)
   scalar_dir <- file.path(profile_root, paste0("scalar_", scalar_token))
-  if (dir.exists(scalar_dir)) unlink(scalar_dir, recursive = TRUE, force = TRUE)
+  # A direct, non-split mfclkit run has already written a fully audited anchor.
+  # Never replace it with merge-side metadata.
+  if (dir.exists(scalar_dir)) return(invisible(FALSE))
   dir.create(scalar_dir, recursive = TRUE, showWarnings = FALSE)
   for (name in c("model_payload.rds", "model_payload_manifest.json", "model_payload_manifest.csv")) {
     copy_file_if_exists(file.path(root, name), scalar_dir)
@@ -214,13 +458,36 @@ write_profile_base_anchor <- function(root) {
     output_par <- basename(base_par)
   }
 
+  target_quantity <- if (is.finite(base_quantity)) base_quantity * scalar / 100 else NA_real_
+  native_target <- if (is.finite(target_quantity) && identical(quantity_type, 1L)) {
+    round(target_quantity * 1000)
+  } else if (is.finite(target_quantity)) {
+    round(target_quantity)
+  } else {
+    NA_real_
+  }
+  effective_target <- if (identical(quantity_type, 1L) && is.finite(native_target)) {
+    native_target / 1000
+  } else {
+    native_target
+  }
+  actual_quantity <- base_quantity
+  target_rel_err <- if (is.finite(actual_quantity) && is.finite(effective_target) &&
+                        abs(effective_target) > 0) {
+    (actual_quantity - effective_target) / abs(effective_target)
+  } else {
+    NA_real_
+  }
+  target_attained <- is.finite(target_rel_err) && abs(target_rel_err) <= 0.001
+  converged <- is.finite(max_grad) && abs(max_grad) <= 0.001
+  point_valid <- is.finite(obj_fun) && target_attained && converged
   row <- data.frame(
     profile = profile_name,
     scalar = scalar,
-    label = env("PROFILE_LABEL", profile_name),
+    label = profile_label,
     type = "quantity",
     quantity = quantity,
-    quantity_label = env("PROFILE_LABEL", profile_name),
+    quantity_label = profile_label,
     quantity_type = quantity_type,
     quantity_target = target_quantity,
     base_quantity = base_quantity,
@@ -232,54 +499,93 @@ write_profile_base_anchor <- function(root) {
     stringsAsFactors = FALSE
   )
   info <- list(
-    engine = "base",
+    engine = "fitted_model_anchor",
     profile = profile_name,
     profile_set_key = profile_name,
-    profile_set_label = env("PROFILE_LABEL", profile_name),
+    profile_set_label = profile_label,
     scalar = scalar,
     row = row,
-    chain = TRUE,
+    chain = FALSE,
     chain_index = 0L,
     chain_start_par = NA_character_,
     point_dir = normalize_loose(scalar_dir),
     total_nll = obj_fun,
+    profile_nll = obj_fun,
+    penalized_nll = obj_fun,
+    constraint_penalty = 0,
+    objective_source = "fitted_model_par",
     obj_fun = obj_fun,
     max_grad = max_grad,
     output_par = output_par,
-    run_status = "base_anchor",
-    run_completed = TRUE,
-    convergence_status = "base_model",
-    converged = if (is.finite(max_grad)) abs(max_grad) <= 0.01 else NA,
-    failure_reason = NA_character_,
+    actual_quantity = actual_quantity,
+    actual_quantity_source = if (is.finite(actual_quantity)) "fitted_model" else NA_character_,
+    target_quantity = effective_target,
+    target_rel_err = target_rel_err,
+    target_attained = target_attained,
+    point_valid = point_valid,
+    run_status = if (point_valid) "completed" else "anchor_not_valid",
+    run_completed = is.finite(obj_fun),
+    convergence_status = if (converged) "converged" else "not_converged",
+    converged = converged,
+    failure_reason = if (point_valid) NA_character_ else
+      "Fitted anchor lacks a finite objective, a measured target quantity, or convergence.",
     error = NA_character_,
     base_anchor = TRUE
   )
-  profile_payload <- c(
-    info,
-    list(
-      version = "v1",
-      source = "mfclkit",
-      created_at = as.character(Sys.time()),
-      scalar_dir = normalize_loose(scalar_dir),
-      scaler = scalar,
-      quantity_label = env("PROFILE_LABEL", profile_name),
-      quantity_type = quantity_type,
-      quantity_target = target_quantity,
-      reference_quantity = base_quantity,
-      target_quantity = target_quantity,
-      actual_quantity = base_quantity,
-      actual_quantity_source = "base_model",
-      target_rel_err = if (is.finite(base_quantity) && is.finite(target_quantity) && abs(target_quantity) > 0) {
-        (base_quantity - target_quantity) / abs(target_quantity)
-      } else {
-        NA_real_
-      },
-      avg_bio = base_quantity,
-      has_test_plot_output = FALSE,
-      lik_out = NULL,
-      lik_raw = NULL,
-      mfclkit = info
-    )
+  profile_payload <- list(
+    version = "v2",
+    source = "kflow_fitted_model_anchor",
+    created_at = as.character(Sys.time()),
+    scalar_dir = normalize_loose(scalar_dir),
+    scalar = scalar,
+    profile = profile_name,
+    profile_set_key = profile_name,
+    profile_set_label = profile_label,
+    quantity_label = profile_label,
+    profile_type = "quantity",
+    quantity_type = quantity_type,
+    requested_target = target_quantity,
+    native_target = native_target,
+    reference_quantity = base_quantity,
+    target_quantity = effective_target,
+    actual_quantity = actual_quantity,
+    actual_quantity_source = info$actual_quantity_source,
+    target_rel_err = target_rel_err,
+    target_attained = target_attained,
+    avg_bio = if (identical(quantity_type, 2L)) actual_quantity else NA_real_,
+    scalar_is_percent = TRUE,
+    use_quantity_penalty = TRUE,
+    Af172 = Af172,
+    Af173 = Af173,
+    Af174 = Af174,
+    af172 = Af172,
+    af173 = Af173,
+    af174 = Af174,
+    obj_fun = obj_fun,
+    total_nll = obj_fun,
+    profile_nll = obj_fun,
+    penalized_nll = obj_fun,
+    constraint_penalty = 0,
+    objective_source = "fitted_model_par",
+    max_grad = max_grad,
+    output_par = output_par,
+    harvest_par = NA_character_,
+    point_valid = point_valid,
+    run_completed = info$run_completed,
+    convergence_status = info$convergence_status,
+    converged = converged,
+    failure_reason = info$failure_reason,
+    run_status = info$run_status,
+    hessian_requested = FALSE,
+    hessian_attempted = FALSE,
+    hessian_ok = NA,
+    hessian_status = NA_character_,
+    hessian_reliability = "UNKNOWN",
+    hessian_n_negative = NA_integer_,
+    hessian_n_total = NA_integer_,
+    lik_out = NULL,
+    lik_raw = NULL,
+    mfclkit = info
   )
   saveRDS(info, file.path(scalar_dir, "profile_point_info.rds"), compress = "xz")
   saveRDS(info, file.path(scalar_dir, "info.rds"), compress = "xz")
@@ -309,7 +615,7 @@ copy_check_units <- function(source_dirs, target_dir, check_type) {
         dirs <- list.dirs(profile_root, recursive = FALSE, full.names = TRUE)
         dirs <- dirs[grepl("^scalar_", basename(dirs))]
         for (dir in dirs) {
-          copied <- c(copied, copy_dir_contents_checked(
+          copied <- c(copied, copy_profile_point_checked(
             dir,
             file.path(target_dir, "profile", basename(profile_root), basename(dir))
           ))
@@ -418,8 +724,9 @@ check_status_success <- function(dat) {
       bad <- value %in% c(
         "failed", "error", "model_run_failed", "completed_with_nonzero_status",
         "completed_not_converged", "not_completed", "not_converged",
-        "blocked_by_previous_profile_point", "unknown", "status_collect_failed"
-      ) | grepl("failed|error|not[-_ ]?converged|not[-_ ]?completed|blocked", value)
+        "blocked_by_previous_profile_point", "missing_profile_point",
+        "unknown", "status_collect_failed"
+      ) | grepl("failed|error|not[-_ ]?converged|not[-_ ]?completed|blocked|missing", value)
       idx <- which(nzchar(tolower(trimws(as.character(dat[[name]])))))
       bad_status[idx] <- bad_status[idx] | bad
     }
@@ -432,6 +739,17 @@ check_status_success <- function(dat) {
   if ("converged" %in% names(dat)) {
     converged <- suppressWarnings(as.logical(dat$converged))
     success <- success & (is.na(converged) | converged)
+  }
+  # Quantity profile output is only usable when the constraint target was
+  # actually attained and the runner marked the point valid.  A process can
+  # finish with a finite objective while failing either condition.
+  if ("target_attained" %in% names(dat)) {
+    target_attained <- suppressWarnings(as.logical(dat$target_attained))
+    success <- success & !is.na(target_attained) & target_attained
+  }
+  if ("point_valid" %in% names(dat)) {
+    point_valid <- suppressWarnings(as.logical(dat$point_valid))
+    success <- success & !is.na(point_valid) & point_valid
   }
   if ("total_nll" %in% names(dat)) {
     total_nll <- suppressWarnings(as.numeric(dat$total_nll))
@@ -485,7 +803,9 @@ collect_check_unit_status <- function(model_dir, check_type, source_dirs = chara
     } else if (identical(check_type, "profile")) {
       if (!requireNamespace("mfclkit", quietly = TRUE)) return(data.frame(stringsAsFactors = FALSE))
       roots <- list.dirs(file.path(model_dir, "profile"), recursive = FALSE, full.names = TRUE)
-      bind_rows_fill_local(lapply(roots, mfclkit::mfk_read_profile_points))
+      profile_add_missing_expected(
+        bind_rows_fill_local(lapply(roots, mfclkit::mfk_read_profile_points))
+      )
     } else if (identical(check_type, "selftest")) {
       candidates <- c(
         file.path(model_dir, "selftest", "selftest_runs.rds"),
@@ -556,6 +876,12 @@ write_check_status_summary <- function(model_dir, check_type, source_dirs = char
   n_failed <- if (n_units) sum(!(units$success %in% TRUE), na.rm = TRUE) else 0L
   n_source_units <- nrow(source_summaries)
   n_source_failed <- if (n_source_units) sum(!(source_summaries$success %in% TRUE), na.rm = TRUE) else 0L
+  expected_profile_values <- if (identical(check_type, "profile")) profile_expected_values() else numeric()
+  n_missing_expected <- if (identical(check_type, "profile") && n_units && "run_status" %in% names(units)) {
+    sum(tolower(as.character(units$run_status)) == "missing_profile_point", na.rm = TRUE)
+  } else {
+    0L
+  }
   requires_all_units <- check_type %in% c("hessian", "profile")
   total_failed <- n_failed + n_source_failed
   merge_status <- if (!n_units && !n_source_units) {
@@ -577,6 +903,8 @@ write_check_status_summary <- function(model_dir, check_type, source_dirs = char
     n_source_model_dirs = length(source_dirs),
     n_source_units = n_source_units,
     n_source_failed = n_source_failed,
+    n_expected_units = if (identical(check_type, "profile")) length(expected_profile_values) else NA_integer_,
+    n_missing_expected = if (identical(check_type, "profile")) n_missing_expected else NA_integer_,
     requires_all_units = requires_all_units,
     all_required_units_successful = !requires_all_units || ((n_units > 0L || n_source_units > 0L) && total_failed == 0L),
     merge_status = merge_status,
@@ -883,6 +1211,11 @@ dir.create(model_dir, recursive = TRUE, showWarnings = FALSE)
 
 copy_base_model_files(source_model_dirs[[1L]], model_dir)
 copied <- copy_check_units(source_model_dirs, model_dir, check_type)
+if (length(profile_duplicate_records)) {
+  duplicates <- bind_rows_fill_local(profile_duplicate_records)
+  write.csv(duplicates, file.path(model_dir, "profile-duplicate-points.csv"), row.names = FALSE)
+  saveRDS(duplicates, file.path(model_dir, "profile-duplicate-points.rds"), compress = "xz")
+}
 if (identical(check_type, "profile")) {
   write_profile_base_anchor(model_dir)
 }
@@ -914,9 +1247,32 @@ if (isTRUE(smoke_only)) {
     data.frame(stringsAsFactors = FALSE)
   }
   points <- dedupe_profile_points(points)
+  points <- profile_add_missing_expected(points)
+  points <- dedupe_profile_points(points)
   write.csv(points, file.path(model_dir, "profile-points.csv"), row.names = FALSE)
+  write_merged_profile_spec(model_dir, points)
   if (nrow(points)) {
-    write.csv(mfclkit::mfk_profile_conflict_metrics(points), file.path(model_dir, "profile-qc.csv"), row.names = FALSE)
+    profile_qc <- mfclkit::mfk_profile_conflict_metrics(points)
+    missing_values <- points$scalar[tolower(as.character(points$run_status)) == "missing_profile_point"]
+    if (length(missing_values)) {
+      if (!nrow(profile_qc)) {
+        profile_qc <- data.frame(
+          profile = env("PROFILE_NAME", "adult_biomass"),
+          qc = "Bad",
+          reason = "missing_expected_scalars",
+          stringsAsFactors = FALSE
+        )
+      } else {
+        profile_qc$qc <- "Bad"
+        profile_qc$reason <- vapply(profile_qc$reason, function(reason) {
+          existing <- as.character(reason)
+          existing <- existing[!is.na(existing) & nzchar(existing)]
+          paste(c(existing, "missing_expected_scalars"), collapse = ";")
+        }, character(1L))
+      }
+      profile_qc$missing_expected_scalars <- paste(missing_values, collapse = " ")
+    }
+    write.csv(profile_qc, file.path(model_dir, "profile-qc.csv"), row.names = FALSE)
   }
 }
 write_check_status_summary(model_dir, check_type, source_model_dirs)

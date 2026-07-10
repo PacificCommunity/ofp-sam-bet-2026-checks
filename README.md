@@ -155,13 +155,16 @@ make kflow CHECK_TYPE=model-bundle \
   submitted as parallel Kflow jobs when parallel units are enabled.
 - `PROFILE_TYPE`: `quantity` or `fixed_parameter`.
 - `PROFILE_VALUES`: comma/space list of profile values.
-- `PROFILE_STYLE`: `bet` by default for quantity profiles. This runs a
-  multi-stage BET-style penalty/reps ramp and refreshes the profiled quantity
-  after the final fit. Use `simple` for the older one-call profile point.
-- `PROFILE_PENALTIES`: three ramp penalty weights, default
-  `50000 500000 5000000`.
-- `PROFILE_RAMP_REPS`: six ramp iteration counts, default
-  `5 10 15 200 50 200`.
+- `PROFILE_PRESET`: quantity-profile continuation preset. `john_3stage`
+  (the default task setting) uses penalties `1e5, 1e6, 1e7` and evaluations
+  `50, 50, 2000`; `manual_7stage` follows the MFCL manual; `adaptive` retains
+  the distance-scaled BET sensitivity schedule. `PROFILE_STYLE` remains a
+  legacy alias (`bet` maps to `adaptive`, `john` maps to `john_3stage`).
+- `PROFILE_PENALTIES` and `PROFILE_RAMP_REPS`: optional explicit override for
+  the selected preset. Their lengths must agree for John/manual profiles.
+- Each profile point stores the constrained fit separately from a one-run,
+  same-target, zero-penalty likelihood harvest. It never uses target zero to
+  "refresh" a profile result.
 - `PROFILE_PARALLEL_MODE`: profile jobs run as downstream/upstream chains when
   split for Kflow. Point-by-point scalar splitting is intentionally unsupported
   because each side should continue from the previous profile point.
@@ -170,6 +173,14 @@ make kflow CHECK_TYPE=model-bundle \
   the base-anchor point.
 - `PROFILE_INCLUDE_BASE_ANCHOR`: include the fitted base model as the center
   profile point during merge. Default is `true`.
+- `PROFILE_EXPECTED_VALUES`: full expected scalar set passed to the merge job.
+  Missing points, failed convergence, and missed quantity targets are retained
+  as failed rows; the merged profile is then `incomplete`, not silently shown
+  as complete.
+- `PROFILE_TARGET_REL_TOLERANCE`: relative target tolerance, default `0.001`.
+  `PROFILE_RETRY_INVALID`, `PROFILE_RETRY_JAGGED`,
+  `PROFILE_CONTINUATION_REPS`, and `PROFILE_JAGGED_TOLERANCE` control the
+  selective retry policy.
 - `PROFILE_CHAIN`: run profile values sequentially within a job. Default is
   `true`.
 - `PROFILE_NAME`: profile folder name.
@@ -238,6 +249,7 @@ PROFILE_TYPE=quantity \
 PROFILE_NAME=adult_biomass \
 PROFILE_QUANTITY=avg_bio \
 PROFILE_VALUES="70 80 90 100 110 120 130" \
+PROFILE_PRESET=john_3stage \
 MODEL_INPUT_ROOT=/path/to/job-output \
 MODEL_SELECTOR=15-DataWeighting \
 bash run.sh

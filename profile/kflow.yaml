@@ -26,25 +26,36 @@ env:
   CHECK_KEEP_RAW_OUTPUTS: "false"
   CHECK_FAIL_ON_FAILED_UNITS: "false"
   PROFILE_TYPE: quantity
-  PROFILE_STYLE: bet
+  # John Hampton's staged native-MFCL profile: constrained fits followed by
+  # one same-target, zero-penalty likelihood harvest.  Use `adaptive` only
+  # when deliberately testing the older BET distance-scaled continuation.
+  PROFILE_PRESET: john_3stage
+  PROFILE_STYLE: john_3stage
   PROFILE_PARALLEL_MODE: chains
   PROFILE_CHAIN: "true"
   PROFILE_CHAIN_SIDE: ""
   PROFILE_CENTER: "100"
-  PROFILE_INCLUDE_BASE_ANCHOR: "false"
+  # Retain the unconstrained fitted model as the 100% anchor.  It is copied
+  # from final.par rather than refit with a zero target or a profile penalty.
+  PROFILE_INCLUDE_BASE_ANCHOR: "true"
   PROFILE_NAME: adult_biomass
   PROFILE_QUANTITY: avg_bio
   PROFILE_VALUES: "60 65 70 75 80 85 90 95 105 110 115 120 125 130 135 140"
   PROFILE_AF172: "0"
   PROFILE_AF173: "0"
   PROFILE_AF174: "0"
-  PROFILE_PENALTIES: "50000 500000 5000000"
-  PROFILE_RAMP_REPS: "15 25 25 500 500 200"
+  PROFILE_PENALTIES: "100000 1000000 10000000"
+  PROFILE_RAMP_REPS: "50 50 2000"
   PROFILE_DISTANCE_BREAKS: "20 35"
   PROFILE_PENALTY_SCALES: "1 2 4"
   PROFILE_REPS_SCALES: "1 1.25 1.5"
   PROFILE_EXTRA_FAR_REFINE: "true"
   PROFILE_INCLUDE_FLAG55: "true"
+  PROFILE_TARGET_REL_TOLERANCE: "0.001"
+  PROFILE_RETRY_INVALID: "true"
+  PROFILE_RETRY_JAGGED: "true"
+  PROFILE_CONTINUATION_REPS: "1000"
+  PROFILE_JAGGED_TOLERANCE: "0.1"
 output_patterns:
   - outputs/**
 metadata:
@@ -72,6 +83,7 @@ metadata:
       - CHECK_FAIL_ON_FAILED_UNITS
       - PROFILE_TYPE
       - PROFILE_STYLE
+      - PROFILE_PRESET
       - PROFILE_RUNNER
       - PROFILE_USE_RAMP
       - PROFILE_PARALLEL_MODE
@@ -79,9 +91,11 @@ metadata:
       - PROFILE_CHAIN_SIDE
       - PROFILE_CENTER
       - PROFILE_INCLUDE_BASE_ANCHOR
+      - PROFILE_SPEC_VERSION
       - PROFILE_NAME
       - PROFILE_LABEL
       - PROFILE_VALUES
+      - PROFILE_EXPECTED_VALUES
       - PROFILE_QUANTITY
       - PROFILE_QUANTITY_TYPE
       - PROFILE_BASE_QUANTITY
@@ -104,6 +118,11 @@ metadata:
       - PROFILE_RAMP_EXTRA_FAR_REFINE
       - PROFILE_INCLUDE_FLAG55
       - PROFILE_INCLUDE_LEGACY_FLAG55
+      - PROFILE_TARGET_REL_TOLERANCE
+      - PROFILE_RETRY_INVALID
+      - PROFILE_RETRY_JAGGED
+      - PROFILE_CONTINUATION_REPS
+      - PROFILE_JAGGED_TOLERANCE
       - PROFILE_EXTRA_SWITCH
       - PROFILE_PARAMETER
       - PROFILE_APPLY_SCRIPT

@@ -111,17 +111,170 @@ def split_profile_chains(values: list[float], center_raw: str) -> dict[str, list
 
 
 def profile_values_from_env() -> list[float]:
-    raw = env_first("PROFILE_VALUES", "MFK_SCALAR")
+    raw = env_first("MFK_PROFILE_VALUES", "PROFILE_VALUES", "MFK_SCALAR")
     if not raw:
         return list(DEFAULT_PROFILE_VALUES)
     return numeric_values(raw)
 
 
+def resolved_profile_env(values: list[float] | None = None) -> dict[str, str]:
+    """Resolve one profile contract for side jobs and their merge job."""
+    values = list(profile_values_from_env() if values is None else values)
+    center_raw = env_first("MFK_PROFILE_CENTER", "PROFILE_CENTER") or DEFAULT_PROFILE_CENTER
+    try:
+        center = float(center_raw)
+    except ValueError as exc:
+        raise SystemExit(f"PROFILE_CENTER must be numeric, got {center_raw!r}.") from exc
+
+    profile_type = env_first("MFK_PROFILE_TYPE", "PROFILE_TYPE") or "quantity"
+    profile_name = env_first("MFK_PROFILE_NAME", "PROFILE_NAME", "MFK_PROFILE") or "adult_biomass"
+    profile_label = env_first("MFK_PROFILE_LABEL", "PROFILE_LABEL") or profile_name
+    quantity = env_first("MFK_PROFILE_QUANTITY", "PROFILE_QUANTITY") or "avg_bio"
+    quantity_type = env_first("MFK_PROFILE_QUANTITY_TYPE", "PROFILE_QUANTITY_TYPE") or "2"
+
+    # Match profile/kflow.yaml: John Hampton's staged native profile is the
+    # ordinary default.  The older BET schedule remains selectable explicitly
+    # with PROFILE_STYLE=bet or PROFILE_PRESET=adaptive.
+    legacy_style = env_first("PROFILE_STYLE", "PROFILE_RUNNER") or "john_3stage"
+    preset = env_first("MFK_PROFILE_PRESET", "PROFILE_PRESET")
+    if not preset:
+        style_key = legacy_style.strip().lower().replace("-", "_")
+        preset = {
+            "bet": "adaptive",
+            "ramp": "adaptive",
+            "quantity_ramp": "adaptive",
+            "adaptive": "adaptive",
+            "john": "john_3stage",
+            "john_3stage": "john_3stage",
+            "manual": "manual_7stage",
+            "manual_7stage": "manual_7stage",
+            # The runner maps this compatibility value to a one-stage plan.
+            "simple": "john_3stage",
+        }.get(style_key, style_key)
+    if preset not in {"john_3stage", "manual_7stage", "adaptive"}:
+        raise SystemExit(
+            f"Unsupported profile preset {preset!r}; use john_3stage, manual_7stage, or adaptive."
+        )
+
+    preset_defaults = {
+        "john_3stage": ("100000 1000000 10000000", "50 50 2000"),
+        "manual_7stage": (
+            "100000 1000000 10000000 10000000 10000000 10000000 10000000",
+            "15 25 25 1000 100 500 1000",
+        ),
+        # Preserve the established BET Kflow adaptive schedule.
+        "adaptive": ("50000 500000 5000000", "15 25 25 500 500 200"),
+    }
+    default_penalties, default_reps = preset_defaults[preset]
+
+    include_anchor = truthy(
+        env_first("MFK_PROFILE_INCLUDE_BASE_ANCHOR", "PROFILE_INCLUDE_BASE_ANCHOR"),
+        default=True,
+    )
+    # Split profile chains deliberately omit the center.  When the fitted
+    # model anchor is disabled, remove that value from both the submitted grid
+    # and the expected merge contract; otherwise every such launch would
+    # correctly, but unhelpfully, be marked incomplete for a point it cannot
+    # produce.
+    if not include_anchor:
+        values = [value for value in values if abs(value - center) > 1e-10]
+    expected_raw = env_first("MFK_PROFILE_EXPECTED_VALUES", "PROFILE_EXPECTED_VALUES")
+    if expected_raw:
+        expected = numeric_values(expected_raw)
+    else:
+        expected = list(values)
+    if include_anchor and not any(abs(value - center) <= 1e-10 for value in expected):
+        expected.append(center)
+    if not include_anchor:
+        expected = [value for value in expected if abs(value - center) > 1e-10]
+    expected = sorted(set(expected))
+
+    resolved = {
+        "PROFILE_SPEC_VERSION": "mfclkit.quantity-profile.v2",
+        "PROFILE_TYPE": profile_type,
+        "PROFILE_NAME": profile_name,
+        "PROFILE_LABEL": profile_label,
+        "PROFILE_QUANTITY": quantity,
+        "PROFILE_QUANTITY_TYPE": quantity_type,
+        "PROFILE_VALUES": " ".join(format_number(value) for value in values),
+        "PROFILE_EXPECTED_VALUES": " ".join(format_number(value) for value in expected),
+        "PROFILE_CENTER": format_number(center),
+        "PROFILE_PRESET": preset,
+        "PROFILE_STYLE": legacy_style,
+        "PROFILE_PARALLEL_MODE": env_first("PROFILE_PARALLEL_MODE") or "chains",
+        "PROFILE_CHAIN": env_first("MFK_PROFILE_CHAIN", "PROFILE_CHAIN") or "true",
+        "PROFILE_INCLUDE_BASE_ANCHOR": "true" if include_anchor else "false",
+        "PROFILE_AF172": env_first("MFK_PROFILE_AF172", "PROFILE_AF172") or "0",
+        "PROFILE_AF173": env_first("MFK_PROFILE_AF173", "PROFILE_AF173") or "0",
+        "PROFILE_AF174": env_first("MFK_PROFILE_AF174", "PROFILE_AF174") or "0",
+        "PROFILE_PENALTIES": env_first(
+            "MFK_PROFILE_PENALTIES", "PROFILE_PENALTIES",
+            "PROFILE_RAMP_PENALTIES", "PROFILE_PENALTY_SCHEDULE",
+        ) or default_penalties,
+        "PROFILE_RAMP_REPS": env_first(
+            "MFK_PROFILE_RAMP_REPS", "PROFILE_RAMP_REPS", "PROFILE_REPS",
+        ) or default_reps,
+        "PROFILE_DISTANCE_BREAKS": env_first(
+            "MFK_PROFILE_DISTANCE_BREAKS", "PROFILE_DISTANCE_BREAKS",
+            "PROFILE_RAMP_DISTANCE_BREAKS",
+        ) or "20 35",
+        "PROFILE_PENALTY_SCALES": env_first(
+            "MFK_PROFILE_PENALTY_SCALES", "PROFILE_PENALTY_SCALES",
+            "PROFILE_RAMP_PENALTY_SCALES",
+        ) or "1 2 4",
+        "PROFILE_REPS_SCALES": env_first(
+            "MFK_PROFILE_REPS_SCALES", "PROFILE_REPS_SCALES",
+            "PROFILE_RAMP_REPS_SCALES",
+        ) or "1 1.25 1.5",
+        "PROFILE_EXTRA_FAR_REFINE": env_first(
+            "MFK_PROFILE_EXTRA_FAR_REFINE", "PROFILE_EXTRA_FAR_REFINE",
+            "PROFILE_RAMP_EXTRA_FAR_REFINE",
+        ) or "true",
+        "PROFILE_INCLUDE_FLAG55": env_first(
+            "MFK_PROFILE_INCLUDE_FLAG55", "PROFILE_INCLUDE_FLAG55",
+            "PROFILE_INCLUDE_LEGACY_FLAG55",
+        ) or "true",
+        "PROFILE_EXTRA_SWITCH": env_first("MFK_PROFILE_EXTRA_SWITCH", "PROFILE_EXTRA_SWITCH"),
+        "PROFILE_BASE_QUANTITY": env_first("MFK_PROFILE_BASE_QUANTITY", "PROFILE_BASE_QUANTITY"),
+        "PROFILE_MAX_GRAD_THRESHOLD": env_first(
+            "MFK_PROFILE_MAX_GRAD_THRESHOLD", "PROFILE_MAX_GRAD_THRESHOLD",
+        ),
+        "PROFILE_TARGET_REL_TOLERANCE": env_first(
+            "MFK_PROFILE_TARGET_REL_TOLERANCE", "PROFILE_TARGET_REL_TOLERANCE",
+        ) or "0.001",
+        "PROFILE_RETRY_INVALID": env_first(
+            "MFK_PROFILE_RETRY_INVALID", "PROFILE_RETRY_INVALID",
+        ) or "true",
+        "PROFILE_RETRY_JAGGED": env_first(
+            "MFK_PROFILE_RETRY_JAGGED", "PROFILE_RETRY_JAGGED",
+        ) or "true",
+        "PROFILE_CONTINUATION_REPS": env_first(
+            "MFK_PROFILE_CONTINUATION_REPS", "PROFILE_CONTINUATION_REPS",
+        ) or "1000",
+        "PROFILE_JAGGED_TOLERANCE": env_first(
+            "MFK_PROFILE_JAGGED_TOLERANCE", "PROFILE_JAGGED_TOLERANCE",
+        ) or "0.1",
+    }
+    return {key: value for key, value in resolved.items() if str(value).strip()}
+
+
 def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
+    check_key = normalize_check_name(check)
     if not parallel_units:
+        if check_key == "profile":
+            values = profile_values_from_env()
+            common_env = resolved_profile_env(values)
+            return [{
+                "label": "",
+                "env": common_env,
+                "metadata": {
+                    "profile_name": common_env["PROFILE_NAME"],
+                    "profile_preset": common_env["PROFILE_PRESET"],
+                    "profile_expected_values": common_env["PROFILE_EXPECTED_VALUES"],
+                },
+            }]
         return [{"label": "", "env": {}, "metadata": {}}]
 
-    check_key = normalize_check_name(check)
     if check_key == "jitter":
         seeds = split_values(env_first("JITTER_SEEDS", "JITTER_SEED"))
         if not seeds:
@@ -163,16 +316,18 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
 
     if check_key == "profile":
         values = profile_values_from_env()
-        profile_name = os.environ.get("PROFILE_NAME", "profile")
+        common_env = resolved_profile_env(values)
+        profile_name = common_env["PROFILE_NAME"]
         label_name = profile_name if profile_name and profile_name != "profile" else "scalar"
-        mode = os.environ.get("PROFILE_PARALLEL_MODE", "chains").strip().lower() or "chains"
+        mode = common_env["PROFILE_PARALLEL_MODE"].strip().lower() or "chains"
         if mode in {"chain", "chains", "left-right", "left_right", "upstream-downstream", "upstream_downstream"}:
-            center = os.environ.get("PROFILE_CENTER", DEFAULT_PROFILE_CENTER)
+            center = common_env["PROFILE_CENTER"]
             chains = split_profile_chains(values, center)
             return [
                 {
                     "label": f"{side} chain",
                     "env": {
+                        **common_env,
                         "PROFILE_VALUES": " ".join(format_number(value) for value in chain_values),
                         "PROFILE_CHAIN": "true",
                         "PROFILE_CHAIN_SIDE": side,
@@ -183,6 +338,9 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
                         "check_unit_type": "profile_chain",
                         "check_unit": side,
                         "profile_center": center,
+                        "profile_name": profile_name,
+                        "profile_preset": common_env["PROFILE_PRESET"],
+                        "profile_expected_values": common_env["PROFILE_EXPECTED_VALUES"],
                         "profile_chain_values": " ".join(format_number(value) for value in chain_values),
                     },
                 }
@@ -532,6 +690,11 @@ def main() -> int:
                 continue
             if key.startswith(("BET_", "JITTER_", "RETRO_", "HESSIAN_", "PROFILE_", "ASPM_", "BUNDLE_", "SELFTEST_", "MFK_", "CHECK_", "selftest_")) or key in {"TRIGGER_NEXT"} or key == "program_path":
                 env[key] = value
+        profile_merge_env: dict[str, str] = {}
+        if check == "profile":
+            profile_merge_env = resolved_profile_env(profile_values_from_env())
+            profile_merge_env.pop("PROFILE_CHAIN_SIDE", None)
+            env.update(profile_merge_env)
         if check == "hessian":
             env["CHECK_TYPE"] = "hessian_merge"
         previous_merge_jobs = (
@@ -572,6 +735,12 @@ def main() -> int:
                 "auto_merge": True,
                 "allow_failed_input_jobs": True,
                 "nested_work_group": check,
+                **({
+                    "profile_name": profile_merge_env.get("PROFILE_NAME", ""),
+                    "profile_preset": profile_merge_env.get("PROFILE_PRESET", ""),
+                    "profile_expected_values": profile_merge_env.get("PROFILE_EXPECTED_VALUES", ""),
+                    "profile_spec_version": profile_merge_env.get("PROFILE_SPEC_VERSION", ""),
+                } if check == "profile" else {}),
                 "previous_attached_output_job": previous_attached_job_for_base,
                 "previous_check_merge_jobs": previous_merge_jobs,
                 "input_history": input_history,

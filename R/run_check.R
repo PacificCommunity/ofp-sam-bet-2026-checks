@@ -221,6 +221,14 @@ check_status_success <- function(dat) {
     converged <- suppressWarnings(as.logical(dat$converged))
     success <- success & (is.na(converged) | converged)
   }
+  if ("target_attained" %in% names(dat)) {
+    target_attained <- suppressWarnings(as.logical(dat$target_attained))
+    success <- success & !is.na(target_attained) & target_attained
+  }
+  if ("point_valid" %in% names(dat)) {
+    point_valid <- suppressWarnings(as.logical(dat$point_valid))
+    success <- success & !is.na(point_valid) & point_valid
+  }
   if ("input_built" %in% names(dat)) {
     input_built <- suppressWarnings(as.logical(dat$input_built))
     success <- success & !is.na(input_built) & input_built
@@ -616,28 +624,57 @@ copy_base_payload_files <- function(to_dir) {
 write_smoke_profile_payload <- function(dir, value, profile_name, chain_side = "") {
   created_at <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
   center <- split_numbers(env("PROFILE_CENTER", ""), default = value)[[1L]]
-  rel <- if (is.finite(center) && abs(center) > 0) (value - center) / abs(center) else 0
-  obj_fun <- base_payload_number("obj_fun", 0) + 100 * rel^2
+  curve_rel <- if (is.finite(center) && abs(center) > 0) (value - center) / abs(center) else 0
+  obj_fun <- base_payload_number("obj_fun", 0) + 100 * curve_rel^2
   max_grad <- base_payload_number("max_grad", 0)
+  quantity <- env("PROFILE_QUANTITY", "avg_bio")
+  quantity_type <- as.integer(split_numbers(env("PROFILE_QUANTITY_TYPE", "2"), default = 2)[[1L]])
+  row <- data.frame(
+    profile = profile_name,
+    scalar = value,
+    label = env("PROFILE_LABEL", profile_name),
+    type = "quantity",
+    quantity = quantity,
+    quantity_label = quantity,
+    quantity_type = quantity_type,
+    quantity_target = value,
+    base_quantity = center,
+    Af172 = as.integer(split_numbers(env("PROFILE_AF172", "0"), default = 0)[[1L]]),
+    Af173 = as.integer(split_numbers(env("PROFILE_AF173", "0"), default = 0)[[1L]]),
+    Af174 = as.integer(split_numbers(env("PROFILE_AF174", "0"), default = 0)[[1L]]),
+    scalar_is_percent = TRUE,
+    use_quantity_penalty = TRUE,
+    stringsAsFactors = FALSE
+  )
   info <- list(
-    version = "v1",
+    version = "v2",
     created_at = created_at,
     profile = profile_name,
     profile_set_key = profile_name,
     profile_set_label = profile_name,
     scalar = value,
     scaler = value,
-    quantity_label = env("PROFILE_LABEL", profile_name),
+    row = row,
+    quantity_label = quantity,
+    quantity_type = quantity_type,
     reference_quantity = center,
     target_quantity = value,
     actual_quantity = value,
-    target_rel_err = rel,
+    actual_quantity_source = "smoke",
+    target_rel_err = 0,
+    target_attained = TRUE,
+    point_valid = TRUE,
     obj_fun = obj_fun,
     total_nll = obj_fun,
+    profile_nll = obj_fun,
+    penalized_nll = obj_fun,
+    constraint_penalty = 0,
+    objective_source = "smoke",
     max_grad = max_grad,
     run_status = "smoke_completed",
     run_completed = TRUE,
     convergence_status = "smoke_only",
+    converged = TRUE,
     chain_side = chain_side,
     smoke = TRUE
   )
@@ -1469,10 +1506,14 @@ if (identical(check_type, "jitter")) {
   saveRDS(result, file.path(model_dir, "hessian_runs.rds"), compress = "xz")
 
 } else if (identical(check_type, "profile")) {
-  profile_type <- env("PROFILE_TYPE", "quantity")
+  profile_type <- tolower(trimws(env("PROFILE_TYPE", env("MFK_PROFILE_TYPE", "quantity"))))
   profile_name <- env("PROFILE_NAME", if (identical(profile_type, "quantity")) "adult_biomass" else "profile")
-  profile_values <- split_numbers(env("PROFILE_VALUES", env("MFK_SCALAR", "")), default = seq(60, 140, by = 5))
-  profile_label <- env("PROFILE_LABEL", profile_name)
+  profile_name <- env("MFK_PROFILE_NAME", env("PROFILE_NAME", env("MFK_PROFILE", profile_name)))
+  profile_values <- split_numbers(
+    env("MFK_PROFILE_VALUES", env("PROFILE_VALUES", env("MFK_SCALAR", ""))),
+    default = seq(60, 140, by = 5)
+  )
+  profile_label <- env("MFK_PROFILE_LABEL", env("PROFILE_LABEL", profile_name))
   profile_style <- tolower(trimws(env("PROFILE_STYLE", env("PROFILE_RUNNER", "bet"))))
   if (!nzchar(profile_style)) profile_style <- "bet"
   profile_use_ramp_raw <- tolower(trimws(env("PROFILE_USE_RAMP", "")))
@@ -1481,10 +1522,124 @@ if (identical(check_type, "jitter")) {
   }
 
   if (identical(profile_type, "quantity")) {
-    quantity <- env("PROFILE_QUANTITY", "avg_bio")
-    quantity_type <- suppressWarnings(as.integer(env("PROFILE_QUANTITY_TYPE", NA_character_)))
-    base_quantity <- suppressWarnings(as.numeric(env("PROFILE_BASE_QUANTITY", NA_character_)))
+    quantity <- env("MFK_PROFILE_QUANTITY", env("PROFILE_QUANTITY", "avg_bio"))
+    quantity_type <- suppressWarnings(as.integer(env(
+      "MFK_PROFILE_QUANTITY_TYPE", env("PROFILE_QUANTITY_TYPE", NA_character_)
+    )))
+    base_quantity <- suppressWarnings(as.numeric(env(
+      "MFK_PROFILE_BASE_QUANTITY", env("PROFILE_BASE_QUANTITY", NA_character_)
+    )))
     if (!is.finite(base_quantity)) base_quantity <- NULL
+    profile_center <- split_numbers(
+      env("MFK_PROFILE_CENTER", env("PROFILE_CENTER", "100")), default = 100
+    )[[1L]]
+    include_base_anchor <- truthy(env(
+      "MFK_PROFILE_INCLUDE_BASE_ANCHOR",
+      env("PROFILE_INCLUDE_BASE_ANCHOR", "false")
+    ), FALSE)
+    if (!isTRUE(include_base_anchor)) {
+      profile_values <- profile_values[abs(profile_values - profile_center) > 1e-10]
+    }
+    if (!length(profile_values)) {
+      stop("Quantity profile has no non-anchor values to run.", call. = FALSE)
+    }
+
+    profile_preset <- tolower(trimws(env(
+      "MFK_PROFILE_PRESET", env("PROFILE_PRESET", "")
+    )))
+    if (!nzchar(profile_preset)) {
+      profile_preset <- switch(
+        gsub("-", "_", profile_style, fixed = TRUE),
+        bet =, ramp =, quantity_ramp =, adaptive = "adaptive",
+        john =, john_3stage = "john_3stage",
+        manual =, manual_7stage = "manual_7stage",
+        simple = "john_3stage",
+        profile_style
+      )
+    }
+    if (!profile_preset %in% c("john_3stage", "manual_7stage", "adaptive")) {
+      stop(
+        "Unsupported PROFILE_PRESET/PROFILE_STYLE: ", profile_preset,
+        ". Use john_3stage, manual_7stage, or adaptive.",
+        call. = FALSE
+      )
+    }
+
+    profile_penalties <- split_numbers(env(
+      "MFK_PROFILE_PENALTIES",
+      env("PROFILE_PENALTIES", env(
+        "PROFILE_RAMP_PENALTIES", env("PROFILE_PENALTY_SCHEDULE", "")
+      ))
+    ), default = numeric())
+    profile_ramp_reps <- split_numbers(env(
+      "MFK_PROFILE_RAMP_REPS",
+      env("PROFILE_RAMP_REPS", env("PROFILE_REPS", ""))
+    ), default = numeric())
+    if (identical(profile_style, "simple")) {
+      profile_penalties <- split_numbers(
+        env("PROFILE_PENALTY", env("MFK_PROFILE_PENALTY", "1e7")),
+        default = 1e7
+      )[[1L]]
+      profile_ramp_reps <- split_numbers(
+        env("PROFILE_REPS", env("MFK_PROFILE_REPS", "2000")),
+        default = 2000
+      )[[1L]]
+    }
+    profile_penalties_arg <- if (length(profile_penalties)) profile_penalties else NULL
+    profile_reps_arg <- if (length(profile_ramp_reps)) profile_ramp_reps else NULL
+    profile_distance_breaks <- split_numbers(env(
+      "MFK_PROFILE_DISTANCE_BREAKS",
+      env("PROFILE_DISTANCE_BREAKS", env("PROFILE_RAMP_DISTANCE_BREAKS", "20 35"))
+    ), default = c(20, 35))
+    profile_penalty_scales <- split_numbers(env(
+      "MFK_PROFILE_PENALTY_SCALES",
+      env("PROFILE_PENALTY_SCALES", env("PROFILE_RAMP_PENALTY_SCALES", "1 2 4"))
+    ), default = c(1, 2, 4))
+    profile_reps_scales <- split_numbers(env(
+      "MFK_PROFILE_REPS_SCALES",
+      env("PROFILE_REPS_SCALES", env("PROFILE_RAMP_REPS_SCALES", "1 1.25 1.5"))
+    ), default = c(1, 1.25, 1.5))
+    profile_extra_far_refine <- truthy(env(
+      "MFK_PROFILE_EXTRA_FAR_REFINE",
+      env("PROFILE_EXTRA_FAR_REFINE", env("PROFILE_RAMP_EXTRA_FAR_REFINE", "true"))
+    ), TRUE)
+    profile_include_flag55 <- truthy(env(
+      "MFK_PROFILE_INCLUDE_FLAG55",
+      env("PROFILE_INCLUDE_FLAG55", env("PROFILE_INCLUDE_LEGACY_FLAG55", "true"))
+    ), TRUE)
+    profile_max_grad <- split_numbers(env(
+      "MFK_PROFILE_MAX_GRAD_THRESHOLD", env("PROFILE_MAX_GRAD_THRESHOLD", "")
+    ), default = numeric())
+    profile_max_grad <- if (length(profile_max_grad)) profile_max_grad[[1L]] else NULL
+    profile_target_tolerance <- split_numbers(env(
+      "MFK_PROFILE_TARGET_REL_TOLERANCE", env("PROFILE_TARGET_REL_TOLERANCE", "0.001")
+    ), default = 0.001)[[1L]]
+    profile_continuation_reps <- as.integer(split_numbers(env(
+      "MFK_PROFILE_CONTINUATION_REPS", env("PROFILE_CONTINUATION_REPS", "1000")
+    ), default = 1000)[[1L]])
+    profile_jagged_tolerance <- split_numbers(env(
+      "MFK_PROFILE_JAGGED_TOLERANCE", env("PROFILE_JAGGED_TOLERANCE", "0.1")
+    ), default = 0.1)[[1L]]
+    chain_side_raw <- tolower(trimws(env(
+      "MFK_PROFILE_CHAIN_SIDE", env("PROFILE_CHAIN_SIDE", "")
+    )))
+    profile_side <- switch(
+      chain_side_raw,
+      downstream =, down =, left =, lower = "lower",
+      upstream =, up =, right =, upper = "upper",
+      both = "both",
+      ""
+    )
+    if (!nzchar(profile_side)) {
+      profile_side <- if (all(profile_values < profile_center)) {
+        "lower"
+      } else if (all(profile_values > profile_center)) {
+        "upper"
+      } else {
+        "both"
+      }
+    }
+
     profile <- mfk_quantity_profile_from_model(
       model_dir = prepared$case_dir,
       name = profile_name,
@@ -1492,60 +1647,65 @@ if (identical(check_type, "jitter")) {
       quantity = quantity,
       quantity_type = quantity_type,
       base_quantity = base_quantity,
-      Af172 = as.integer(split_numbers(env("PROFILE_AF172", "0"), default = 0)[[1L]]),
-      Af173 = as.integer(split_numbers(env("PROFILE_AF173", "0"), default = 0)[[1L]]),
-      Af174 = as.integer(split_numbers(env("PROFILE_AF174", "0"), default = 0)[[1L]]),
-      penalty = split_numbers(env("PROFILE_PENALTY", "1e7"), default = 1e7)[[1L]],
-      reps = env("PROFILE_REPS", "15 25 25 500 500 200"),
-      extra_switch = env("PROFILE_EXTRA_SWITCH", "")
+      Af172 = as.integer(split_numbers(env(
+        "MFK_PROFILE_AF172", env("PROFILE_AF172", "0")
+      ), default = 0)[[1L]]),
+      Af173 = as.integer(split_numbers(env(
+        "MFK_PROFILE_AF173", env("PROFILE_AF173", "0")
+      ), default = 0)[[1L]]),
+      Af174 = as.integer(split_numbers(env(
+        "MFK_PROFILE_AF174", env("PROFILE_AF174", "0")
+      ), default = 0)[[1L]]),
+      penalty = if (length(profile_penalties)) tail(profile_penalties, 1L) else 1e7,
+      reps = if (length(profile_ramp_reps)) tail(profile_ramp_reps, 1L) else 2000L,
+      extra_switch = env("MFK_PROFILE_EXTRA_SWITCH", env("PROFILE_EXTRA_SWITCH", ""))
     )
-    profile_penalties <- split_numbers(env("PROFILE_PENALTIES", env("PROFILE_RAMP_PENALTIES", env("PROFILE_PENALTY_SCHEDULE", "50000 500000 5000000"))), default = c(5e4, 5e5, 5e6))
-    profile_ramp_reps <- split_numbers(env("PROFILE_RAMP_REPS", env("PROFILE_REPS", "15 25 25 500 500 200")), default = c(15, 25, 25, 500, 500, 200))
-    profile_distance_breaks <- split_numbers(env("PROFILE_DISTANCE_BREAKS", env("PROFILE_RAMP_DISTANCE_BREAKS", "20 35")), default = c(20, 35))
-    profile_penalty_scales <- split_numbers(env("PROFILE_PENALTY_SCALES", env("PROFILE_RAMP_PENALTY_SCALES", "1 2 4")), default = c(1, 2, 4))
-    profile_reps_scales <- split_numbers(env("PROFILE_REPS_SCALES", env("PROFILE_RAMP_REPS_SCALES", "1 1.25 1.5")), default = c(1, 1.25, 1.5))
-    profile_extra_far_refine <- truthy(env("PROFILE_EXTRA_FAR_REFINE", env("PROFILE_RAMP_EXTRA_FAR_REFINE", "true")), TRUE)
-    profile_include_flag55 <- truthy(env("PROFILE_INCLUDE_FLAG55", env("PROFILE_INCLUDE_LEGACY_FLAG55", "true")), TRUE)
     write_run_manifest(list(
       profile_type = profile_type,
       profile_name = profile_name,
       profile_quantity = quantity,
       profile_style = profile_style,
+      profile_preset = profile_preset,
+      profile_side = profile_side,
+      profile_center = profile_center,
+      profile_expected_values = env("PROFILE_EXPECTED_VALUES", ""),
       profile_penalties = paste(profile_penalties, collapse = " "),
       profile_ramp_reps = paste(profile_ramp_reps, collapse = " ")
     ))
-    result <- mfk_run_profile(
-      backend,
+    if (!"mfk_run_quantity_profile" %in% getNamespaceExports("mfclkit")) {
+      stop(
+        "Installed mfclkit does not export mfk_run_quantity_profile(); update mfclkit before running profile checks.",
+        call. = FALSE
+      )
+    }
+    result <- mfclkit::mfk_run_quantity_profile(
+      backend = backend,
       input_dir = prepared$case_dir,
       model_dir = model_dir,
       profile = profile,
-      command_fun = function(profile_row, chain_start_par = NULL, point_dir, ...) {
-        input_par <- profile_input_par(chain_start_par)
-        if (profile_style %in% c("bet", "ramp", "quantity_ramp")) {
-          mfk_quantity_profile_ramp_command(
-            point_dir = point_dir,
-            profile_row = profile_row,
-            program = program_path,
-            frq = frq_name,
-            input_par = input_par,
-            output_par = "profile.par",
-            penalties = profile_penalties,
-            reps = profile_ramp_reps,
-            distance_breaks = profile_distance_breaks,
-            penalty_scales = profile_penalty_scales,
-            reps_scales = profile_reps_scales,
-            extra_far_refine = profile_extra_far_refine,
-            include_legacy_flag55 = profile_include_flag55
-          )
-        } else {
-          mfcl_command(
-            input_par = input_par,
-            output_par = "profile.par",
-            extra = mfk_quantity_profile_switch(profile_row)
-          )
-        }
-      },
-      chain = truthy(env("PROFILE_CHAIN", "false"), FALSE),
+      par = check_start_par,
+      frq = prepared$frq,
+      preset = profile_preset,
+      side = profile_side,
+      center = profile_center,
+      parallel_sides = FALSE,
+      penalties = profile_penalties_arg,
+      reps = profile_reps_arg,
+      distance_breaks = profile_distance_breaks,
+      penalty_scales = profile_penalty_scales,
+      reps_scales = profile_reps_scales,
+      extra_far_refine = profile_extra_far_refine,
+      include_flag55 = profile_include_flag55,
+      max_grad_threshold = profile_max_grad,
+      target_rel_tolerance = profile_target_tolerance,
+      retry_invalid = truthy(env(
+        "MFK_PROFILE_RETRY_INVALID", env("PROFILE_RETRY_INVALID", "true")
+      ), TRUE),
+      retry_jagged = truthy(env(
+        "MFK_PROFILE_RETRY_JAGGED", env("PROFILE_RETRY_JAGGED", "true")
+      ), TRUE),
+      continuation_reps = profile_continuation_reps,
+      jagged_tolerance = profile_jagged_tolerance,
       run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
     )
   } else if (identical(profile_type, "fixed_parameter")) {
