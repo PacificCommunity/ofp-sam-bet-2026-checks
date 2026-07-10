@@ -1499,7 +1499,7 @@ if (identical(check_type, "jitter")) {
       extra_switch = env("PROFILE_EXTRA_SWITCH", "")
     )
     profile_penalties <- split_numbers(env("PROFILE_PENALTIES", env("PROFILE_RAMP_PENALTIES", env("PROFILE_PENALTY_SCHEDULE", "50000 500000 5000000"))), default = c(5e4, 5e5, 5e6))
-    profile_ramp_reps <- split_numbers(env("PROFILE_RAMP_REPS", env("PROFILE_REPS", "5 10 15 200 50 200")), default = c(5, 10, 15, 200, 50, 200))
+    profile_ramp_reps <- split_numbers(env("PROFILE_RAMP_REPS", env("PROFILE_REPS", "15 25 25 500 500 200")), default = c(15, 25, 25, 500, 500, 200))
     profile_distance_breaks <- split_numbers(env("PROFILE_DISTANCE_BREAKS", env("PROFILE_RAMP_DISTANCE_BREAKS", "20 35")), default = c(20, 35))
     profile_penalty_scales <- split_numbers(env("PROFILE_PENALTY_SCALES", env("PROFILE_RAMP_PENALTY_SCALES", "1 2 4")), default = c(1, 2, 4))
     profile_reps_scales <- split_numbers(env("PROFILE_REPS_SCALES", env("PROFILE_RAMP_REPS_SCALES", "1 1.25 1.5")), default = c(1, 1.25, 1.5))
