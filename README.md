@@ -155,13 +155,14 @@ make kflow CHECK_TYPE=model-bundle \
   submitted as parallel Kflow jobs when parallel units are enabled.
 - `PROFILE_TYPE`: `quantity` or `fixed_parameter`.
 - `PROFILE_VALUES`: comma/space list of profile values.
-- `PROFILE_PRESET`: quantity-profile continuation preset. `john_3stage`
+- `PROFILE_PRESET`: quantity-profile continuation preset. `three_stage`
   (the default task setting) uses penalties `1e5, 1e6, 1e7` and evaluations
   `50, 50, 2000`; `manual_7stage` follows the MFCL manual; `adaptive` retains
   the distance-scaled BET sensitivity schedule. `PROFILE_STYLE` remains a
-  legacy alias (`bet` maps to `adaptive`, `john` maps to `john_3stage`).
+  legacy alias (`bet` maps to `adaptive`; older three-stage aliases remain
+  accepted for compatibility).
 - `PROFILE_PENALTIES` and `PROFILE_RAMP_REPS`: optional explicit override for
-  the selected preset. Their lengths must agree for John/manual profiles.
+  the selected preset. Their lengths must agree for three-stage/manual profiles.
 - Each profile point stores the constrained fit separately from a one-run,
   same-target, zero-penalty likelihood harvest. It never uses target zero to
   "refresh" a profile result.
@@ -249,7 +250,7 @@ PROFILE_TYPE=quantity \
 PROFILE_NAME=adult_biomass \
 PROFILE_QUANTITY=avg_bio \
 PROFILE_VALUES="70 80 90 100 110 120 130" \
-PROFILE_PRESET=john_3stage \
+PROFILE_PRESET=three_stage \
 MODEL_INPUT_ROOT=/path/to/job-output \
 MODEL_SELECTOR=15-DataWeighting \
 bash run.sh

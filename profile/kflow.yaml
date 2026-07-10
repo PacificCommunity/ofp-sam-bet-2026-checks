@@ -26,11 +26,11 @@ env:
   CHECK_KEEP_RAW_OUTPUTS: "false"
   CHECK_FAIL_ON_FAILED_UNITS: "false"
   PROFILE_TYPE: quantity
-  # John Hampton's staged native-MFCL profile: constrained fits followed by
+  # Generic three-stage native-MFCL profile: constrained fits followed by
   # one same-target, zero-penalty likelihood harvest.  Use `adaptive` only
   # when deliberately testing the older BET distance-scaled continuation.
-  PROFILE_PRESET: john_3stage
-  PROFILE_STYLE: john_3stage
+  PROFILE_PRESET: three_stage
+  PROFILE_STYLE: three_stage
   PROFILE_PARALLEL_MODE: chains
   PROFILE_CHAIN: "true"
   PROFILE_CHAIN_SIDE: ""

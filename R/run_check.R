@@ -1551,16 +1551,17 @@ if (identical(check_type, "jitter")) {
       profile_preset <- switch(
         gsub("-", "_", profile_style, fixed = TRUE),
         bet =, ramp =, quantity_ramp =, adaptive = "adaptive",
-        john =, john_3stage = "john_3stage",
+        three_stage =, `three-stage` =, native_3stage =, standard_3stage =,
+          john =, john_3stage = "three_stage",
         manual =, manual_7stage = "manual_7stage",
-        simple = "john_3stage",
+        simple = "three_stage",
         profile_style
       )
     }
-    if (!profile_preset %in% c("john_3stage", "manual_7stage", "adaptive")) {
+    if (!profile_preset %in% c("three_stage", "manual_7stage", "adaptive")) {
       stop(
         "Unsupported PROFILE_PRESET/PROFILE_STYLE: ", profile_preset,
-        ". Use john_3stage, manual_7stage, or adaptive.",
+        ". Use three_stage, manual_7stage, or adaptive.",
         call. = FALSE
       )
     }

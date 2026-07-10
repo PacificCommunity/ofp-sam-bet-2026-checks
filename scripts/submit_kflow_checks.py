@@ -132,10 +132,10 @@ def resolved_profile_env(values: list[float] | None = None) -> dict[str, str]:
     quantity = env_first("MFK_PROFILE_QUANTITY", "PROFILE_QUANTITY") or "avg_bio"
     quantity_type = env_first("MFK_PROFILE_QUANTITY_TYPE", "PROFILE_QUANTITY_TYPE") or "2"
 
-    # Match profile/kflow.yaml: John Hampton's staged native profile is the
+    # Match profile/kflow.yaml: the generic staged native profile is the
     # ordinary default.  The older BET schedule remains selectable explicitly
     # with PROFILE_STYLE=bet or PROFILE_PRESET=adaptive.
-    legacy_style = env_first("PROFILE_STYLE", "PROFILE_RUNNER") or "john_3stage"
+    legacy_style = env_first("PROFILE_STYLE", "PROFILE_RUNNER") or "three_stage"
     preset = env_first("MFK_PROFILE_PRESET", "PROFILE_PRESET")
     if not preset:
         style_key = legacy_style.strip().lower().replace("-", "_")
@@ -144,20 +144,31 @@ def resolved_profile_env(values: list[float] | None = None) -> dict[str, str]:
             "ramp": "adaptive",
             "quantity_ramp": "adaptive",
             "adaptive": "adaptive",
-            "john": "john_3stage",
-            "john_3stage": "john_3stage",
+            "three_stage": "three_stage",
             "manual": "manual_7stage",
             "manual_7stage": "manual_7stage",
             # The runner maps this compatibility value to a one-stage plan.
-            "simple": "john_3stage",
+            "simple": "three_stage",
         }.get(style_key, style_key)
-    if preset not in {"john_3stage", "manual_7stage", "adaptive"}:
+    preset_key = preset.strip().lower().replace("-", "_")
+    preset = {
+        "john": "three_stage",
+        "john_3stage": "three_stage",
+        "native_3stage": "three_stage",
+        "standard_3stage": "three_stage",
+        "3stage": "three_stage",
+        "manual": "manual_7stage",
+        "bet": "adaptive",
+        "ramp": "adaptive",
+        "quantity_ramp": "adaptive",
+    }.get(preset_key, preset_key)
+    if preset not in {"three_stage", "manual_7stage", "adaptive"}:
         raise SystemExit(
-            f"Unsupported profile preset {preset!r}; use john_3stage, manual_7stage, or adaptive."
+            f"Unsupported profile preset {preset!r}; use three_stage, manual_7stage, or adaptive."
         )
 
     preset_defaults = {
-        "john_3stage": ("100000 1000000 10000000", "50 50 2000"),
+        "three_stage": ("100000 1000000 10000000", "50 50 2000"),
         "manual_7stage": (
             "100000 1000000 10000000 10000000 10000000 10000000 10000000",
             "15 25 25 1000 100 500 1000",

@@ -25,7 +25,7 @@ env:
   CHECK_ENRICH_PAYLOADS: "true"
   CHECK_KEEP_RAW_OUTPUTS: "false"
   PROFILE_INCLUDE_BASE_ANCHOR: "true"
-  PROFILE_PRESET: john_3stage
+  PROFILE_PRESET: three_stage
   PROFILE_TARGET_REL_TOLERANCE: "0.001"
 output_patterns:
   - outputs/**
