@@ -51,6 +51,11 @@ if (!identical(normalize_loose(final_source), normalize_loose(final_target))) {
     stop("Could not copy fitted par to ", final_par_name, call. = FALSE)
   }
 }
+drop_final_par <- truthy(env("BUNDLE_DROP_STAGED_FINAL_PAR", "true"), TRUE)
+if (isTRUE(drop_final_par) && !identical(tolower(final_par_name), "final.par")) {
+  staged_final_par <- file.path(run_dir, "final.par")
+  if (file.exists(staged_final_par)) unlink(staged_final_par, force = TRUE)
+}
 
 frq_name <- env("BUNDLE_FRQ", basename(prepared$frq))
 frq_name <- basename(frq_name)

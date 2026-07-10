@@ -104,7 +104,9 @@ model job. It restores the fitted par as `11.par`, copies the `mfclo64`
 executable from the Kflow runtime, regenerates plot/report files, verifies the
 zip by extracting it and running `./make-plot-rep.sh`, and writes
 `outputs/model-bundles/<model>/<model>-mfcl-run-bundle.zip` with `.frq`, `.ini`,
-`.tag`, `doitall.sh`, `11.par`, `plot.rep`, `mfclo64`, and a manifest.
+`.tag`, `mfcl.cfg`, `doitall.sh`, `run-doitall.sh`, `11.par`, `plot.rep`,
+`mfclo64`, and a manifest. The bundle keeps the final par under the doitall
+step name, e.g. `11.par`, and drops the duplicate staged `final.par` by default.
 
 ```sh
 make kflow CHECK_TYPE=model-bundle \
