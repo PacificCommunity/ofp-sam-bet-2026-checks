@@ -1064,6 +1064,11 @@ build_report_ready_figures <- function() {
       figure_dir = "figures",
       table_dir = "tables",
       copy_legacy_root = FALSE,
+      # Results bundles keep the canonical optimized PNG only. The check
+      # review does not consume WebP/JPEG sidecars, so avoiding them saves
+      # both export time and artifact storage.
+      webp_figures = FALSE,
+      pdf_jpeg_figures = FALSE,
       species_code = env("FLOW_SPECIES", "BET"),
       species_label = env("FLOW_SPECIES_LABEL", "bigeye tuna"),
       assessment_year = env("FLOW_ASSESSMENT_YEAR", "2026"),
