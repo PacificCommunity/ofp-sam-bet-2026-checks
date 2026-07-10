@@ -34,6 +34,9 @@ DEFAULT_RUNTIME_PACKAGES = (
     "mfclshiny=PacificCommunity/mfclshiny@main"
 )
 
+DEFAULT_PROFILE_VALUES = [float(value) for value in range(60, 145, 5)]
+DEFAULT_PROFILE_CENTER = "100"
+
 
 def split_values(raw: str) -> list[str]:
     return [part for part in re.split(r"[,\s]+", raw.strip()) if part]
@@ -104,6 +107,13 @@ def split_profile_chains(values: list[float], center_raw: str) -> dict[str, list
     return out
 
 
+def profile_values_from_env() -> list[float]:
+    raw = env_first("PROFILE_VALUES", "MFK_SCALAR")
+    if not raw:
+        return list(DEFAULT_PROFILE_VALUES)
+    return numeric_values(raw)
+
+
 def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
     if not parallel_units:
         return [{"label": "", "env": {}, "metadata": {}}]
@@ -143,12 +153,13 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
         ] or [{"label": "", "env": {}, "metadata": {}}]
 
     if check_key == "profile":
-        values = numeric_values(env_first("PROFILE_VALUES", "MFK_SCALAR"))
+        values = profile_values_from_env()
         profile_name = os.environ.get("PROFILE_NAME", "profile")
         label_name = profile_name if profile_name and profile_name != "profile" else "scalar"
         mode = os.environ.get("PROFILE_PARALLEL_MODE", "chains").strip().lower() or "chains"
         if mode in {"chain", "chains", "left-right", "left_right", "upstream-downstream", "upstream_downstream"}:
-            chains = split_profile_chains(values, os.environ.get("PROFILE_CENTER", ""))
+            center = os.environ.get("PROFILE_CENTER", DEFAULT_PROFILE_CENTER)
+            chains = split_profile_chains(values, center)
             return [
                 {
                     "label": f"{side} chain",
@@ -156,10 +167,13 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
                         "PROFILE_VALUES": " ".join(format_number(value) for value in chain_values),
                         "PROFILE_CHAIN": "true",
                         "PROFILE_CHAIN_SIDE": side,
+                        "PROFILE_CENTER": center,
+                        "PROFILE_INCLUDE_BASE_ANCHOR": "false",
                     },
                     "metadata": {
                         "check_unit_type": "profile_chain",
                         "check_unit": side,
+                        "profile_center": center,
                         "profile_chain_values": " ".join(format_number(value) for value in chain_values),
                     },
                 }

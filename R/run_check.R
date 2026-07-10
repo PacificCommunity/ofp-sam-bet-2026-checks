@@ -1470,7 +1470,7 @@ if (identical(check_type, "jitter")) {
 } else if (identical(check_type, "profile")) {
   profile_type <- env("PROFILE_TYPE", "quantity")
   profile_name <- env("PROFILE_NAME", if (identical(profile_type, "quantity")) "adult_biomass" else "profile")
-  profile_values <- split_numbers(env("PROFILE_VALUES", env("MFK_SCALAR", "")), default = seq(70, 130, by = 10))
+  profile_values <- split_numbers(env("PROFILE_VALUES", env("MFK_SCALAR", "")), default = seq(60, 140, by = 5))
   profile_label <- env("PROFILE_LABEL", profile_name)
   profile_style <- tolower(trimws(env("PROFILE_STYLE", env("PROFILE_RUNNER", "bet"))))
   if (!nzchar(profile_style)) profile_style <- "bet"
@@ -1491,7 +1491,7 @@ if (identical(check_type, "jitter")) {
       quantity = quantity,
       quantity_type = quantity_type,
       base_quantity = base_quantity,
-      Af172 = as.integer(split_numbers(env("PROFILE_AF172", "1"), default = 1)[[1L]]),
+      Af172 = as.integer(split_numbers(env("PROFILE_AF172", "0"), default = 0)[[1L]]),
       Af173 = as.integer(split_numbers(env("PROFILE_AF173", "0"), default = 0)[[1L]]),
       Af174 = as.integer(split_numbers(env("PROFILE_AF174", "0"), default = 0)[[1L]]),
       penalty = split_numbers(env("PROFILE_PENALTY", "1e7"), default = 1e7)[[1L]],
