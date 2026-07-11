@@ -39,10 +39,48 @@ DEFAULT_PROFILE_CENTER = "100"
 DEFAULT_JITTER_SEEDS = ["1", "2"]
 DEFAULT_RETRO_PEELS = ["1", "2", "3", "4", "5"]
 DEFAULT_SELFTEST_REPS = ["1", "2"]
+MAX_R_INTEGER = 2_147_483_647
 
 
 def split_values(raw: str) -> list[str]:
     return [part for part in re.split(r"[,\s]+", raw.strip()) if part]
+
+
+def flow_metadata_env() -> dict[str, str]:
+    """Pass input-driven report metadata through every check workflow stage."""
+    keys = ("FLOW_SPECIES", "FLOW_SPECIES_LABEL", "FLOW_ASSESSMENT_YEAR")
+    return {
+        key: str(os.environ.get(key, "")).strip()
+        for key in keys
+        if str(os.environ.get(key, "")).strip()
+    }
+
+
+def positive_integer_values(
+    raw: str,
+    *,
+    default: list[str] | tuple[str, ...],
+    option: str,
+) -> list[str]:
+    """Validate, canonicalize, and stably deduplicate R integer unit IDs."""
+    text = str(raw or "")
+    values = split_values(text) if text.strip() else [str(value) for value in default]
+    if not values:
+        raise SystemExit(f"{option} must contain at least one positive integer.")
+
+    canonical: list[str] = []
+    for value in values:
+        if not re.fullmatch(r"[+]?[0-9]+", value):
+            raise SystemExit(f"{option} must contain positive integers; got {value!r}.")
+        parsed = int(value, 10)
+        if parsed < 1 or parsed > MAX_R_INTEGER:
+            raise SystemExit(
+                f"{option} values must be between 1 and {MAX_R_INTEGER}; got {value!r}."
+            )
+        normalized = str(parsed)
+        if normalized not in canonical:
+            canonical.append(normalized)
+    return canonical
 
 
 def normalize_check_name(check: str) -> str:
@@ -271,6 +309,59 @@ def resolved_profile_env(values: list[float] | None = None) -> dict[str, str]:
 
 def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
     check_key = normalize_check_name(check)
+    if check_key == "aspm":
+        return [{
+            "label": "",
+            "env": {},
+            "metadata": {"check_unit_type": "aspm", "check_unit": "aspm"},
+        }]
+
+    integer_units = {
+        "jitter": (
+            "seed",
+            "JITTER_SEEDS",
+            "JITTER_SEED",
+            DEFAULT_JITTER_SEEDS,
+            "seed",
+        ),
+        "retro": (
+            "peel",
+            "RETRO_PEELS",
+            "RETRO_PEEL",
+            DEFAULT_RETRO_PEELS,
+            "peel",
+        ),
+        "selftest": (
+            "replicate",
+            "SELFTEST_REPS",
+            "SELFTEST_REP",
+            DEFAULT_SELFTEST_REPS,
+            "rep",
+        ),
+    }.get(check_key)
+    if integer_units is not None:
+        unit_type, plural_env, singular_env, defaults, label = integer_units
+        raw = env_first(plural_env, singular_env)
+        values = positive_integer_values(
+            raw,
+            default=defaults,
+            option=f"{plural_env}/{singular_env}",
+        )
+        if not parallel_units:
+            return [{
+                "label": "",
+                "env": {plural_env: " ".join(values), singular_env: ""},
+                "metadata": {"check_unit_type": unit_type, "check_units": values},
+            }]
+        return [
+            {
+                "label": f"{label} {value}",
+                "env": {plural_env: value, singular_env: value},
+                "metadata": {"check_unit_type": unit_type, "check_unit": value},
+            }
+            for value in values
+        ]
+
     if not parallel_units:
         if check_key == "profile":
             values = profile_values_from_env()
@@ -285,45 +376,6 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
                 },
             }]
         return [{"label": "", "env": {}, "metadata": {}}]
-
-    if check_key == "jitter":
-        seeds = split_values(env_first("JITTER_SEEDS", "JITTER_SEED"))
-        if not seeds:
-            seeds = list(DEFAULT_JITTER_SEEDS)
-        return [
-            {
-                "label": f"seed {seed}",
-                "env": {"JITTER_SEEDS": seed, "JITTER_SEED": seed},
-                "metadata": {"check_unit_type": "seed", "check_unit": seed},
-            }
-            for seed in seeds
-        ] or [{"label": "", "env": {}, "metadata": {}}]
-
-    if check_key == "retro":
-        peels = split_values(env_first("RETRO_PEELS", "RETRO_PEEL"))
-        if not peels:
-            peels = list(DEFAULT_RETRO_PEELS)
-        return [
-            {
-                "label": f"peel {peel}",
-                "env": {"RETRO_PEELS": peel, "RETRO_PEEL": peel},
-                "metadata": {"check_unit_type": "peel", "check_unit": peel},
-            }
-            for peel in peels
-        ] or [{"label": "", "env": {}, "metadata": {}}]
-
-    if check_key == "selftest":
-        reps = split_values(env_first("SELFTEST_REPS", "SELFTEST_REP"))
-        if not reps:
-            reps = list(DEFAULT_SELFTEST_REPS)
-        return [
-            {
-                "label": f"rep {rep}",
-                "env": {"SELFTEST_REPS": rep, "SELFTEST_REP": rep},
-                "metadata": {"check_unit_type": "replicate", "check_unit": rep},
-            }
-            for rep in reps
-        ] or [{"label": "", "env": {}, "metadata": {}}]
 
     if check_key == "profile":
         values = profile_values_from_env()
@@ -385,6 +437,41 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
         ] or [{"label": "", "env": {}, "metadata": {}}]
 
     return [{"label": "", "env": {}, "metadata": {}}]
+
+
+def expected_unit_ledger(unit_specs: list[dict[str, Any]]) -> tuple[str, list[str]]:
+    """Return the merge-side unit ledger encoded by split unit metadata."""
+    supported_types = {"seed", "peel", "replicate", "aspm"}
+    unit_type = ""
+    units: list[str] = []
+    for spec in unit_specs:
+        metadata = spec.get("metadata") if isinstance(spec.get("metadata"), dict) else {}
+        one_type = str(metadata.get("check_unit_type") or "").strip().lower()
+        if one_type not in supported_types:
+            continue
+        if unit_type and one_type != unit_type:
+            raise SystemExit(
+                f"Split check unit specs mix incompatible unit types: {unit_type!r} and {one_type!r}."
+            )
+        unit_type = one_type
+        many = metadata.get("check_units")
+        if isinstance(many, (list, tuple)):
+            candidates = [str(value).strip() for value in many if str(value).strip()]
+        elif many is not None and str(many).strip():
+            candidates = split_values(str(many))
+        else:
+            one_unit = str(metadata.get("check_unit") or "").strip()
+            candidates = [one_unit] if one_unit else []
+        units.extend(candidates)
+    if unit_type in {"seed", "peel", "replicate"}:
+        units = positive_integer_values(
+            " ".join(units),
+            default=(),
+            option=f"expected {unit_type} units",
+        )
+    else:
+        units = list(dict.fromkeys(units))
+    return unit_type, units
 
 
 def merge_check_for(check: str) -> str:
@@ -554,6 +641,7 @@ def main() -> int:
         for model in models:
             unit_job_ids: list[str] = []
             unit_specs = check_unit_specs(check, parallel_units)
+            expected_unit_type, expected_units = expected_unit_ledger(unit_specs)
             for unit in unit_specs:
                 task = f"{args.task_prefix}-{check}"
                 unit_label = str(unit.get("label") or "").strip()
@@ -585,6 +673,7 @@ def main() -> int:
                     "MODEL_SOURCE_PATH": args.model_source_path,
                     "PROGRAM_PATH": args.program_path,
                     "FLOW_GROUP": args.flow_group,
+                    **flow_metadata_env(),
                     "KFLOW_RUNTIME_UPDATE": os.environ.get("KFLOW_RUNTIME_UPDATE", "always"),
                     "TUNA_FLOW_RUNTIME_UPDATE": os.environ.get("TUNA_FLOW_RUNTIME_UPDATE", "always"),
                     "KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS": os.environ.get("KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS", "0"),
@@ -602,6 +691,8 @@ def main() -> int:
                 passthrough_env = {"TRIGGER_NEXT"}
                 protected_env = {
                     "CHECK_TYPE",
+                    "CHECK_EXPECTED_UNIT_TYPE",
+                    "CHECK_EXPECTED_UNITS",
                     "MODEL_SELECTOR",
                     "KFLOW_JOB_TITLE",
                     "KFLOW_JOB_DESCRIPTION",
@@ -662,6 +753,8 @@ def main() -> int:
                     "model": model,
                     "unit_job_ids": unit_job_ids,
                     "final_job_ids": list(unit_job_ids),
+                    "expected_unit_type": expected_unit_type,
+                    "expected_units": expected_units,
                 }
             )
 
@@ -686,6 +779,7 @@ def main() -> int:
             "MODEL_SOURCE_PATH": args.model_source_path,
             "PROGRAM_PATH": args.program_path,
             "FLOW_GROUP": args.flow_group,
+            **flow_metadata_env(),
             "KFLOW_RUNTIME_UPDATE": os.environ.get("KFLOW_RUNTIME_UPDATE", "always"),
             "TUNA_FLOW_RUNTIME_UPDATE": os.environ.get("TUNA_FLOW_RUNTIME_UPDATE", "always"),
             "KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS": os.environ.get("KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS", "0"),
@@ -701,6 +795,17 @@ def main() -> int:
                 continue
             if key.startswith(("BET_", "JITTER_", "RETRO_", "HESSIAN_", "PROFILE_", "ASPM_", "BUNDLE_", "SELFTEST_", "MFK_", "CHECK_", "selftest_")) or key in {"TRIGGER_NEXT"} or key == "program_path":
                 env[key] = value
+        expected_unit_type = str(group.get("expected_unit_type") or "").strip()
+        expected_units = [
+            str(value).strip()
+            for value in group.get("expected_units") or []
+            if str(value).strip()
+        ]
+        env.pop("CHECK_EXPECTED_UNIT_TYPE", None)
+        env.pop("CHECK_EXPECTED_UNITS", None)
+        if expected_unit_type and expected_units:
+            env["CHECK_EXPECTED_UNIT_TYPE"] = expected_unit_type
+            env["CHECK_EXPECTED_UNITS"] = " ".join(expected_units)
         profile_merge_env: dict[str, str] = {}
         if check == "profile":
             profile_merge_env = resolved_profile_env(profile_values_from_env())
@@ -746,6 +851,10 @@ def main() -> int:
                 "auto_merge": True,
                 "allow_failed_input_jobs": True,
                 "nested_work_group": check,
+                **({
+                    "check_expected_unit_type": expected_unit_type,
+                    "check_expected_units": expected_units,
+                } if expected_unit_type and expected_units else {}),
                 **({
                     "profile_name": profile_merge_env.get("PROFILE_NAME", ""),
                     "profile_preset": profile_merge_env.get("PROFILE_PRESET", ""),
@@ -819,6 +928,7 @@ def main() -> int:
                 "MODEL_SOURCE_PATH": args.model_source_path,
                 "PROGRAM_PATH": args.program_path,
                 "FLOW_GROUP": args.flow_group,
+                **flow_metadata_env(),
                 "KFLOW_RUNTIME_UPDATE": os.environ.get("KFLOW_RUNTIME_UPDATE", "always"),
                 "TUNA_FLOW_RUNTIME_UPDATE": os.environ.get("TUNA_FLOW_RUNTIME_UPDATE", "always"),
                 "KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS": os.environ.get("KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS", "0"),
@@ -830,7 +940,10 @@ def main() -> int:
                 "KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME": os.environ.get("KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME", "true"),
             }
             for key, value in os.environ.items():
-                if key in {"CHECK_TYPE", "MODEL_SELECTOR", "KFLOW_JOB_TITLE", "KFLOW_JOB_DESCRIPTION"}:
+                if key in {
+                    "CHECK_TYPE", "CHECK_EXPECTED_UNIT_TYPE", "CHECK_EXPECTED_UNITS",
+                    "MODEL_SELECTOR", "KFLOW_JOB_TITLE", "KFLOW_JOB_DESCRIPTION",
+                }:
                     continue
                 if key.startswith(("BET_", "JITTER_", "RETRO_", "HESSIAN_", "PROFILE_", "ASPM_", "BUNDLE_", "SELFTEST_", "MFK_", "CHECK_", "selftest_")) or key in {"TRIGGER_NEXT"} or key == "program_path":
                     env[key] = value

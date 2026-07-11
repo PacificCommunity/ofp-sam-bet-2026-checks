@@ -119,6 +119,10 @@ make kflow CHECK_TYPE=model-bundle \
 
 ## Check-specific fields
 
+- `FLOW_SPECIES`, `FLOW_SPECIES_LABEL`, and `FLOW_ASSESSMENT_YEAR`: optional
+  input-driven report metadata. The submit helper forwards these values through
+  unit, merge, and attach jobs so mfclshiny output is not tied to the BET 2026
+  defaults used by this assessment repository.
 - `JITTER_SEEDS`: comma/space list of seeds, default `1`.
 - `JITTER_CV`: jitter CV, default `0.2`.
 - `JITTER_METHOD`: `phase1_doitall` by default. This builds a fresh
@@ -153,6 +157,13 @@ make kflow CHECK_TYPE=model-bundle \
 - `HESSIAN_NSPLIT`: number of Hessian parts, default `30`.
 - `HESSIAN_PARTS`: comma/space list of Hessian parts. If unset, all parts are
   submitted as parallel Kflow jobs when parallel units are enabled.
+- `CHECK_EXPECTED_UNIT_TYPE` and `CHECK_EXPECTED_UNITS`: merge-side unit ledger
+  generated automatically from parallel or batched Kflow submissions for jitter
+  seeds, retro peels, self-test replicates, and ASPM. Seed, peel, and replicate
+  lists must contain positive 32-bit integers; they are canonicalized and
+  deduplicated in input order before both execution and ledger generation.
+  Expected units that publish no check manifest or diagnostic payload are
+  retained as failed `missing` rows, and the merge is marked `incomplete`.
 - `PROFILE_TYPE`: `quantity` or `fixed_parameter`.
 - `PROFILE_VALUES`: comma/space list of profile values.
 - `PROFILE_PRESET`: quantity-profile continuation preset. `three_stage`

@@ -16,6 +16,64 @@ normalize_check_type <- function(value) {
   sub("_merge$", "", value)
 }
 
+check_status_file_names <- function() {
+  c(
+    "check-unit-status.csv", "check-unit-status.rds",
+    "check-summary.csv", "check-summary.rds",
+    "check-source-status.csv", "check-source-status.rds",
+    "check_manifest.csv", "check_manifest.rds"
+  )
+}
+
+check_status_files <- function(model_dir) {
+  paths <- file.path(model_dir, check_status_file_names())
+  paths[file.exists(paths)]
+}
+
+has_check_status_ledger <- function(model_dir) {
+  any(file.exists(file.path(model_dir, c(
+    "check-unit-status.csv", "check-unit-status.rds",
+    "check-summary.csv", "check-summary.rds"
+  ))))
+}
+
+status_check_types <- function(model_dir) {
+  values <- character()
+  csv_files <- file.path(model_dir, c(
+    "check-unit-status.csv", "check-summary.csv", "check_manifest.csv"
+  ))
+  for (path in csv_files[file.exists(csv_files)]) {
+    dat <- read_csv_safe(path)
+    if (nrow(dat) && "check_type" %in% names(dat)) {
+      values <- c(values, as.character(dat$check_type))
+    }
+  }
+  rds_files <- file.path(model_dir, c(
+    "check-unit-status.rds", "check-summary.rds", "check_manifest.rds"
+  ))
+  for (path in rds_files[file.exists(rds_files)]) {
+    dat <- tryCatch(readRDS(path), error = function(e) NULL)
+    one <- tryCatch(dat$check_type, error = function(e) NULL)
+    if (!is.null(one)) values <- c(values, as.character(one))
+  }
+  values <- values[!is.na(values) & nzchar(trimws(values))]
+  unique(normalize_check_type(values))
+}
+
+copy_check_status_files <- function(model_dir, diagnostic_dir) {
+  files <- check_status_files(model_dir)
+  if (!length(files)) return(character())
+  dir.create(diagnostic_dir, recursive = TRUE, showWarnings = FALSE)
+  copied <- vapply(files, function(path) {
+    target <- file.path(diagnostic_dir, basename(path))
+    if (!isTRUE(file.copy(path, target, overwrite = TRUE, copy.date = TRUE))) {
+      stop("Could not preserve check status ledger from ", path, call. = FALSE)
+    }
+    normalize_loose(target)
+  }, character(1L))
+  unname(copied)
+}
+
 read_attached_index <- function(model_dir) {
   rds <- file.path(model_dir, "attached-checks-index.rds")
   csv <- file.path(model_dir, "attached-checks-index.csv")
@@ -198,17 +256,19 @@ candidate_check_types <- function(row) {
     if (nrow(dat)) values <- c(values, dat$check_type %||% "")
   }
   dirs <- diagnostic_names[dir.exists(file.path(compact_dir, diagnostic_names))]
-  values <- c(values, dirs)
-  unique(normalize_check_type(values[nzchar(values)]))
+  values <- c(values, dirs, status_check_types(compact_dir))
+  values <- values[!is.na(values) & nzchar(trimws(as.character(values)))]
+  unique(normalize_check_type(values))
 }
 
 has_requested_diagnostics <- function(row) {
   compact_dir <- as.character(row$compact_dir %||% "")
   dirs <- diagnostic_names[dir.exists(file.path(compact_dir, diagnostic_names))]
-  if (!length(dirs)) return(FALSE)
-  if (!length(requested_types)) return(TRUE)
+  ledger_types <- status_check_types(compact_dir)
+  has_status_ledger <- has_check_status_ledger(compact_dir) && length(ledger_types) > 0L
+  if (!length(requested_types)) return(length(dirs) > 0L || has_status_ledger)
   any(normalize_check_type(dirs) %in% requested_types) ||
-    any(candidate_check_types(row) %in% requested_types)
+    (has_status_ledger && any(ledger_types %in% requested_types))
 }
 
 check_candidates <- check_candidates[vapply(seq_len(nrow(check_candidates)), function(i) {
@@ -235,6 +295,7 @@ for (i in seq_len(nrow(check_candidates))) {
   row <- check_candidates[i, , drop = FALSE]
   source_dir <- as.character(row$compact_dir %||% "")
   copied <- character()
+  ledger_types <- status_check_types(source_dir)
   for (name in diagnostic_names) {
     source <- file.path(source_dir, name)
     if (!dir.exists(source)) next
@@ -242,8 +303,28 @@ for (i in seq_len(nrow(check_candidates))) {
     target <- file.path(target_dir, name)
     if (dir.exists(target)) unlink(target, recursive = TRUE, force = TRUE)
     copy_dir(source, target)
+    if (normalize_check_type(name) %in% ledger_types) {
+      copy_check_status_files(source_dir, target)
+    }
     copied <- c(copied, name)
   }
+  # A fan-in merge can contain only missing expected-unit rows and therefore
+  # have no raw diagnostic directory at all.  Materialize the requested
+  # diagnostic directory and retain the merge ledger instead of silently
+  # dropping that failed evidence from the attached model bundle.
+  ledger_types <- ledger_types[ledger_types %in% normalize_check_type(diagnostic_names)]
+  if (length(requested_types)) ledger_types <- ledger_types[ledger_types %in% requested_types]
+  ledger_only_types <- setdiff(ledger_types, copied)
+  for (name in ledger_only_types) {
+    target <- file.path(target_dir, name)
+    # The base can be a previous attached bundle. A ledger-only current merge
+    # must replace, rather than coexist with, stale successful diagnostic files
+    # from that older bundle.
+    if (dir.exists(target)) unlink(target, recursive = TRUE, force = TRUE)
+    copy_check_status_files(source_dir, target)
+    copied <- c(copied, name)
+  }
+  copied <- unique(copied)
   if (!length(copied)) next
   attached_rows[[length(attached_rows) + 1L]] <- data.frame(
     check_type = paste(copied, collapse = " "),

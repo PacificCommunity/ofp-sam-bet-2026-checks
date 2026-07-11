@@ -405,9 +405,26 @@ hessian_part_source_table <- function(model_dirs) {
   part_dirs <- unique(unlist(lapply(model_dirs, function(src) {
     list.dirs(file.path(src, "hessian"), recursive = FALSE, full.names = TRUE)
   }), use.names = FALSE))
+  if (!length(part_dirs)) {
+    return(data.frame(
+      part_number = integer(),
+      part_dir = character(),
+      source_model_dir = character(),
+      priority = integer(),
+      path_length = integer(),
+      stringsAsFactors = FALSE
+    ))
+  }
   part_dirs <- part_dirs[grepl("^part_[0-9]+$", basename(part_dirs))]
   if (!length(part_dirs)) {
-    return(data.frame(stringsAsFactors = FALSE))
+    return(data.frame(
+      part_number = integer(),
+      part_dir = character(),
+      source_model_dir = character(),
+      priority = integer(),
+      path_length = integer(),
+      stringsAsFactors = FALSE
+    ))
   }
 
   normalized <- normalize_loose(part_dirs)
@@ -789,14 +806,18 @@ saveRDS(as.list(manifest), file.path(model_dir, "check_manifest.rds"), compress 
 try(mfclkit::mfk_collect_diagnostics(model_dir, write_index = TRUE), silent = TRUE)
 compact_hessian_merge_outputs()
 try(mfclkit::mfk_collect_diagnostics(model_dir, write_index = TRUE), silent = TRUE)
-write_attached_model_output(
-  check_model_dir = model_dir,
-  output_dir = output_dir,
-  model_key = model_key,
-  index = index,
-  check_type = "hessian",
-  source_check_dirs = source_model_dirs
-)
+if (length(source_model_dirs)) {
+  write_attached_model_output(
+    check_model_dir = model_dir,
+    output_dir = output_dir,
+    model_key = model_key,
+    index = index,
+    check_type = "hessian",
+    source_check_dirs = source_model_dirs
+  )
+} else {
+  message("[checks] skipped attached model output because no Hessian source model folder was published")
+}
 message("[checks] merged Hessian parts under ", model_dir)
 
 if (!identical(merge_status, "complete")) {

@@ -47,6 +47,9 @@ metadata:
       - CHECK_START_PAR_NAME
       - PROGRAM_PATH
       - FLOW_GROUP
+      - FLOW_SPECIES
+      - FLOW_SPECIES_LABEL
+      - FLOW_ASSESSMENT_YEAR
       - BUNDLE_NAME
       - BUNDLE_FRQ
       - BUNDLE_FINAL_PAR_NAME

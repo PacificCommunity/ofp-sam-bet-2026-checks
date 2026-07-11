@@ -25,6 +25,65 @@ model_selector <- env("MODEL_SELECTOR", "")
 smoke_only <- truthy(env("CHECK_SMOKE_ONLY", env("CHECK_DRY_RUN", "false")), FALSE)
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
+canonical_check_unit_values <- function(values, unit_type) {
+  original_na <- is.na(values)
+  out <- trimws(as.character(values))
+  out[original_na | !nzchar(out)] <- NA_character_
+  if (unit_type %in% c("seed", "peel", "replicate")) {
+    integer_like <- !is.na(out) & grepl("^[+]?[0-9]+$", out)
+    parsed <- suppressWarnings(as.numeric(out))
+    valid <- integer_like & is.finite(parsed) & parsed >= 1 &
+      parsed <= .Machine$integer.max & parsed == floor(parsed)
+    out[!is.na(out) & !valid] <- NA_character_
+    out[valid] <- as.character(as.integer(parsed[valid]))
+  } else if (identical(unit_type, "aspm")) {
+    out <- tolower(out)
+  }
+  out
+}
+
+expected_unit_type <- tolower(trimws(env("CHECK_EXPECTED_UNIT_TYPE", "")))
+expected_units_raw <- split_values(env("CHECK_EXPECTED_UNITS", ""))
+if (xor(nzchar(expected_unit_type), length(expected_units_raw) > 0L)) {
+  stop(
+    "CHECK_EXPECTED_UNIT_TYPE and CHECK_EXPECTED_UNITS must be supplied together.",
+    call. = FALSE
+  )
+}
+expected_unit_check <- switch(
+  expected_unit_type,
+  seed = "jitter",
+  peel = "retro",
+  replicate = "selftest",
+  aspm = "aspm",
+  ""
+)
+if (nzchar(expected_unit_type) && !nzchar(expected_unit_check)) {
+  stop("Unsupported CHECK_EXPECTED_UNIT_TYPE: ", expected_unit_type, call. = FALSE)
+}
+if (nzchar(expected_unit_check) && !identical(expected_unit_check, check_type)) {
+  stop(
+    "CHECK_EXPECTED_UNIT_TYPE=", expected_unit_type,
+    " does not match CHECK_MERGE_TYPE=", check_type, ".",
+    call. = FALSE
+  )
+}
+expected_units <- if (expected_unit_type %in% c("seed", "peel", "replicate")) {
+  as.character(positive_integer_values(
+    paste(expected_units_raw, collapse = " "),
+    default = integer(),
+    option = "CHECK_EXPECTED_UNITS"
+  ))
+} else {
+  unique(canonical_check_unit_values(expected_units_raw, expected_unit_type))
+}
+expected_units <- expected_units[!is.na(expected_units)]
+expected_unit_ledger <- list(
+  present = nzchar(expected_unit_type) && length(expected_units) > 0L,
+  type = expected_unit_type,
+  units = expected_units
+)
+
 copy_file_if_exists <- function(from, to_dir, to_name = basename(from)) {
   if (!file.exists(from)) return(FALSE)
   dir.create(to_dir, recursive = TRUE, showWarnings = FALSE)
@@ -106,6 +165,83 @@ bind_rows_fill_local <- function(rows) {
   do.call(rbind, rows)
 }
 
+observed_check_unit_values <- function(dat, ledger = expected_unit_ledger) {
+  if (!is.data.frame(dat) || !nrow(dat) || !isTRUE(ledger$present)) {
+    return(character())
+  }
+  values <- switch(
+    ledger$type,
+    seed = if ("seed" %in% names(dat)) dat$seed else rep(NA_character_, nrow(dat)),
+    peel = if ("peel" %in% names(dat)) dat$peel else rep(NA_character_, nrow(dat)),
+    replicate = {
+      field <- intersect(c("rep", "replicate", "selftest_rep"), names(dat))
+      if (length(field)) dat[[field[[1L]]]] else rep(NA_character_, nrow(dat))
+    },
+    aspm = if ("folder" %in% names(dat)) {
+      folder <- trimws(as.character(dat$folder))
+      ifelse(!is.na(folder) & nzchar(folder), "aspm", NA_character_)
+    } else {
+      rep(NA_character_, nrow(dat))
+    },
+    rep(NA_character_, nrow(dat))
+  )
+  canonical_check_unit_values(values, ledger$type)
+}
+
+annotate_expected_check_units <- function(dat, ledger = expected_unit_ledger) {
+  if (!is.data.frame(dat) || !nrow(dat) || !isTRUE(ledger$present)) return(dat)
+  observed <- observed_check_unit_values(dat, ledger)
+  dat$check_unit_type <- ledger$type
+  dat$check_unit <- observed
+  dat$unit <- observed
+  if (identical(ledger$type, "aspm")) dat$aspm <- observed
+  dat
+}
+
+add_missing_expected_check_units <- function(dat, ledger = expected_unit_ledger) {
+  if (!isTRUE(ledger$present)) return(dat)
+  observed <- observed_check_unit_values(dat, ledger)
+  missing <- ledger$units[!ledger$units %in% observed[!is.na(observed)]]
+  if (length(missing)) {
+    missing_rows <- data.frame(
+      check_type = check_type,
+      check_unit_type = ledger$type,
+      check_unit = missing,
+      unit = missing,
+      run_status = "missing",
+      run_completed = FALSE,
+      convergence_status = "not_completed",
+      converged = FALSE,
+      success = FALSE,
+      failure_reason = paste0(
+        "Expected ", ledger$type,
+        " unit was not present in merged Kflow outputs: ", missing
+      ),
+      folder = NA_character_,
+      stringsAsFactors = FALSE
+    )
+    unit_field <- switch(
+      ledger$type,
+      seed = "seed",
+      peel = "peel",
+      replicate = "rep",
+      aspm = "aspm"
+    )
+    if (ledger$type %in% c("seed", "peel", "replicate")) {
+      missing_rows[[unit_field]] <- suppressWarnings(as.integer(missing))
+    } else {
+      missing_rows[[unit_field]] <- missing
+    }
+    out <- bind_rows_fill_local(list(dat, missing_rows))
+  } else {
+    out <- dat
+  }
+  unit_order <- match(as.character(out$check_unit), ledger$units)
+  out <- out[order(unit_order, na.last = TRUE), , drop = FALSE]
+  rownames(out) <- NULL
+  out
+}
+
 relative_to <- function(path, root = output_dir) {
   path <- normalize_loose(path)
   root <- normalize_loose(root)
@@ -114,7 +250,7 @@ relative_to <- function(path, root = output_dir) {
   if (startsWith(path, prefix)) substring(path, nchar(prefix) + 1L) else path
 }
 
-discover_check_model_dirs <- function(root, check_type) {
+discover_check_model_dirs <- function(root, check_type, include_unmanifested = FALSE) {
   roots <- normalize_loose(root)
   roots <- roots[dir.exists(roots)]
   dirs <- unique(unlist(lapply(roots, function(one_root) {
@@ -125,14 +261,32 @@ discover_check_model_dirs <- function(root, check_type) {
       full.names = TRUE
     ))
   }), use.names = FALSE))
+  if (isTRUE(include_unmanifested)) {
+    check_roots <- unique(unlist(lapply(roots, function(one_root) {
+      candidates <- list.dirs(one_root, recursive = TRUE, full.names = TRUE)
+      candidates[
+        basename(candidates) == check_type &
+          basename(dirname(candidates)) == "checks"
+      ]
+    }), use.names = FALSE))
+    unmanifested <- unique(unlist(lapply(check_roots, function(check_root) {
+      candidates <- normalize_loose(list.dirs(check_root, recursive = FALSE, full.names = TRUE))
+      candidates[dirname(candidates) == normalize_loose(check_root)]
+    }), use.names = FALSE))
+    dirs <- unique(c(dirs, unmanifested))
+  }
   marker <- paste0("/checks/", check_type, "/")
   dirs <- dirs[grepl(marker, normalize_loose(dirs), fixed = TRUE)]
   # A prior merge can be present in an attached-output bundle.  It is a
   # derivative of profile side jobs, not an input unit for this merge, and
   # must not hide a failed current-side point with an older valid copy.
   dirs <- dirs[!vapply(dirs, function(dir) {
-    manifest <- tryCatch(readRDS(file.path(dir, "check_manifest.rds")),
-                         error = function(e) NULL)
+    manifest_file <- file.path(dir, "check_manifest.rds")
+    manifest <- if (file.exists(manifest_file)) {
+      tryCatch(readRDS(manifest_file), error = function(e) NULL)
+    } else {
+      NULL
+    }
     is.list(manifest) && !is.null(manifest$source_model_dirs) &&
       length(manifest$source_model_dirs) &&
       nzchar(as.character(manifest$source_model_dirs[[1L]]))
@@ -793,19 +947,28 @@ dedupe_profile_points <- function(points) {
 collect_check_unit_status <- function(model_dir, check_type, source_dirs = character()) {
   out <- tryCatch({
     if (identical(check_type, "jitter")) {
-      if (!requireNamespace("mfclkit", quietly = TRUE)) return(data.frame(stringsAsFactors = FALSE))
-      mfclkit::mfk_collect_jitter(model_dir)
+      if (requireNamespace("mfclkit", quietly = TRUE)) {
+        mfclkit::mfk_collect_jitter(model_dir)
+      } else {
+        data.frame(stringsAsFactors = FALSE)
+      }
     } else if (identical(check_type, "retro")) {
-      if (!requireNamespace("mfclkit", quietly = TRUE)) return(data.frame(stringsAsFactors = FALSE))
-      mfclkit::mfk_collect_retro(model_dir)
+      if (requireNamespace("mfclkit", quietly = TRUE)) {
+        mfclkit::mfk_collect_retro(model_dir)
+      } else {
+        data.frame(stringsAsFactors = FALSE)
+      }
     } else if (identical(check_type, "aspm")) {
       collect_aspm_status(model_dir)
     } else if (identical(check_type, "profile")) {
-      if (!requireNamespace("mfclkit", quietly = TRUE)) return(data.frame(stringsAsFactors = FALSE))
-      roots <- list.dirs(file.path(model_dir, "profile"), recursive = FALSE, full.names = TRUE)
-      profile_add_missing_expected(
-        bind_rows_fill_local(lapply(roots, mfclkit::mfk_read_profile_points))
-      )
+      if (requireNamespace("mfclkit", quietly = TRUE)) {
+        roots <- list.dirs(file.path(model_dir, "profile"), recursive = FALSE, full.names = TRUE)
+        profile_add_missing_expected(
+          bind_rows_fill_local(lapply(roots, mfclkit::mfk_read_profile_points))
+        )
+      } else {
+        data.frame(stringsAsFactors = FALSE)
+      }
     } else if (identical(check_type, "selftest")) {
       candidates <- c(
         file.path(model_dir, "selftest", "selftest_runs.rds"),
@@ -832,7 +995,7 @@ collect_check_unit_status <- function(model_dir, check_type, source_dirs = chara
       stringsAsFactors = FALSE
     )
   })
-  if (!is.data.frame(out) || !nrow(out)) {
+  if ((!is.data.frame(out) || !nrow(out)) && !isTRUE(expected_unit_ledger$present)) {
     summaries <- lapply(source_dirs, function(src) {
       path <- file.path(src, "check-summary.csv")
       if (file.exists(path)) read_csv_safe(path) else data.frame(stringsAsFactors = FALSE)
@@ -845,11 +1008,12 @@ collect_check_unit_status <- function(model_dir, check_type, source_dirs = chara
     if (identical(check_type, "profile")) {
       out <- dedupe_profile_points(out)
     }
+    out <- annotate_expected_check_units(out)
     success <- check_status_success(out)
     if (length(success) != nrow(out)) success <- rep(FALSE, nrow(out))
     out$success <- success
   }
-  out
+  add_missing_expected_check_units(out)
 }
 
 write_check_status_summary <- function(model_dir, check_type, source_dirs = character()) {
@@ -877,12 +1041,19 @@ write_check_status_summary <- function(model_dir, check_type, source_dirs = char
   n_source_units <- nrow(source_summaries)
   n_source_failed <- if (n_source_units) sum(!(source_summaries$success %in% TRUE), na.rm = TRUE) else 0L
   expected_profile_values <- if (identical(check_type, "profile")) profile_expected_values() else numeric()
-  n_missing_expected <- if (identical(check_type, "profile") && n_units && "run_status" %in% names(units)) {
-    sum(tolower(as.character(units$run_status)) == "missing_profile_point", na.rm = TRUE)
-  } else {
+  n_missing_expected <- if (n_units && "run_status" %in% names(units)) {
+    missing_status <- if (identical(check_type, "profile")) "missing_profile_point" else "missing"
+    if (identical(check_type, "profile") || isTRUE(expected_unit_ledger$present)) {
+      sum(tolower(as.character(units$run_status)) == missing_status, na.rm = TRUE)
+    } else {
+      NA_integer_
+    }
+  } else if (identical(check_type, "profile") || isTRUE(expected_unit_ledger$present)) {
     0L
+  } else {
+    NA_integer_
   }
-  requires_all_units <- check_type %in% c("hessian", "profile")
+  requires_all_units <- check_type %in% c("hessian", "profile") || isTRUE(expected_unit_ledger$present)
   total_failed <- n_failed + n_source_failed
   merge_status <- if (!n_units && !n_source_units) {
     "no_units"
@@ -903,8 +1074,16 @@ write_check_status_summary <- function(model_dir, check_type, source_dirs = char
     n_source_model_dirs = length(source_dirs),
     n_source_units = n_source_units,
     n_source_failed = n_source_failed,
-    n_expected_units = if (identical(check_type, "profile")) length(expected_profile_values) else NA_integer_,
-    n_missing_expected = if (identical(check_type, "profile")) n_missing_expected else NA_integer_,
+    expected_unit_type = if (isTRUE(expected_unit_ledger$present)) expected_unit_ledger$type else NA_character_,
+    expected_units = if (isTRUE(expected_unit_ledger$present)) paste(expected_unit_ledger$units, collapse = " ") else NA_character_,
+    n_expected_units = if (identical(check_type, "profile")) {
+      length(expected_profile_values)
+    } else if (isTRUE(expected_unit_ledger$present)) {
+      length(expected_unit_ledger$units)
+    } else {
+      NA_integer_
+    },
+    n_missing_expected = n_missing_expected,
     requires_all_units = requires_all_units,
     all_required_units_successful = !requires_all_units || ((n_units > 0L || n_source_units > 0L) && total_failed == 0L),
     merge_status = merge_status,
@@ -989,12 +1168,16 @@ build_report_ready_figures <- function(model_dir, output_dir, check_type, model_
   out <- file.path(output_dir, "report-ready-checks", check_type, model_key)
   dir.create(out, recursive = TRUE, showWarnings = FALSE)
   selection_file <- write_check_report_selection(out, check_type)
+  species_code <- env("FLOW_SPECIES", "BET")
+  species_label <- env("FLOW_SPECIES_LABEL", species_code)
+  assessment_year <- env("FLOW_ASSESSMENT_YEAR", "2026")
+  report_subject <- trimws(paste(assessment_year, species_label))
   result <- tryCatch(
     mfclshiny::build_app_report_figures(
       model_dir = dirname(model_dir),
       folders = model_dir,
       output_dir = out,
-      title = paste("BET 2026", check_type, "check figures"),
+      title = paste(report_subject, check_type, "check figures"),
       formats = "png",
       build_payloads = FALSE,
       overwrite = TRUE,
@@ -1009,9 +1192,9 @@ build_report_ready_figures <- function(model_dir, output_dir, check_type, model_
       # both export time and artifact storage.
       webp_figures = FALSE,
       pdf_jpeg_figures = FALSE,
-      species_code = env("FLOW_SPECIES", "BET"),
-      species_label = env("FLOW_SPECIES_LABEL", "bigeye tuna"),
-      assessment_year = env("FLOW_ASSESSMENT_YEAR", "2026"),
+      species_code = species_code,
+      species_label = species_label,
+      assessment_year = assessment_year,
       max_fisheries = as.integer(split_numbers(env("PLOT_MAX_FISHERIES", "18"), default = 18)[[1L]]),
       selection_file = selection_file
     ),
@@ -1202,19 +1385,31 @@ compact_merged_check_outputs <- function() {
   invisible(out)
 }
 
-source_model_dirs <- discover_check_model_dirs(input_root, check_type)
+source_model_dirs <- discover_check_model_dirs(
+  input_root,
+  check_type,
+  include_unmanifested = isTRUE(expected_unit_ledger$present)
+)
 source_model_dirs <- source_model_dirs[vapply(source_model_dirs, matches_model, logical(1), selector = model_selector)]
-if (!length(source_model_dirs)) {
+if (!length(source_model_dirs) && !isTRUE(expected_unit_ledger$present)) {
   stop("No ", check_type, " check model folders found under ", input_root, call. = FALSE)
 }
+if (!length(source_model_dirs)) {
+  warning(
+    "No ", check_type,
+    " check model folders were published; writing the expected-unit failure ledger only.",
+    call. = FALSE
+  )
+}
 
-model_key <- gsub("[^A-Za-z0-9_.-]+", "_", basename(source_model_dirs[[1L]]))
+model_key_source <- if (length(source_model_dirs)) basename(source_model_dirs[[1L]]) else model_selector
+model_key <- gsub("[^A-Za-z0-9_.-]+", "_", model_key_source)
 if (!nzchar(model_key)) model_key <- "model"
 model_dir <- file.path(output_dir, "checks", check_type, model_key)
 if (dir.exists(model_dir)) unlink(model_dir, recursive = TRUE, force = TRUE)
 dir.create(model_dir, recursive = TRUE, showWarnings = FALSE)
 
-copy_base_model_files(source_model_dirs[[1L]], model_dir)
+if (length(source_model_dirs)) copy_base_model_files(source_model_dirs[[1L]], model_dir)
 copied <- copy_check_units(source_model_dirs, model_dir, check_type)
 if (length(profile_duplicate_records)) {
   duplicates <- bind_rows_fill_local(profile_duplicate_records)
@@ -1322,6 +1517,8 @@ manifest <- data.frame(
   model_dir = normalize_loose(model_dir),
   source_model_dirs = paste(source_model_dirs, collapse = " "),
   n_source_model_dirs = length(source_model_dirs),
+  expected_unit_type = if (isTRUE(expected_unit_ledger$present)) expected_unit_ledger$type else NA_character_,
+  expected_units = if (isTRUE(expected_unit_ledger$present)) paste(expected_unit_ledger$units, collapse = " ") else NA_character_,
   copied_paths = paste(copied, collapse = " "),
   stringsAsFactors = FALSE
 )
@@ -1347,14 +1544,18 @@ if (requireNamespace("mfclshiny", quietly = TRUE)) {
   }
 }
 if (!isTRUE(smoke_only)) build_report_ready_figures(model_dir, output_dir, check_type, model_key)
-write_attached_model_output(
-  check_model_dir = model_dir,
-  output_dir = output_dir,
-  model_key = model_key,
-  index = index,
-  check_type = check_type,
-  source_check_dirs = source_model_dirs
-)
+if (length(source_model_dirs)) {
+  write_attached_model_output(
+    check_model_dir = model_dir,
+    output_dir = output_dir,
+    model_key = model_key,
+    index = index,
+    check_type = check_type,
+    source_check_dirs = source_model_dirs
+  )
+} else {
+  message("[checks] skipped attached model output because no source check model folder was published")
+}
 message("[checks] merged ", check_type, " outputs under ", model_dir)
 
 final_summary <- tryCatch(

@@ -37,6 +37,38 @@ split_numbers <- function(value, default = numeric()) {
   if (length(out)) out else default
 }
 
+positive_integer_values <- function(value,
+                                    default = integer(),
+                                    option = "value") {
+  raw <- if (is.null(value) || !length(value) || is.na(value[[1L]])) {
+    ""
+  } else {
+    as.character(value[[1L]])
+  }
+  values <- if (nzchar(trimws(raw))) {
+    out <- unlist(strsplit(raw, "[,[:space:]]+", perl = TRUE), use.names = FALSE)
+    out[nzchar(out)]
+  } else {
+    as.character(default)
+  }
+  if (!length(values)) {
+    stop(option, " must contain at least one positive integer.", call. = FALSE)
+  }
+  integer_syntax <- grepl("^[+]?[0-9]+$", values)
+  parsed <- suppressWarnings(as.numeric(values))
+  valid <- integer_syntax & is.finite(parsed) & parsed >= 1 &
+    parsed <= .Machine$integer.max & parsed == floor(parsed)
+  if (!all(valid)) {
+    bad <- values[which(!valid)[[1L]]]
+    stop(
+      option, " values must be positive integers between 1 and ",
+      .Machine$integer.max, "; got ", shQuote(bad), ".",
+      call. = FALSE
+    )
+  }
+  unique(as.integer(parsed))
+}
+
 is_absolute_path <- function(path) {
   grepl("^(/|[A-Za-z]:[\\\\/])", path)
 }

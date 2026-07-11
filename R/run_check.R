@@ -793,7 +793,11 @@ write_smoke_check_outputs <- function() {
   }
 
   if (identical(check_type, "jitter")) {
-    seeds <- split_values(env("JITTER_SEEDS", env("JITTER_SEED", "1")), default = "1")
+    seeds <- positive_integer_values(
+      env("JITTER_SEEDS", env("JITTER_SEED", "1")),
+      default = 1L,
+      option = "JITTER_SEEDS/JITTER_SEED"
+    )
     for (seed in seeds) {
       dir <- file.path(model_dir, "jitter", paste0("jitter_seed_", safe_path_token(seed)))
       write_smoke_marker(dir, data.frame(seed = seed, stringsAsFactors = FALSE))
@@ -817,7 +821,11 @@ write_smoke_check_outputs <- function() {
       add_row(dir, "profile_scalar", value)
     }
   } else if (identical(check_type, "retro")) {
-    peels <- split_values(env("RETRO_PEELS", env("RETRO_PEEL", "1")), default = "1")
+    peels <- positive_integer_values(
+      env("RETRO_PEELS", env("RETRO_PEEL", "1")),
+      default = 1L,
+      option = "RETRO_PEELS/RETRO_PEEL"
+    )
     for (peel in peels) {
       dir <- file.path(model_dir, "retro", paste0("peel_", safe_path_token(peel)))
       write_smoke_marker(dir, data.frame(peel = peel, stringsAsFactors = FALSE))
@@ -825,7 +833,11 @@ write_smoke_check_outputs <- function() {
       add_row(dir, "peel", peel)
     }
   } else if (identical(check_type, "selftest")) {
-    reps <- split_values(env("SELFTEST_REPS", env("SELFTEST_REP", "1")), default = "1")
+    reps <- positive_integer_values(
+      env("SELFTEST_REPS", env("SELFTEST_REP", "1")),
+      default = 1L,
+      option = "SELFTEST_REPS/SELFTEST_REP"
+    )
     selftest_rows <- list()
     truth_dir <- file.path(model_dir, "selftest", "truth")
     copy_base_payload_files(truth_dir)
@@ -1049,12 +1061,16 @@ build_report_ready_figures <- function() {
   out <- file.path(output_dir, "report-ready-checks", check_type, model_key)
   dir.create(out, recursive = TRUE, showWarnings = FALSE)
   selection_file <- write_check_report_selection(out)
+  species_code <- env("FLOW_SPECIES", "BET")
+  species_label <- env("FLOW_SPECIES_LABEL", species_code)
+  assessment_year <- env("FLOW_ASSESSMENT_YEAR", "2026")
+  report_subject <- trimws(paste(assessment_year, species_label))
   result <- tryCatch(
     mfclshiny::build_app_report_figures(
       model_dir = dirname(model_dir),
       folders = model_dir,
       output_dir = out,
-      title = paste("BET 2026", check_type, "check figures"),
+      title = paste(report_subject, check_type, "check figures"),
       formats = "png",
       build_payloads = FALSE,
       overwrite = TRUE,
@@ -1069,9 +1085,9 @@ build_report_ready_figures <- function() {
       # both export time and artifact storage.
       webp_figures = FALSE,
       pdf_jpeg_figures = FALSE,
-      species_code = env("FLOW_SPECIES", "BET"),
-      species_label = env("FLOW_SPECIES_LABEL", "bigeye tuna"),
-      assessment_year = env("FLOW_ASSESSMENT_YEAR", "2026"),
+      species_code = species_code,
+      species_label = species_label,
+      assessment_year = assessment_year,
       max_fisheries = as.integer(split_numbers(env("PLOT_MAX_FISHERIES", "18"), default = 18)[[1L]]),
       selection_file = selection_file
     ),
@@ -1351,7 +1367,11 @@ if (truthy(env("CHECK_DRY_RUN", env("CHECK_SMOKE_ONLY", "false")), FALSE)) {
 message("[checks] running ", check_type, " for ", model_key)
 
 if (identical(check_type, "jitter")) {
-  seeds <- as.integer(split_numbers(env("JITTER_SEEDS", env("JITTER_SEED", "1")), default = 1))
+  seeds <- positive_integer_values(
+    env("JITTER_SEEDS", env("JITTER_SEED", "1")),
+    default = 1L,
+    option = "JITTER_SEEDS/JITTER_SEED"
+  )
   cv <- split_numbers(env("JITTER_CV", "0.2"), default = 0.2)[[1L]]
   slots <- check_jitter_slots()
   jitter_method <- tolower(trimws(env("JITTER_METHOD", env("JITTER_STYLE", "phase1_doitall"))))
@@ -1394,7 +1414,11 @@ if (identical(check_type, "jitter")) {
   try(write.csv(mfk_collect_jitter(model_dir), file.path(model_dir, "jitter-index.csv"), row.names = FALSE), silent = TRUE)
 
 } else if (identical(check_type, "retro")) {
-  peels <- as.integer(split_numbers(env("RETRO_PEELS", env("RETRO_PEEL", "")), default = seq_len(5)))
+  peels <- positive_integer_values(
+    env("RETRO_PEELS", env("RETRO_PEEL", "")),
+    default = seq_len(5),
+    option = "RETRO_PEELS/RETRO_PEEL"
+  )
   n_mixing_periods <- as.integer(split_numbers(env("N_MIXING_PERIODS", "2"), default = 2)[[1L]])
   retro_command <- split_values(env("RETRO_COMMAND", ""))
   retro_has_doitall <- file.exists(file.path(prepared$case_dir, "doitall.sh"))
@@ -1799,7 +1823,11 @@ if (identical(check_type, "jitter")) {
     )
   }
   runner_work_dir <- env("SELFTEST_RUNNER_WORK_DIR", env("CHECK_SELFTEST_WORK_DIR", attr(runner, "runner_work_dir") %||% ""))
-  reps <- as.integer(split_numbers(env("SELFTEST_REPS", env("SELFTEST_REP", "1")), default = 1))
+  reps <- positive_integer_values(
+    env("SELFTEST_REPS", env("SELFTEST_REP", "1")),
+    default = 1L,
+    option = "SELFTEST_REPS/SELFTEST_REP"
+  )
   seed <- as.integer(split_numbers(env("SELFTEST_SEED", "20260519"), default = 20260519)[[1L]])
   write_run_manifest(list(
     selftest_reps = paste(reps, collapse = " "),
