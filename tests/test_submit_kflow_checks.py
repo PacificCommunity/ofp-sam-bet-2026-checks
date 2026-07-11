@@ -450,6 +450,13 @@ class AttachedOutputDiscoveryTests(unittest.TestCase):
 
 
 class AttachedTaskDefaultsTests(unittest.TestCase):
+    def test_profile_tasks_accept_the_explicit_gradient_threshold(self):
+        for folder in ("profile", "profile-merge"):
+            with self.subTest(folder=folder):
+                task = (ROOT / folder / "kflow.yaml").read_text(encoding="utf-8")
+                self.assertIn('PROFILE_MAX_GRAD_THRESHOLD: "0.001"', task)
+                self.assertEqual(task.count("PROFILE_MAX_GRAD_THRESHOLD"), 2)
+
     def test_manual_attach_task_defaults_to_standalone_full_output(self):
         task = (ROOT / "attach-checks" / "kflow.yaml").read_text(encoding="utf-8")
         self.assertIn("ATTACH_OUTPUT_MODE: full", task)

@@ -259,6 +259,10 @@ make kflow CHECK_TYPE=model-bundle \
   Missing points, failed convergence, and missed quantity targets are retained
   as failed rows; the merged profile is then `incomplete`, not silently shown
   as complete.
+- `PROFILE_MAX_GRAD_THRESHOLD`: maximum gradient accepted for a constrained
+  profile fit, default `0.001`. Reaching the requested quantity alone is not a
+  convergence result; both this gradient test and the target-tolerance test
+  must pass.
 - `PROFILE_TARGET_REL_TOLERANCE`: relative target tolerance, default `0.001`.
   `PROFILE_RETRY_INVALID`, `PROFILE_RETRY_JAGGED`,
   `PROFILE_CONTINUATION_REPS`, and `PROFILE_JAGGED_TOLERANCE` control the
