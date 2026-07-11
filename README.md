@@ -15,8 +15,10 @@ Kflow tasks for running `mfclkit` diagnostics on fitted MFCL model outputs:
 - `model-bundle`
 
 The registered Kflow tasks pin `mfclkit 0.0.0.9008` and
-`mfclshiny 0.0.0.9006` by commit so reruns do not drift when either package's
+`mfclshiny 0.0.0.9007` by commit so reruns do not drift when either package's
 `main` branch changes.
+Both repositories are public, so diagnostic workers install the pinned sources
+without forwarding a GitHub credential into the runtime container.
 
 The tasks are intentionally model-output driven, not stepwise-specific. A run can
 consume either:
