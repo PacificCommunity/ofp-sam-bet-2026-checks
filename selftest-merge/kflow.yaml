@@ -21,7 +21,7 @@ env:
   ATTACH_CHECK_TYPES: selftest
   PROGRAM_PATH: /home/mfcl/mfclo64
   KFLOW_RUNTIME_PACKAGES: none
-  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@dfb70989557d5afd6f7eed06e247b8347f7a2767,mfclshiny=PacificCommunity/mfclshiny@815d6bbb7768ff67881bc110e1aa2057e7b279ba
+  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@dfb70989557d5afd6f7eed06e247b8347f7a2767,mfclshiny=PacificCommunity/mfclshiny@2f41b90763c663257a7f43c47110ced848d3745b
   KFLOW_REPO_RUNTIME_UPDATE: always
   KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
   KFLOW_RUNTIME_UPDATE: always
