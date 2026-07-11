@@ -16,7 +16,7 @@ export PROGRAM_PATH="${PROGRAM_PATH:-/home/mfcl/mfclo64}"
 export KFLOW_RUNTIME_UPDATE="${KFLOW_RUNTIME_UPDATE:-always}"
 export TUNA_FLOW_RUNTIME_UPDATE="${TUNA_FLOW_RUNTIME_UPDATE:-always}"
 export KFLOW_RUNTIME_PACKAGES="${KFLOW_RUNTIME_PACKAGES:-none}"
-export KFLOW_REPO_RUNTIME_PACKAGES="${KFLOW_REPO_RUNTIME_PACKAGES:-mfclkit=PacificCommunity/ofp-sam-mfclkit@2a1874ee97de4da2baa2d9cb4b3714ead344d874,mfclshiny=PacificCommunity/mfclshiny@e33df210cf3eceb5ebe8cdaf267f26966b3181ec}"
+export KFLOW_REPO_RUNTIME_PACKAGES="${KFLOW_REPO_RUNTIME_PACKAGES:-mfclkit=PacificCommunity/ofp-sam-mfclkit@2a1874ee97de4da2baa2d9cb4b3714ead344d874,mfclshiny=PacificCommunity/mfclshiny@b75cd040ea0b68682503d66918c1a33fb7046be0}"
 export KFLOW_REPO_RUNTIME_UPDATE="${KFLOW_REPO_RUNTIME_UPDATE:-always}"
 
 truthy() {
