@@ -21,7 +21,7 @@ env:
   ATTACH_CHECK_TYPES: jitter
   PROGRAM_PATH: /home/mfcl/mfclo64
   KFLOW_RUNTIME_PACKAGES: none
-  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@2a1874ee97de4da2baa2d9cb4b3714ead344d874,mfclshiny=PacificCommunity/mfclshiny@b75cd040ea0b68682503d66918c1a33fb7046be0
+  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@c4e257a4d2c01e42ac151f01ed79063cdae86ef5,mfclshiny=PacificCommunity/mfclshiny@65c416d6b4b555c95772a99028fbb47e00cfce82
   KFLOW_REPO_RUNTIME_UPDATE: always
   KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
   KFLOW_RUNTIME_UPDATE: always
