@@ -29,6 +29,13 @@ class DiagnosticRunnerControlTests(unittest.TestCase):
             runner,
         )
 
+    def test_hessian_units_preserve_regional_scaling_for_later_stitching(self) -> None:
+        runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
+        start = runner.index("stage_hessian_stitch_inputs <- function()")
+        end = runner.index("write_check_payload_index <- function", start)
+
+        self.assertIn('"[.]reg_scaling$"', runner[start:end])
+
 
 if __name__ == "__main__":
     unittest.main()

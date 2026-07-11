@@ -49,7 +49,7 @@ stage_hessian_stitch_prerequisites <- function(source_dirs, target_dir) {
 
   patterns <- c(
     "[.]frq$", "[.]ini$", "[.]tag$", "[.]age_length$",
-    "[.]dep$", "[.]dp2$", "[.]par$",
+    "[.]reg_scaling$", "[.]dep$", "[.]dp2$", "[.]par$",
     "^mfcl[.]cfg$", "^depgrad[.]rpt$", "^Hess[.]rpt$",
     "^xinit[.]rpt$", "^indepvar[.]rpt$"
   )
@@ -688,11 +688,18 @@ if ((!nzchar(base_fit_dir) || !dir.exists(base_fit_dir)) &&
 # intentionally contain only .hes/RDS artifacts. Always stage prerequisites
 # from those explicitly selected current-unit roots, regardless of which fit
 # supplied the payload.
-stitch_input_source_dirs <- unique(c(base_model_dir, source_model_dirs))
-stitch_input_source_dirs <- stitch_input_source_dirs[
-  !is.na(stitch_input_source_dirs) & nzchar(stitch_input_source_dirs) &
-    dir.exists(stitch_input_source_dirs)
+stitch_input_roots <- unique(c(base_fit_dir, base_model_dir, source_model_dirs))
+stitch_input_roots <- stitch_input_roots[
+  !is.na(stitch_input_roots) & nzchar(stitch_input_roots)
 ]
+# Compact fitted outputs retain native ancillary inputs below mfcl-inputs/.
+# Split part outputs keep their stitch case at the check-model root. Search
+# both layouts so a merge can reuse completed shards without rerunning them.
+stitch_input_source_dirs <- unique(c(
+  stitch_input_roots,
+  file.path(stitch_input_roots, "mfcl-inputs")
+))
+stitch_input_source_dirs <- stitch_input_source_dirs[dir.exists(stitch_input_source_dirs)]
 staged_stitch_inputs <- stage_hessian_stitch_prerequisites(
   stitch_input_source_dirs,
   model_dir

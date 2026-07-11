@@ -245,6 +245,11 @@ class EmptyHessianMergeTests(unittest.TestCase):
                 capture_output=True,
             )
             (base_model / "model_payload_manifest.json").write_text("{}\n", encoding="utf-8")
+            native_inputs = base_model / "mfcl-inputs"
+            native_inputs.mkdir()
+            (native_inputs / "bet.reg_scaling").write_text(
+                "native regional scaling input\n", encoding="utf-8"
+            )
             with (base_model / "model_payload_manifest.csv").open(
                 "w", newline="", encoding="utf-8"
             ) as handle:
@@ -335,8 +340,10 @@ class EmptyHessianMergeTests(unittest.TestCase):
             self.assertEqual(manifest["original_base_input_job"], "3001")
             self.assertEqual(manifest["check_input_jobs"], "3287")
             self.assertIn("3287", manifest["stitch_input_source_dirs"])
+            self.assertIn("mfcl-inputs", manifest["stitch_input_source_dirs"])
             self.assertIn("model.frq", manifest["staged_stitch_inputs"])
             self.assertIn("final.par", manifest["staged_stitch_inputs"])
+            self.assertIn("bet.reg_scaling", manifest["staged_stitch_inputs"])
             # Delta publication still removes raw stitch inputs.
             self.assertFalse((published / "model.frq").exists())
             self.assertFalse((published / "final.par").exists())

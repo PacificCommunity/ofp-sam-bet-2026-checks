@@ -907,6 +907,7 @@ stage_hessian_stitch_inputs <- function() {
     "[.]ini$",
     "[.]tag$",
     "[.]age_length$",
+    "[.]reg_scaling$",
     "[.]dep$",
     "[.]dp2$",
     "^mfcl[.]cfg$",
