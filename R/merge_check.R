@@ -6,6 +6,14 @@ check_type <- gsub("_", "-", check_type)
 if (!check_type %in% c("aspm", "jitter", "profile", "retro", "selftest")) {
   stop("Unsupported merge CHECK_TYPE: ", raw_check_type, call. = FALSE)
 }
+attach_check_types <- normalize_attached_check_types(env("ATTACH_CHECK_TYPES", ""))
+if (length(attach_check_types) && !identical(attach_check_types, check_type)) {
+  stop(
+    "ATTACH_CHECK_TYPES must contain only the current merge type ",
+    shQuote(check_type), "; got ", paste(attach_check_types, collapse = ", "), ".",
+    call. = FALSE
+  )
+}
 
 require_mfclkit <- function(required_for = check_type) {
   if (requireNamespace("mfclkit", quietly = TRUE)) return(invisible(TRUE))
@@ -23,6 +31,10 @@ input_root <- env("MODEL_INPUT_ROOT", default_input_root())
 output_dir <- env("OUTPUT_DIR", "outputs")
 model_selector <- env("MODEL_SELECTOR", "")
 smoke_only <- truthy(env("CHECK_SMOKE_ONLY", env("CHECK_DRY_RUN", "false")), FALSE)
+attach_output_mode <- normalize_attached_output_mode()
+base_input_job <- env("MODEL_BASE_INPUT_JOB", env("BASE_MODEL_JOB", ""))
+original_base_input_job <- env("MODEL_ORIGINAL_BASE_INPUT_JOB", base_input_job)
+check_input_jobs <- split_values(env("CHECK_INPUT_JOBS", ""))
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 canonical_check_unit_values <- function(values, unit_type) {
@@ -251,6 +263,9 @@ relative_to <- function(path, root = output_dir) {
 }
 
 discover_check_model_dirs <- function(root, check_type, include_unmanifested = FALSE) {
+  root <- as.character(root %||% character())
+  root <- root[!is.na(root) & nzchar(trimws(root))]
+  if (!length(root)) return(character())
   roots <- normalize_loose(root)
   roots <- roots[dir.exists(roots)]
   dirs <- unique(unlist(lapply(roots, function(one_root) {
@@ -1013,7 +1028,27 @@ collect_check_unit_status <- function(model_dir, check_type, source_dirs = chara
     if (length(success) != nrow(out)) success <- rep(FALSE, nrow(out))
     out$success <- success
   }
-  add_missing_expected_check_units(out)
+  out <- add_missing_expected_check_units(out)
+  if (!nrow(out) && !length(source_dirs) && nzchar(base_input_job)) {
+    out <- data.frame(
+      check_type = check_type,
+      check_unit_type = "job",
+      check_unit = check_type,
+      unit = check_type,
+      run_status = "missing",
+      run_completed = FALSE,
+      convergence_status = "not_completed",
+      converged = FALSE,
+      success = FALSE,
+      failure_reason = paste0(
+        "No current ", check_type,
+        " unit output was available to the merge job."
+      ),
+      folder = NA_character_,
+      stringsAsFactors = FALSE
+    )
+  }
+  out
 }
 
 write_check_status_summary <- function(model_dir, check_type, source_dirs = character()) {
@@ -1385,13 +1420,23 @@ compact_merged_check_outputs <- function() {
   invisible(out)
 }
 
+check_input_roots <- if (length(check_input_jobs)) {
+  unique(unlist(lapply(
+    check_input_jobs,
+    function(job) input_job_dirs(input_root, job)
+  ), use.names = FALSE))
+} else {
+  character()
+}
+source_search_roots <- if (length(check_input_jobs)) check_input_roots else input_root
 source_model_dirs <- discover_check_model_dirs(
-  input_root,
+  source_search_roots,
   check_type,
   include_unmanifested = isTRUE(expected_unit_ledger$present)
 )
 source_model_dirs <- source_model_dirs[vapply(source_model_dirs, matches_model, logical(1), selector = model_selector)]
-if (!length(source_model_dirs) && !isTRUE(expected_unit_ledger$present)) {
+if (!length(source_model_dirs) && !isTRUE(expected_unit_ledger$present) &&
+    !nzchar(base_input_job)) {
   stop("No ", check_type, " check model folders found under ", input_root, call. = FALSE)
 }
 if (!length(source_model_dirs)) {
@@ -1402,14 +1447,58 @@ if (!length(source_model_dirs)) {
   )
 }
 
-model_key_source <- if (length(source_model_dirs)) basename(source_model_dirs[[1L]]) else model_selector
+base_roots <- if (nzchar(base_input_job)) {
+  input_job_dirs(input_root, base_input_job)
+} else {
+  character()
+}
+if (nzchar(base_input_job) && !length(base_roots)) {
+  stop("Merge base input job directory was not found: ", base_input_job, call. = FALSE)
+}
+base_candidates <- bind_rows_fill_local(lapply(base_roots, discover_model_outputs))
+base_selected <- if (nrow(base_candidates)) {
+  tryCatch(
+    select_model_output(base_candidates, model_selector),
+    error = function(e) {
+      stop("Could not select merge base model: ", conditionMessage(e), call. = FALSE)
+    }
+  )
+} else {
+  data.frame()
+}
+if (nzchar(base_input_job) && !nrow(base_selected)) {
+  stop(
+    "No model output matching ", shQuote(model_selector),
+    " was found in merge base job ", base_input_job, ".",
+    call. = FALSE
+  )
+}
+base_model_dir <- if (nrow(base_selected)) {
+  as.character(base_selected$compact_dir[[1L]] %||% "")
+} else {
+  ""
+}
+
+model_key_source <- if (nrow(base_selected)) {
+  as.character(base_selected$model_key %||% model_selector)[[1L]]
+} else if (length(source_model_dirs)) {
+  basename(source_model_dirs[[1L]])
+} else {
+  model_selector
+}
 model_key <- gsub("[^A-Za-z0-9_.-]+", "_", model_key_source)
 if (!nzchar(model_key)) model_key <- "model"
 model_dir <- file.path(output_dir, "checks", check_type, model_key)
 if (dir.exists(model_dir)) unlink(model_dir, recursive = TRUE, force = TRUE)
-dir.create(model_dir, recursive = TRUE, showWarnings = FALSE)
-
-if (length(source_model_dirs)) copy_base_model_files(source_model_dirs[[1L]], model_dir)
+if (nzchar(base_model_dir) && dir.exists(base_model_dir)) {
+  copy_dir(base_model_dir, model_dir)
+  # Delta merges are independent overlays on the original fit. They publish
+  # only their own diagnostic; Kflow composes the independent overlays.
+  prepare_diagnostic_merge_base(model_dir, check_type, attach_output_mode)
+} else {
+  dir.create(model_dir, recursive = TRUE, showWarnings = FALSE)
+  if (length(source_model_dirs)) copy_base_model_files(source_model_dirs[[1L]], model_dir)
+}
 copied <- copy_check_units(source_model_dirs, model_dir, check_type)
 if (length(profile_duplicate_records)) {
   duplicates <- bind_rows_fill_local(profile_duplicate_records)
@@ -1486,7 +1575,11 @@ for (source_parent in unique(dirname(source_model_dirs))) {
   dat$source_index_file <- normalize_loose(index_file)
   rows[[length(rows) + 1L]] <- dat
 }
-index <- bind_rows_fill_local(rows)
+index <- if (nrow(base_selected)) {
+  base_selected[seq_len(1L), , drop = FALSE]
+} else {
+  bind_rows_fill_local(rows)
+}
 if (!nrow(index)) {
   index <- data.frame(
     check_type = check_type,
@@ -1502,6 +1595,7 @@ if (!nrow(index)) {
     stringsAsFactors = FALSE
   )
 }
+if (".candidate_score" %in% names(index)) index$.candidate_score <- NULL
 index$check_type <- check_type
 index$model_dir <- basename(model_dir)
 index$model_folder <- basename(model_dir)
@@ -1515,6 +1609,11 @@ manifest <- data.frame(
   check_type = check_type,
   model_key = model_key,
   model_dir = normalize_loose(model_dir),
+  base_model_dir = normalize_loose(base_model_dir),
+  base_input_job = base_input_job,
+  original_base_input_job = original_base_input_job,
+  check_input_jobs = paste(check_input_jobs, collapse = " "),
+  attach_output_mode = attach_output_mode,
   source_model_dirs = paste(source_model_dirs, collapse = " "),
   n_source_model_dirs = length(source_model_dirs),
   expected_unit_type = if (isTRUE(expected_unit_ledger$present)) expected_unit_ledger$type else NA_character_,
@@ -1531,6 +1630,7 @@ write_check_status_summary(model_dir, check_type, source_model_dirs)
 compact_merged_check_outputs()
 try(mfclkit::mfk_collect_diagnostics(model_dir, write_index = TRUE), silent = TRUE)
 write_check_status_summary(model_dir, check_type, source_model_dirs)
+copy_diagnostic_status_ledger(model_dir, check_type)
 if (requireNamespace("mfclshiny", quietly = TRUE)) {
   payload_index <- tryCatch(
     mfclshiny::build_model_payloads(model_dir, recursive = TRUE, overwrite = TRUE),
@@ -1544,27 +1644,29 @@ if (requireNamespace("mfclshiny", quietly = TRUE)) {
   }
 }
 if (!isTRUE(smoke_only)) build_report_ready_figures(model_dir, output_dir, check_type, model_key)
-if (length(source_model_dirs)) {
-  write_attached_model_output(
-    check_model_dir = model_dir,
-    output_dir = output_dir,
-    model_key = model_key,
-    index = index,
-    check_type = check_type,
-    source_check_dirs = source_model_dirs
-  )
-} else {
-  message("[checks] skipped attached model output because no source check model folder was published")
-}
-message("[checks] merged ", check_type, " outputs under ", model_dir)
-
 final_summary <- tryCatch(
   readRDS(file.path(model_dir, "check-summary.rds")),
   error = function(e) NULL
 )
 requires_all_units <- isTRUE(final_summary$requires_all_units %||% FALSE)
 all_required_ok <- isTRUE(final_summary$all_required_units_successful %||% FALSE)
+merge_status <- as.character(final_summary$merge_status %||% "incomplete")
+
+if (length(source_model_dirs) || (nzchar(base_model_dir) && dir.exists(base_model_dir))) {
+  write_attached_model_output(
+    check_model_dir = model_dir,
+    output_dir = output_dir,
+    model_key = model_key,
+    index = index,
+    check_type = check_type,
+    source_check_dirs = source_model_dirs,
+    output_mode = attach_output_mode
+  )
+} else {
+  message("[checks] skipped attached model output because neither a merge base nor a source check model was published")
+}
+message("[checks] merged ", check_type, " outputs under ", model_dir)
+
 if (isTRUE(requires_all_units) && !isTRUE(all_required_ok)) {
-  merge_status <- as.character(final_summary$merge_status %||% "incomplete")
   message("[checks] merged ", check_type, " outputs with incomplete required unit(s): ", merge_status)
 }

@@ -8,6 +8,8 @@ model_selector <- env("MODEL_SELECTOR", "")
 base_input_job <- env("MODEL_BASE_INPUT_JOB", env("BASE_MODEL_JOB", ""))
 check_input_jobs <- split_values(env("CHECK_INPUT_JOBS", ""))
 attach_check_types <- split_values(env("ATTACH_CHECK_TYPES", ""))
+attach_output_mode <- normalize_attached_output_mode()
+original_base_input_job <- env("MODEL_ORIGINAL_BASE_INPUT_JOB", base_input_job)
 
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
@@ -357,6 +359,9 @@ if (!nrow(attached)) {
   stop("No diagnostic folders were attached.", call. = FALSE)
 }
 attached$attached_model_dir <- normalize_loose(target_dir)
+attached$output_mode <- attach_output_mode
+attached$overlay_base_required <- identical(attach_output_mode, "delta")
+attached$overlay_payload_mode <- if (identical(attach_output_mode, "delta")) "diagnostics_with_payload" else "standalone"
 
 write.csv(attached, file.path(output_dir, "attached-checks-index.csv"), row.names = FALSE)
 write.csv(attached, file.path(target_dir, "attached-checks-index.csv"), row.names = FALSE)
@@ -373,10 +378,16 @@ if (".candidate_score" %in% names(index)) index$.candidate_score <- NULL
 index$model_dir <- file.path("models", model_key)
 index$model_folder <- model_key
 index$attached_checks <- TRUE
-index$attached_check_type <- paste(unique(unlist(strsplit(attached$check_type, "\\s+"))), collapse = " ")
+retained_types <- unique(normalize_check_type(attached$check_type %||% ""))
+retained_types <- retained_types[nzchar(retained_types)]
+index$attached_check_type <- paste(retained_types, collapse = " ")
 index$attached_at <- attached_at
 index$attached_model_dir <- normalize_loose(target_dir)
 index$payload_role <- "model_root"
+index$attach_output_mode <- attach_output_mode
+index$overlay_base_required <- identical(attach_output_mode, "delta")
+index$overlay_base_input_job <- original_base_input_job
+index$overlay_payload_mode <- if (identical(attach_output_mode, "delta")) "diagnostics_with_payload" else "standalone"
 write.csv(index, file.path(output_dir, "model-index.csv"), row.names = FALSE)
 
 manifest <- data.frame(
@@ -387,9 +398,35 @@ manifest <- data.frame(
   base_model_dir = normalize_loose(base_dir),
   attached_model_dir = normalize_loose(target_dir),
   check_types = index$attached_check_type[[1L]],
+  updated_check_types = paste(updated_types, collapse = " "),
+  retained_check_types = paste(retained_types, collapse = " "),
   n_check_sources = nrow(attached),
+  output_mode = attach_output_mode,
+  overlay_base_required = identical(attach_output_mode, "delta"),
+  overlay_base_input_job = original_base_input_job,
+  overlay_payload_mode = if (identical(attach_output_mode, "delta")) "diagnostics_with_payload" else "standalone",
+  overlay_replace_payload = identical(attach_output_mode, "delta"),
+  inventory_excluded_files = paste(
+    attached_output_inventory_exclusions(),
+    collapse = " "
+  ),
   stringsAsFactors = FALSE
 )
+write.csv(manifest, file.path(output_dir, "attached-model-bundle.csv"), row.names = FALSE)
+saveRDS(as.list(manifest), file.path(output_dir, "attached-model-bundle.rds"), compress = "xz")
+
+finalized <- finalize_attached_output(
+  output_dir = output_dir,
+  model_dir = target_dir,
+  model_key = model_key,
+  updated_check_types = updated_types,
+  retained_check_types = retained_types,
+  output_mode = attach_output_mode
+)
+manifest$n_removed_entries <- finalized$n_removed_entries
+manifest$removed_bytes <- finalized$removed_bytes
+manifest$n_published_files <- finalized$n_published_files
+manifest$published_bytes <- finalized$published_bytes
 write.csv(manifest, file.path(output_dir, "attached-model-bundle.csv"), row.names = FALSE)
 saveRDS(as.list(manifest), file.path(output_dir, "attached-model-bundle.rds"), compress = "xz")
 

@@ -77,6 +77,57 @@ normalize_loose <- function(path) {
   normalizePath(path, winslash = "/", mustWork = FALSE)
 }
 
+input_job_dirs <- function(root, job) {
+  job <- trimws(as.character(job %||% "")[[1L]])
+  if (!nzchar(job) || !dir.exists(root)) return(character())
+  exact <- file.path(root, job)
+  if (dir.exists(exact)) return(normalize_loose(exact))
+
+  dirs <- list.dirs(root, recursive = FALSE, full.names = TRUE)
+  hits <- dirs[startsWith(basename(dirs), job)]
+  if (length(hits)) return(normalize_loose(hits))
+
+  global_provenance <- file.path(root, "kflow-provenance.json")
+  if (file.exists(global_provenance) && requireNamespace("jsonlite", quietly = TRUE)) {
+    provenance <- tryCatch(
+      jsonlite::read_json(global_provenance, simplifyVector = TRUE),
+      error = function(e) NULL
+    )
+    inputs <- tryCatch(
+      as.data.frame(provenance$inputs, stringsAsFactors = FALSE),
+      error = function(e) data.frame()
+    )
+    if (nrow(inputs)) {
+      fields <- intersect(c("job_number", "job_id", "id", "cluster_id", "job_label"), names(inputs))
+      matched <- vapply(seq_len(nrow(inputs)), function(i) {
+        values <- unique(as.character(unlist(inputs[i, fields, drop = FALSE], use.names = FALSE)))
+        values <- values[!is.na(values) & nzchar(values)]
+        any(values == job) || any(startsWith(values, job))
+      }, logical(1L))
+      ids <- if ("job_id" %in% names(inputs)) unique(as.character(inputs$job_id[matched])) else character()
+      ids <- ids[!is.na(ids) & nzchar(ids)]
+      hits <- file.path(root, ids)
+      hits <- hits[dir.exists(hits)]
+      if (length(hits)) return(normalize_loose(hits))
+    }
+  }
+
+  provenance_matches <- vapply(dirs, function(dir) {
+    path <- file.path(dir, "kflow-provenance.json")
+    if (!file.exists(path) || !requireNamespace("jsonlite", quietly = TRUE)) return(FALSE)
+    provenance <- tryCatch(jsonlite::read_json(path, simplifyVector = TRUE), error = function(e) NULL)
+    values <- c(
+      tryCatch(provenance$job$job_number, error = function(e) ""),
+      tryCatch(provenance$job$job_id, error = function(e) ""),
+      tryCatch(provenance$job$id, error = function(e) ""),
+      tryCatch(provenance$job$cluster_id, error = function(e) "")
+    )
+    values <- unique(as.character(values[!is.na(values) & nzchar(values)]))
+    any(values == job) || any(startsWith(values, job))
+  }, logical(1L))
+  normalize_loose(dirs[provenance_matches])
+}
+
 copy_dir <- function(from, to) {
   if (!dir.exists(from)) stop("Directory not found: ", from, call. = FALSE)
   if (dir.exists(to)) unlink(to, recursive = TRUE, force = TRUE)
@@ -93,6 +144,405 @@ diagnostic_dir_names <- function() {
   c("jitter", "retro", "hessian", "profile", "selftest", "aspm", "projection")
 }
 
+diagnostic_status_file_names <- function() {
+  c(
+    "check-unit-status.csv", "check-unit-status.rds",
+    "check-summary.csv", "check-summary.rds",
+    "check-source-status.csv", "check-source-status.rds",
+    "check_manifest.csv", "check_manifest.rds"
+  )
+}
+
+copy_diagnostic_status_ledger <- function(model_dir, check_type) {
+  diagnostic_names <- attached_delta_diagnostic_names(check_type)
+  if (length(diagnostic_names) != 1L) {
+    stop("Unsupported diagnostic status type: ", check_type, call. = FALSE)
+  }
+  diagnostic_dir <- file.path(model_dir, diagnostic_names[[1L]])
+  dir.create(diagnostic_dir, recursive = TRUE, showWarnings = FALSE)
+  sources <- file.path(model_dir, diagnostic_status_file_names())
+  sources <- sources[file.exists(sources)]
+  if (!length(sources)) return(invisible(character()))
+  copied <- vapply(sources, function(source) {
+    target <- file.path(diagnostic_dir, basename(source))
+    if (!isTRUE(file.copy(source, target, overwrite = TRUE, copy.date = TRUE))) {
+      stop("Could not publish diagnostic status ledger: ", source, call. = FALSE)
+    }
+    normalize_loose(target)
+  }, character(1L))
+  invisible(unname(copied))
+}
+
+prepare_diagnostic_merge_base <- function(model_dir, check_type, output_mode) {
+  output_mode <- normalize_attached_output_mode(output_mode)
+  current_names <- attached_delta_diagnostic_names(check_type)
+  if (length(current_names) != 1L) {
+    stop("Unsupported diagnostic merge type: ", check_type, call. = FALSE)
+  }
+  remove_names <- if (identical(output_mode, "delta")) {
+    diagnostic_dir_names()
+  } else {
+    current_names
+  }
+  remove <- file.path(model_dir, remove_names)
+  remove <- remove[dir.exists(remove)]
+  if (length(remove)) unlink(remove, recursive = TRUE, force = TRUE)
+
+  if (identical(output_mode, "delta")) {
+    stale_sidecars <- file.path(model_dir, c(
+      "attached-checks-index.csv", "attached-checks-index.rds",
+      "mfclkit_diagnostics.csv", "mfclkit_diagnostics.rds",
+      "diagnostic-refresh-status.csv"
+    ))
+    stale_sidecars <- stale_sidecars[file.exists(stale_sidecars)]
+    if (length(stale_sidecars)) unlink(stale_sidecars, force = TRUE)
+  }
+  invisible(normalize_loose(model_dir))
+}
+
+normalize_attached_output_mode <- function(value = env(
+  "ATTACH_OUTPUT_MODE",
+  env("CHECK_ATTACHED_OUTPUT_MODE", "full")
+)) {
+  mode <- tolower(trimws(as.character(value %||% "full")[[1L]]))
+  mode <- switch(mode,
+    bundle = "full",
+    standalone = "full",
+    overlay = "delta",
+    delta_overlay = "delta",
+    mode
+  )
+  if (!mode %in% c("full", "delta")) {
+    stop(
+      "ATTACH_OUTPUT_MODE must be 'full' or 'delta'; got ", shQuote(mode), ".",
+      call. = FALSE
+    )
+  }
+  mode
+}
+
+normalize_attached_check_types <- function(values) {
+  values <- split_values(paste(as.character(values %||% character()), collapse = " "))
+  values <- gsub("-", "_", tolower(trimws(values)))
+  values <- sub("_merge$", "", values)
+  unique(values[nzchar(values)])
+}
+
+attached_delta_diagnostic_names <- function(updated_check_types) {
+  types <- normalize_attached_check_types(updated_check_types)
+  diagnostic_dir_names()[
+    gsub("-", "_", tolower(diagnostic_dir_names())) %in% types
+  ]
+}
+
+attached_delta_model_files <- function() {
+  c(
+    "model_payload.rds",
+    "model_payload_manifest.json",
+    "model_payload_manifest.csv",
+    "attached-checks-index.csv",
+    "attached-checks-index.rds",
+    "mfclkit_diagnostics.csv",
+    "mfclkit_diagnostics.rds",
+    "diagnostic-refresh-status.csv"
+  )
+}
+
+attached_delta_root_files <- function() {
+  c(
+    "model-index.csv",
+    "attached-checks-index.csv",
+    "attached-model-bundle.csv",
+    "attached-model-bundle.rds",
+    "attach-output-manifest.csv",
+    "attach-output-manifest.rds"
+  )
+}
+
+attached_output_inventory_exclusions <- function() {
+  # These files describe the inventory or contain aggregate inventory counts.
+  # Hashing them would create a self-reference or a bundle<->inventory cycle.
+  c(
+    "attached-model-bundle.csv", "attached-model-bundle.rds",
+    "attach-output-manifest.csv", "attach-output-manifest.rds"
+  )
+}
+
+read_model_attached_checks_index <- function(model_dir) {
+  rds <- file.path(model_dir, "attached-checks-index.rds")
+  csv <- file.path(model_dir, "attached-checks-index.csv")
+  out <- if (file.exists(rds)) {
+    tryCatch(readRDS(rds), error = function(e) NULL)
+  } else {
+    NULL
+  }
+  if (is.null(out) && file.exists(csv)) {
+    out <- tryCatch(
+      read.csv(csv, stringsAsFactors = FALSE, check.names = FALSE),
+      error = function(e) NULL
+    )
+  }
+  out <- as.data.frame(out %||% data.frame(), stringsAsFactors = FALSE)
+  if (!nrow(out)) data.frame() else out
+}
+
+expand_model_attached_checks_index <- function(dat, state = "preserved") {
+  dat <- as.data.frame(dat %||% data.frame(), stringsAsFactors = FALSE)
+  if (!nrow(dat)) return(data.frame(stringsAsFactors = FALSE))
+
+  rows <- list()
+  for (i in seq_len(nrow(dat))) {
+    row <- dat[i, , drop = FALSE]
+    values <- normalize_attached_check_types(row$check_type %||% "")
+    if (!length(values)) next
+    for (value in values) {
+      one <- row
+      one$check_type <- value
+      one$attachment_state <- state
+      one$updated_in_this_attach <- identical(state, "updated")
+      rows[[length(rows) + 1L]] <- one
+    }
+  }
+  bind_rows_fill(rows)
+}
+
+model_diagnostic_index <- function(model_dir, state = "preserved") {
+  names <- diagnostic_dir_names()
+  names <- names[dir.exists(file.path(model_dir, names))]
+  if (!length(names)) return(data.frame(stringsAsFactors = FALSE))
+  expand_model_attached_checks_index(
+    data.frame(
+      check_type = names,
+      source_check_dir = normalize_loose(model_dir),
+      stringsAsFactors = FALSE
+    ),
+    state = state
+  )
+}
+
+attached_entry_bytes <- function(path) {
+  if (!file.exists(path) && !dir.exists(path)) return(0)
+  files <- if (dir.exists(path)) {
+    list.files(path, recursive = TRUE, full.names = TRUE, all.files = TRUE, no.. = TRUE)
+  } else {
+    path
+  }
+  if (!length(files)) return(0)
+  info <- file.info(files)
+  sum(suppressWarnings(as.numeric(info$size[!is.na(info$isdir) & !info$isdir])), na.rm = TRUE)
+}
+
+prune_attached_delta_model <- function(model_dir, updated_check_types,
+                                       retained_check_types = updated_check_types) {
+  if (!dir.exists(model_dir)) {
+    stop("Attached model directory was not found: ", model_dir, call. = FALSE)
+  }
+  payload <- file.path(model_dir, "model_payload.rds")
+  if (!file.exists(payload)) {
+    stop(
+      "Delta attached output requires a refreshed model_payload.rds: ", model_dir,
+      call. = FALSE
+    )
+  }
+
+  updated_diagnostic_names <- attached_delta_diagnostic_names(updated_check_types)
+  diagnostic_names <- attached_delta_diagnostic_names(retained_check_types)
+  if (!length(diagnostic_names)) {
+    stop("Delta attached output has no diagnostic type to publish.", call. = FALSE)
+  }
+  missing_diagnostics <- updated_diagnostic_names[
+    !dir.exists(file.path(model_dir, updated_diagnostic_names))
+  ]
+  if (length(missing_diagnostics)) {
+    stop(
+      "Delta attached output is missing updated diagnostic folder(s): ",
+      paste(missing_diagnostics, collapse = ", "),
+      call. = FALSE
+    )
+  }
+  missing_retained_diagnostics <- diagnostic_names[
+    !dir.exists(file.path(model_dir, diagnostic_names))
+  ]
+  if (length(missing_retained_diagnostics)) {
+    stop(
+      "Delta attached output is missing retained diagnostic folder(s): ",
+      paste(missing_retained_diagnostics, collapse = ", "),
+      call. = FALSE
+    )
+  }
+
+  keep <- c(attached_delta_model_files(), diagnostic_names)
+  entries <- list.files(model_dir, full.names = TRUE, all.files = TRUE, no.. = TRUE)
+  remove <- entries[!basename(entries) %in% keep]
+  removed <- if (length(remove)) {
+    data.frame(
+      scope = "model",
+      path = normalize_loose(remove),
+      relative_path = basename(remove),
+      bytes = vapply(remove, attached_entry_bytes, numeric(1L)),
+      stringsAsFactors = FALSE
+    )
+  } else {
+    data.frame(
+      scope = character(), path = character(), relative_path = character(),
+      bytes = numeric(), stringsAsFactors = FALSE
+    )
+  }
+  if (length(remove)) unlink(remove, recursive = TRUE, force = TRUE)
+  removed
+}
+
+prune_attached_delta_root <- function(output_dir) {
+  keep <- c("models", attached_delta_root_files())
+  entries <- list.files(output_dir, full.names = TRUE, all.files = TRUE, no.. = TRUE)
+  remove <- entries[!basename(entries) %in% keep]
+  removed <- if (length(remove)) {
+    data.frame(
+      scope = "output",
+      path = normalize_loose(remove),
+      relative_path = basename(remove),
+      bytes = vapply(remove, attached_entry_bytes, numeric(1L)),
+      stringsAsFactors = FALSE
+    )
+  } else {
+    data.frame(
+      scope = character(), path = character(), relative_path = character(),
+      bytes = numeric(), stringsAsFactors = FALSE
+    )
+  }
+  if (length(remove)) unlink(remove, recursive = TRUE, force = TRUE)
+  removed
+}
+
+attached_output_inventory <- function(output_dir, model_key, output_mode,
+                                      updated_check_types,
+                                      retained_check_types = updated_check_types) {
+  exclusions <- attached_output_inventory_exclusions()
+  exclusion_text <- paste(exclusions, collapse = " ")
+  files <- list.files(
+    output_dir,
+    recursive = TRUE,
+    full.names = TRUE,
+    all.files = TRUE,
+    no.. = TRUE
+  )
+  if (!length(files)) {
+    return(data.frame(
+      schema = character(), output_mode = character(), overlay_base_required = logical(),
+      overlay_payload_mode = character(), overlay_replace_payload = logical(),
+      model_key = character(), updated_check_types = character(), relative_path = character(),
+      retained_check_types = character(), role = character(), bytes = numeric(),
+      md5 = character(), inventory_excluded_files = character(),
+      stringsAsFactors = FALSE
+    ))
+  }
+  info <- file.info(files)
+  files <- files[!is.na(info$isdir) & !info$isdir]
+  info <- file.info(files)
+  root <- paste0(normalize_loose(output_dir), "/")
+  relative <- substring(normalize_loose(files), nchar(root) + 1L)
+  keep <- !relative %in% exclusions
+  files <- files[keep]
+  info <- info[keep, , drop = FALSE]
+  relative <- relative[keep]
+  if (!length(files)) {
+    return(data.frame(
+      schema = character(), output_mode = character(), overlay_base_required = logical(),
+      overlay_payload_mode = character(), overlay_replace_payload = logical(),
+      model_key = character(), updated_check_types = character(), relative_path = character(),
+      retained_check_types = character(), role = character(), bytes = numeric(),
+      md5 = character(), inventory_excluded_files = character(),
+      stringsAsFactors = FALSE
+    ))
+  }
+  diagnostic_names <- attached_delta_diagnostic_names(retained_check_types)
+  role <- vapply(relative, function(path) {
+    hit <- diagnostic_names[vapply(
+      diagnostic_names,
+      function(name) grepl(paste0("(^|/)models/[^/]+/", name, "(/|$)"), path),
+      logical(1L)
+    )]
+    if (length(hit)) return(paste0("diagnostic:", hit[[1L]]))
+    if (grepl("model_payload", path, fixed = TRUE)) return("model_payload")
+    if (grepl("model-index[.]csv$", path)) return("model_index")
+    if (grepl("attached-checks-index", path, fixed = TRUE)) return("attached_checks_index")
+    if (grepl("attached-model-bundle", path, fixed = TRUE)) return("attached_bundle_manifest")
+    "overlay_metadata"
+  }, character(1L))
+  data.frame(
+    schema = "ofp-sam.checks.attach-output-files.v1",
+    output_mode = output_mode,
+    overlay_base_required = identical(output_mode, "delta"),
+    overlay_payload_mode = if (identical(output_mode, "delta")) "diagnostics_with_payload" else "standalone",
+    overlay_replace_payload = identical(output_mode, "delta"),
+    model_key = model_key,
+    updated_check_types = paste(normalize_attached_check_types(updated_check_types), collapse = " "),
+    retained_check_types = paste(normalize_attached_check_types(retained_check_types), collapse = " "),
+    relative_path = relative,
+    role = role,
+    bytes = suppressWarnings(as.numeric(info$size)),
+    md5 = unname(tools::md5sum(files)),
+    inventory_excluded_files = exclusion_text,
+    stringsAsFactors = FALSE
+  )
+}
+
+finalize_attached_output <- function(output_dir, model_dir, model_key,
+                                     updated_check_types,
+                                     retained_check_types = updated_check_types,
+                                     output_mode = normalize_attached_output_mode()) {
+  output_mode <- normalize_attached_output_mode(output_mode)
+  if (identical(output_mode, "full")) {
+    return(list(
+      output_mode = output_mode,
+      overlay_base_required = FALSE,
+      updated_check_types = normalize_attached_check_types(updated_check_types),
+      retained_check_types = normalize_attached_check_types(retained_check_types),
+      n_removed_entries = 0L,
+      removed_bytes = 0,
+      n_published_files = NA_integer_,
+      published_bytes = NA_real_,
+      removed = data.frame(),
+      inventory = data.frame()
+    ))
+  }
+  removed <- data.frame(
+    scope = character(), path = character(), relative_path = character(),
+    bytes = numeric(), stringsAsFactors = FALSE
+  )
+  removed <- bind_rows_fill(list(
+    prune_attached_delta_model(
+      model_dir,
+      updated_check_types = updated_check_types,
+      retained_check_types = retained_check_types
+    ),
+    prune_attached_delta_root(output_dir)
+  ))
+
+  inventory <- attached_output_inventory(
+    output_dir,
+    model_key = model_key,
+    output_mode = output_mode,
+    updated_check_types = updated_check_types,
+    retained_check_types = retained_check_types
+  )
+  write.csv(inventory, file.path(output_dir, "attach-output-manifest.csv"), row.names = FALSE)
+  saveRDS(inventory, file.path(output_dir, "attach-output-manifest.rds"), compress = "xz")
+
+  list(
+    output_mode = output_mode,
+    overlay_base_required = identical(output_mode, "delta"),
+    updated_check_types = normalize_attached_check_types(updated_check_types),
+    retained_check_types = normalize_attached_check_types(retained_check_types),
+    n_removed_entries = nrow(removed),
+    removed_bytes = if (nrow(removed)) sum(removed$bytes, na.rm = TRUE) else 0,
+    n_published_files = nrow(inventory),
+    published_bytes = if (nrow(inventory)) sum(inventory$bytes, na.rm = TRUE) else 0,
+    removed = removed,
+    inventory = inventory
+  )
+}
+
 copy_existing_diagnostic_dirs <- function(from, to, exclude = character()) {
   if (!dir.exists(from)) return(invisible(character()))
   exclude <- gsub("_", "-", tolower(as.character(exclude)))
@@ -106,6 +556,178 @@ copy_existing_diagnostic_dirs <- function(from, to, exclude = character()) {
     copied <- c(copied, copy_dir(source, target))
   }
   invisible(copied)
+}
+
+read_diagnostic_status_tables <- function(model_dir) {
+  out <- list()
+  for (check_type in diagnostic_dir_names()) {
+    diagnostic_dir <- file.path(model_dir, check_type)
+    if (!dir.exists(diagnostic_dir)) next
+    candidates <- file.path(
+      diagnostic_dir,
+      c(
+        "check-unit-status.rds", "check-unit-status.csv",
+        "check-summary.rds", "check-summary.csv",
+        "check-source-status.rds", "check-source-status.csv"
+      )
+    )
+    path <- candidates[file.exists(candidates)]
+    if (!length(path)) next
+    path <- path[[1L]]
+    dat <- tryCatch({
+      value <- if (grepl("[.]rds$", path, ignore.case = TRUE)) {
+        readRDS(path)
+      } else {
+        read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
+      }
+      as.data.frame(value %||% data.frame(), stringsAsFactors = FALSE)
+    }, error = function(e) data.frame(stringsAsFactors = FALSE))
+    if (!nrow(dat)) next
+    if (!"check_type" %in% names(dat)) dat$check_type <- check_type
+    dat$diagnostic_status_source <- basename(path)
+    out[[check_type]] <- dat
+  }
+  out
+}
+
+diagnostic_failure_rows <- function(dat) {
+  if (!is.data.frame(dat) || !nrow(dat)) {
+    return(data.frame(stringsAsFactors = FALSE))
+  }
+  failed <- rep(FALSE, nrow(dat))
+  if ("success" %in% names(dat)) {
+    success <- suppressWarnings(as.logical(dat$success))
+    failed <- failed | (!is.na(success) & !success)
+  }
+  for (name in intersect(c("run_status", "status", "convergence_status"), names(dat))) {
+    value <- tolower(trimws(as.character(dat[[name]])))
+    failed <- failed | grepl(
+      "failed|error|missing|incomplete|not[-_ ]?(completed|converged)|blocked",
+      value
+    )
+  }
+  if ("merge_status" %in% names(dat)) {
+    value <- tolower(trimws(as.character(dat$merge_status)))
+    failed <- failed | grepl(
+      "failed|error|missing|incomplete|no[-_ ]?units|not[-_ ]?(completed|converged)|blocked",
+      value
+    )
+  }
+  logical_flag <- function(value) {
+    text <- tolower(trimws(as.character(value)))
+    out <- rep(NA, length(text))
+    out[text %in% c("1", "true", "yes", "y", "on")] <- TRUE
+    out[text %in% c("0", "false", "no", "n", "off")] <- FALSE
+    out
+  }
+  if ("has_failures" %in% names(dat)) {
+    value <- logical_flag(dat$has_failures)
+    failed <- failed | (!is.na(value) & value)
+  }
+  if ("all_required_units_successful" %in% names(dat)) {
+    value <- logical_flag(dat$all_required_units_successful)
+    failed <- failed | (!is.na(value) & !value)
+  }
+  dat[failed, , drop = FALSE]
+}
+
+merge_diagnostic_status_rows <- function(existing, status) {
+  if (!is.data.frame(status) || !nrow(status)) return(existing)
+  if (!is.data.frame(existing) || !nrow(existing)) return(status)
+  failed <- diagnostic_failure_rows(status)
+  if (!nrow(failed)) return(existing)
+
+  key_fields <- intersect(
+    c("check_unit", "unit", "seed", "peel", "rep", "replicate", "scalar", "aspm"),
+    intersect(names(existing), names(failed))
+  )
+  if (length(key_fields)) {
+    row_key <- function(dat) {
+      apply(dat[, key_fields, drop = FALSE], 1L, function(row) {
+        paste(ifelse(is.na(row), "<NA>", as.character(row)), collapse = "\r")
+      })
+    }
+    # The explicit merge ledger is authoritative for failed units. Replace a
+    # collector row with the same identity instead of discarding the evidence.
+    existing <- existing[!row_key(existing) %in% row_key(failed), , drop = FALSE]
+  }
+  bind_rows_fill(list(existing, failed))
+}
+
+embed_diagnostic_status_in_payload <- function(model_dir) {
+  status_tables <- read_diagnostic_status_tables(model_dir)
+  if (!length(status_tables)) return(invisible(FALSE))
+
+  diagnostics_file <- file.path(model_dir, "mfclkit_diagnostics.rds")
+  diagnostics <- if (file.exists(diagnostics_file)) {
+    tryCatch(readRDS(diagnostics_file), error = function(e) list())
+  } else {
+    list()
+  }
+  if (!is.list(diagnostics)) diagnostics <- list()
+  for (check_type in names(status_tables)) {
+    diagnostics[[check_type]] <- merge_diagnostic_status_rows(
+      diagnostics[[check_type]],
+      status_tables[[check_type]]
+    )
+  }
+  diagnostics$check_status <- status_tables
+  saveRDS(diagnostics, diagnostics_file, compress = "xz")
+
+  payload_file <- file.path(model_dir, "model_payload.rds")
+  if (!file.exists(payload_file)) return(invisible(TRUE))
+  payload <- tryCatch(readRDS(payload_file), error = function(e) NULL)
+  if (!is.list(payload)) {
+    stop("Could not read model payload while embedding diagnostic status: ", payload_file,
+         call. = FALSE)
+  }
+
+  merge_into_payload <- function(existing, incoming) {
+    existing <- if (is.list(existing)) existing else list()
+    for (name in names(incoming)) existing[[name]] <- incoming[[name]]
+    existing
+  }
+  if (is.list(payload$data)) {
+    payload$data$Diagnostics <- merge_into_payload(payload$data$Diagnostics, diagnostics)
+    if (!is.list(payload$data$info)) payload$data$info <- list()
+    if (!is.list(payload$data$info$attached_checks)) payload$data$info$attached_checks <- list()
+    payload$data$info$attached_checks$status <- status_tables
+  } else {
+    payload$Diagnostics <- merge_into_payload(payload$Diagnostics, diagnostics)
+    if (!is.list(payload$info)) payload$info <- list()
+    if (!is.list(payload$info$attached_checks)) payload$info$attached_checks <- list()
+    payload$info$attached_checks$status <- status_tables
+  }
+  saved <- FALSE
+  if (requireNamespace("mfclshiny", quietly = TRUE)) {
+    save_payload <- tryCatch(
+      getFromNamespace("mfclshiny_save_model_payload", "mfclshiny"),
+      error = function(e) NULL
+    )
+    if (is.function(save_payload)) {
+      save_payload(payload, payload_file)
+      saved <- TRUE
+    }
+  }
+  if (!isTRUE(saved)) saveRDS(payload, payload_file, compress = "gzip")
+
+  if (requireNamespace("mfclshiny", quietly = TRUE) &&
+      "write_model_payload_manifest" %in% getNamespaceExports("mfclshiny")) {
+    mfclshiny::write_model_payload_manifest(
+      payload = payload,
+      folder = model_dir,
+      payload_file = payload_file
+    )
+  } else {
+    # A stale payload manifest is worse than no manifest: consumers use its
+    # payload byte count and diagnostic availability as an integrity contract.
+    stale <- file.path(model_dir, c(
+      "model_payload_manifest.json", "model_payload_manifest.csv"
+    ))
+    stale <- stale[file.exists(stale)]
+    if (length(stale)) unlink(stale, force = TRUE)
+  }
+  invisible(TRUE)
 }
 
 refresh_diagnostic_model_bundle <- function(model_dir) {
@@ -157,6 +779,16 @@ refresh_diagnostic_model_bundle <- function(model_dir) {
     add_status("mfclkit_collect_diagnostics_after_payload", is.null(err), if (is.null(err)) "" else conditionMessage(err))
   }
 
+  err <- tryCatch({
+    embed_diagnostic_status_in_payload(model_dir)
+    NULL
+  }, error = function(e) e)
+  add_status(
+    "embed_diagnostic_status_in_payload",
+    is.null(err),
+    if (is.null(err)) "" else conditionMessage(err)
+  )
+
   write.csv(status, file.path(model_dir, "diagnostic-refresh-status.csv"), row.names = FALSE)
   invisible(all(status$ok))
 }
@@ -166,23 +798,57 @@ write_attached_model_output <- function(check_model_dir,
                                         model_key,
                                         index = data.frame(),
                                         check_type = env("CHECK_TYPE", ""),
-                                        source_check_dirs = character()) {
+                                        source_check_dirs = character(),
+                                        output_mode = normalize_attached_output_mode()) {
   if (!dir.exists(check_model_dir)) {
     stop("Check model directory not found: ", check_model_dir, call. = FALSE)
   }
   model_key <- gsub("[^A-Za-z0-9_.-]+", "_", as.character(model_key %||% "model"))
   if (!nzchar(model_key)) model_key <- "model"
+  output_mode <- normalize_attached_output_mode(output_mode)
+  updated_check_types <- normalize_attached_check_types(check_type)
   target_dir <- file.path(output_dir, "models", model_key)
   copy_dir(check_model_dir, target_dir)
 
-  attached <- data.frame(
+  previous_attached <- read_model_attached_checks_index(target_dir)
+  if (!nrow(previous_attached)) {
+    previous_attached <- model_diagnostic_index(target_dir, state = "preserved")
+  }
+  preserved_attached <- expand_model_attached_checks_index(
+    previous_attached,
+    state = "preserved"
+  )
+  if (nrow(preserved_attached) && length(updated_check_types)) {
+    preserved_attached <- preserved_attached[
+      !as.character(preserved_attached$check_type) %in% updated_check_types,
+      ,
+      drop = FALSE
+    ]
+  }
+
+  attached_at <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+  updated_attached <- expand_model_attached_checks_index(data.frame(
     check_type = check_type,
     source_check_dir = normalize_loose(check_model_dir),
     attached_model_dir = normalize_loose(target_dir),
     source_check_dirs = paste(normalize_loose(source_check_dirs), collapse = " "),
-    attached_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+    attached_at = attached_at,
     stringsAsFactors = FALSE
-  )
+  ), state = "updated")
+  attached <- bind_rows_fill(list(preserved_attached, updated_attached))
+  if (!nrow(attached)) {
+    stop("Attached output has no diagnostic type to publish.", call. = FALSE)
+  }
+
+  attached$attached_model_dir <- normalize_loose(target_dir)
+  attached$output_mode <- output_mode
+  attached$overlay_base_required <- identical(output_mode, "delta")
+  attached$overlay_payload_mode <- if (identical(output_mode, "delta")) {
+    "diagnostics_with_payload"
+  } else {
+    "standalone"
+  }
+  retained_check_types <- normalize_attached_check_types(attached$check_type)
   write.csv(attached, file.path(output_dir, "attached-checks-index.csv"), row.names = FALSE)
   write.csv(attached, file.path(target_dir, "attached-checks-index.csv"), row.names = FALSE)
   saveRDS(attached, file.path(target_dir, "attached-checks-index.rds"), compress = "xz")
@@ -205,20 +871,51 @@ write_attached_model_output <- function(check_model_dir,
   index$model_dir <- file.path("models", model_key)
   index$model_folder <- model_key
   index$attached_checks <- TRUE
-  index$attached_check_type <- check_type
-  index$attached_at <- attached$attached_at[[1L]]
+  index$attached_check_type <- paste(retained_check_types, collapse = " ")
+  index$attached_at <- attached_at
   index$attached_model_dir <- normalize_loose(target_dir)
+  index$attach_output_mode <- output_mode
+  index$overlay_base_required <- identical(output_mode, "delta")
+  index$overlay_payload_mode <- if (identical(output_mode, "delta")) "diagnostics_with_payload" else "standalone"
   write.csv(index, file.path(output_dir, "model-index.csv"), row.names = FALSE)
 
   manifest <- data.frame(
     schema = "ofp-sam.checks.attached-model-bundle.v1",
-    created_at = attached$attached_at[[1L]],
+    created_at = attached_at,
     model_key = model_key,
-    check_type = check_type,
+    check_type = paste(updated_check_types, collapse = " "),
+    retained_check_types = paste(retained_check_types, collapse = " "),
     check_model_dir = normalize_loose(check_model_dir),
     attached_model_dir = normalize_loose(target_dir),
+    output_mode = output_mode,
+    overlay_base_required = identical(output_mode, "delta"),
+    overlay_payload_mode = if (identical(output_mode, "delta")) "diagnostics_with_payload" else "standalone",
+    overlay_replace_payload = identical(output_mode, "delta"),
+    inventory_excluded_files = paste(
+      attached_output_inventory_exclusions(),
+      collapse = " "
+    ),
+    overlay_base_input_job = env(
+      "MODEL_ORIGINAL_BASE_INPUT_JOB",
+      env("MODEL_BASE_INPUT_JOB", env("BASE_MODEL_JOB", ""))
+    ),
     stringsAsFactors = FALSE
   )
+  write.csv(manifest, file.path(output_dir, "attached-model-bundle.csv"), row.names = FALSE)
+  saveRDS(as.list(manifest), file.path(output_dir, "attached-model-bundle.rds"), compress = "xz")
+
+  finalized <- finalize_attached_output(
+    output_dir = output_dir,
+    model_dir = target_dir,
+    model_key = model_key,
+    updated_check_types = updated_check_types,
+    retained_check_types = retained_check_types,
+    output_mode = output_mode
+  )
+  manifest$n_removed_entries <- finalized$n_removed_entries
+  manifest$removed_bytes <- finalized$removed_bytes
+  manifest$n_published_files <- finalized$n_published_files
+  manifest$published_bytes <- finalized$published_bytes
   write.csv(manifest, file.path(output_dir, "attached-model-bundle.csv"), row.names = FALSE)
   saveRDS(as.list(manifest), file.path(output_dir, "attached-model-bundle.rds"), compress = "xz")
   invisible(target_dir)

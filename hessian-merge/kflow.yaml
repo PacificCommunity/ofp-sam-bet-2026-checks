@@ -1,15 +1,21 @@
 name: ofp-sam-bet-2026-check-hessian-merge
-description: Merge split mfclkit Hessian parts after parallel Hessian jobs complete.
+description: Merge split mfclkit Hessian parts and optionally publish an independent attached diagnostic delta.
 command: bash run.sh
 target_folder: hessian-merge
 docker_image: ghcr.io/pacificcommunity/tuna-flow:v2.1
 resources:
-  cpus: 2
-  memory: 12GB
+  cpus: 1
+  memory: 4GB
   disk: 10GB
 env:
   CHECK_TYPE: hessian_merge
   MODEL_SELECTOR: ""
+  MODEL_BASE_INPUT_JOB: ""
+  BASE_MODEL_JOB: ""
+  MODEL_ORIGINAL_BASE_INPUT_JOB: ""
+  ATTACH_OUTPUT_MODE: full
+  CHECK_INPUT_JOBS: ""
+  ATTACH_CHECK_TYPES: hessian
   PROGRAM_PATH: /home/mfcl/mfclo64
   KFLOW_RUNTIME_PACKAGES: none
   KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@main,mfclshiny=PacificCommunity/mfclshiny@main
@@ -33,6 +39,11 @@ metadata:
     optional:
       - CHECK_TYPE
       - MODEL_SELECTOR
+      - MODEL_BASE_INPUT_JOB
+      - BASE_MODEL_JOB
+      - MODEL_ORIGINAL_BASE_INPUT_JOB
+      - CHECK_INPUT_JOBS
+      - ATTACH_CHECK_TYPES
       - MODEL_INPUT_ROOT
       - PROGRAM_PATH
       - FLOW_GROUP
@@ -43,6 +54,7 @@ metadata:
       - HESSIAN_MERGE_RUN
       - HESSIAN_MERGE_EIGEN
       - HESSIAN_KEEP_MATRIX
+      - ATTACH_OUTPUT_MODE
       - CHECK_COMPACT_OUTPUTS
       - CHECK_KEEP_RAW_OUTPUTS
       - MFK_RUN_MESSAGES

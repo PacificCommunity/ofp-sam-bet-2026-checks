@@ -9,6 +9,18 @@ work_dir <- env("WORK_DIR", "work")
 model_selector <- env("MODEL_SELECTOR", "")
 program_path <- env("PROGRAM_PATH", "/home/mfcl/mfclo64")
 smoke_only <- truthy(env("CHECK_SMOKE_ONLY", env("CHECK_DRY_RUN", "false")), FALSE)
+attach_output_mode <- normalize_attached_output_mode()
+base_input_job <- env("MODEL_BASE_INPUT_JOB", env("BASE_MODEL_JOB", ""))
+original_base_input_job <- env("MODEL_ORIGINAL_BASE_INPUT_JOB", base_input_job)
+check_input_jobs <- split_values(env("CHECK_INPUT_JOBS", ""))
+attach_check_types <- normalize_attached_check_types(env("ATTACH_CHECK_TYPES", ""))
+if (length(attach_check_types) && !identical(attach_check_types, "hessian")) {
+  stop(
+    "ATTACH_CHECK_TYPES must contain only the current merge type 'hessian'; got ",
+    paste(attach_check_types, collapse = ", "), ".",
+    call. = FALSE
+  )
+}
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(work_dir, recursive = TRUE, showWarnings = FALSE)
 
@@ -28,6 +40,42 @@ copy_dir_contents <- function(from, to) {
     if (!all(ok)) stop("Could not copy all files from ", from, call. = FALSE)
   }
   normalize_loose(to)
+}
+
+stage_hessian_stitch_prerequisites <- function(source_dirs, target_dir) {
+  source_dirs <- unique(normalize_loose(as.character(source_dirs %||% character())))
+  source_dirs <- source_dirs[!is.na(source_dirs) & nzchar(source_dirs) & dir.exists(source_dirs)]
+  if (!length(source_dirs)) return(character())
+
+  patterns <- c(
+    "[.]frq$", "[.]ini$", "[.]tag$", "[.]age_length$",
+    "[.]dep$", "[.]dp2$", "[.]par$",
+    "^mfcl[.]cfg$", "^depgrad[.]rpt$", "^Hess[.]rpt$",
+    "^xinit[.]rpt$", "^indepvar[.]rpt$"
+  )
+  copied <- character()
+  for (source_dir in source_dirs) {
+    files <- unique(unlist(lapply(patterns, function(pattern) {
+      list.files(
+        source_dir,
+        pattern = pattern,
+        full.names = TRUE,
+        recursive = FALSE,
+        ignore.case = TRUE
+      )
+    }), use.names = FALSE))
+    for (source in sort(files)) {
+      target <- file.path(target_dir, basename(source))
+      # Every split unit is built from the same immutable fit. Prefer the first
+      # canonical current-unit copy and never let a later shard overwrite it.
+      if (file.exists(target)) next
+      if (!copy_file_if_exists(source, target_dir)) {
+        stop("Could not stage Hessian stitch prerequisite: ", source, call. = FALSE)
+      }
+      copied <- c(copied, normalize_loose(target))
+    }
+  }
+  unique(copied)
 }
 
 bind_rows_fill_local <- function(rows) {
@@ -341,7 +389,7 @@ compact_prune_files <- function(root,
   out
 }
 
-compact_hessian_merge_outputs <- function() {
+compact_hessian_merge_outputs <- function(preserve_model_inputs = FALSE) {
   if (!check_compact_outputs_enabled()) return(invisible(data.frame()))
 
   log_patterns <- c("(^|/).*log($|[.])", "(^|/)mfcl.*[.]txt$")
@@ -358,21 +406,26 @@ compact_hessian_merge_outputs <- function() {
       keep_patterns = hessian_keep_patterns,
       recursive = TRUE
     ),
-    compact_prune_files(
-      model_dir,
-      keep_names = c(
-        "model_payload.rds", "model_payload_manifest.json", "model_payload_manifest.csv",
-        "fishery_map.R", "tag_rep_map.R", "bet.region_map.geojson", "bet.reg_scaling",
-        "check_manifest.csv", "check_manifest.rds", "hessian_merge.rds",
-        "hessian-part-status.csv", "hessian-part-status.rds",
-        "check-unit-status.csv", "check-unit-status.rds",
-        "check-summary.csv", "check-summary.rds",
-        "model-index.csv", "check-model-index.csv", "mfclkit_diagnostics.rds",
-        "mfclkit_diagnostics.csv", "check-output-cleanup.csv", "check-output-cleanup.rds"
-      ),
-      keep_patterns = c("(^|/)hessian/", "(^|/).*index[.]csv$", log_patterns),
-      recursive = FALSE
-    )
+    if (isTRUE(preserve_model_inputs)) {
+      data.frame()
+    } else {
+      compact_prune_files(
+        model_dir,
+        keep_names = c(
+          "model_payload.rds", "model_payload_manifest.json", "model_payload_manifest.csv",
+          "final.par",
+          "fishery_map.R", "tag_rep_map.R", "bet.region_map.geojson", "bet.reg_scaling",
+          "check_manifest.csv", "check_manifest.rds", "hessian_merge.rds",
+          "hessian-part-status.csv", "hessian-part-status.rds",
+          "check-unit-status.csv", "check-unit-status.rds",
+          "check-summary.csv", "check-summary.rds",
+          "model-index.csv", "check-model-index.csv", "mfclkit_diagnostics.rds",
+          "mfclkit_diagnostics.csv", "check-output-cleanup.csv", "check-output-cleanup.rds"
+        ),
+        keep_patterns = c("(^|/)hessian/", "(^|/).*index[.]csv$", log_patterns),
+        recursive = FALSE
+      )
+    }
   )
   out <- bind_rows_fill_local(deleted)
   compact_prune_empty_dirs(model_dir)
@@ -386,6 +439,9 @@ compact_hessian_merge_outputs <- function() {
 }
 
 discover_hessian_model_dirs <- function(root) {
+  root <- as.character(root %||% character())
+  root <- root[!is.na(root) & nzchar(trimws(root))]
+  if (!length(root)) return(character())
   roots <- normalize_loose(root)
   roots <- roots[dir.exists(roots)]
   dirs <- unique(unlist(lapply(roots, function(one_root) {
@@ -542,7 +598,16 @@ matches_model <- function(model_dir, selector) {
     any(grepl(selector, as.character(values), fixed = TRUE))
 }
 
-source_model_dirs <- discover_hessian_model_dirs(input_root)
+check_input_roots <- if (length(check_input_jobs)) {
+  unique(unlist(lapply(
+    check_input_jobs,
+    function(job) input_job_dirs(input_root, job)
+  ), use.names = FALSE))
+} else {
+  character()
+}
+source_search_roots <- if (length(check_input_jobs)) check_input_roots else input_root
+source_model_dirs <- discover_hessian_model_dirs(source_search_roots)
 source_model_dirs <- source_model_dirs[vapply(source_model_dirs, matches_model, logical(1), selector = model_selector)]
 part_table <- hessian_part_source_table(source_model_dirs)
 base_model_dir <- if (nrow(part_table)) {
@@ -555,7 +620,37 @@ base_model_dir <- if (nrow(part_table)) {
 source_model_dirs <- unique(c(source_model_dirs, part_table$source_model_dir))
 source_model_dirs <- source_model_dirs[!is.na(source_model_dirs) & nzchar(source_model_dirs)]
 
-model_key <- if (!is.na(base_model_dir) && nzchar(base_model_dir)) {
+base_fit_roots <- if (nzchar(base_input_job)) {
+  input_job_dirs(input_root, base_input_job)
+} else {
+  character()
+}
+base_fit_candidates <- bind_rows_fill_local(lapply(base_fit_roots, discover_model_outputs))
+base_fit_selected <- if (nrow(base_fit_candidates)) {
+  tryCatch(select_model_output(base_fit_candidates, model_selector), error = function(e) data.frame())
+} else {
+  data.frame()
+}
+if (nzchar(base_input_job) && !nrow(base_fit_selected)) {
+  stop(
+    "No Hessian merge base model matching ", shQuote(model_selector),
+    " was found in input job ", base_input_job, ".",
+    call. = FALSE
+  )
+}
+base_fit_dir <- if (nrow(base_fit_selected)) {
+  as.character(base_fit_selected$compact_dir[[1L]] %||% "")
+} else {
+  ""
+}
+
+model_key <- if (nrow(base_fit_selected)) {
+  gsub(
+    "[^A-Za-z0-9_.-]+",
+    "_",
+    as.character(base_fit_selected$model_key %||% model_selector)[[1L]]
+  )
+} else if (!is.na(base_model_dir) && nzchar(base_model_dir)) {
   gsub("[^A-Za-z0-9_.-]+", "_", basename(base_model_dir))
 } else {
   gsub("[^A-Za-z0-9_.-]+", "_", model_selector)
@@ -563,9 +658,21 @@ model_key <- if (!is.na(base_model_dir) && nzchar(base_model_dir)) {
 if (!nzchar(model_key)) model_key <- "model"
 model_dir <- file.path(output_dir, "checks", "hessian", model_key)
 hessian_dir <- file.path(model_dir, "hessian")
+payload_base_dir <- if (nzchar(base_fit_dir) && dir.exists(base_fit_dir)) {
+  base_fit_dir
+} else {
+  base_model_dir
+}
+if (!is.na(payload_base_dir) && nzchar(payload_base_dir) && dir.exists(payload_base_dir)) {
+  copy_dir_contents(payload_base_dir, model_dir)
+} else {
+  dir.create(model_dir, recursive = TRUE, showWarnings = FALSE)
+}
+prepare_diagnostic_merge_base(model_dir, "hessian", attach_output_mode)
 dir.create(hessian_dir, recursive = TRUE, showWarnings = FALSE)
 
-if (!is.na(base_model_dir) && dir.exists(base_model_dir)) {
+if ((!nzchar(base_fit_dir) || !dir.exists(base_fit_dir)) &&
+    !is.na(base_model_dir) && dir.exists(base_model_dir)) {
   for (name in c(
     "model_payload.rds", "model_payload_manifest.json", "model_payload_manifest.csv",
     "fishery_map.R", "tag_rep_map.R", "bet.region_map.geojson", "bet.reg_scaling",
@@ -574,24 +681,22 @@ if (!is.na(base_model_dir) && dir.exists(base_model_dir)) {
     copy_file_if_exists(file.path(base_model_dir, name), model_dir)
   }
   copy_existing_diagnostic_dirs(base_model_dir, model_dir, exclude = "hessian")
-
-  case_files <- unique(unlist(lapply(c(
-    "[.]frq$",
-    "[.]ini$",
-    "[.]tag$",
-    "[.]age_length$",
-    "[.]dep$",
-    "[.]dp2$",
-    "^mfcl[.]cfg$",
-    "^depgrad[.]rpt$",
-    "^Hess[.]rpt$"
-  ), function(pattern) {
-    list.files(base_model_dir, pattern = pattern, full.names = TRUE, ignore.case = TRUE)
-  }), use.names = FALSE))
-  for (case_file in case_files) {
-    copy_file_if_exists(case_file, model_dir)
-  }
 }
+
+# The original fitted output can be payload-only. Native split jobs retain the
+# stitch case at their check-model root even though compact part directories
+# intentionally contain only .hes/RDS artifacts. Always stage prerequisites
+# from those explicitly selected current-unit roots, regardless of which fit
+# supplied the payload.
+stitch_input_source_dirs <- unique(c(base_model_dir, source_model_dirs))
+stitch_input_source_dirs <- stitch_input_source_dirs[
+  !is.na(stitch_input_source_dirs) & nzchar(stitch_input_source_dirs) &
+    dir.exists(stitch_input_source_dirs)
+]
+staged_stitch_inputs <- stage_hessian_stitch_prerequisites(
+  stitch_input_source_dirs,
+  model_dir
+)
 
 part_sources <- part_table$part_dir
 part_numbers <- part_table$part_number
@@ -756,7 +861,11 @@ for (source_parent in unique(dirname(source_model_dirs))) {
   dat$source_index_file <- normalize_loose(index_file)
   rows[[length(rows) + 1L]] <- dat
 }
-index <- bind_rows_fill_local(rows)
+index <- if (nrow(base_fit_selected)) {
+  base_fit_selected[seq_len(1L), , drop = FALSE]
+} else {
+  bind_rows_fill_local(rows)
+}
 if (!nrow(index)) {
   index <- data.frame(
     check_type = "hessian",
@@ -786,6 +895,13 @@ manifest <- data.frame(
   model_key = model_key,
   model_dir = normalize_loose(model_dir),
   hessian_dir = normalize_loose(hessian_dir),
+  payload_base_dir = normalize_loose(payload_base_dir),
+  base_input_job = base_input_job,
+  original_base_input_job = original_base_input_job,
+  check_input_jobs = paste(check_input_jobs, collapse = " "),
+  stitch_input_source_dirs = paste(normalize_loose(stitch_input_source_dirs), collapse = " "),
+  staged_stitch_inputs = paste(normalize_loose(staged_stitch_inputs), collapse = " "),
+  attach_output_mode = attach_output_mode,
   n_parts = length(part_numbers),
   n_units = n_units,
   n_success = n_success,
@@ -804,19 +920,24 @@ write.csv(manifest, file.path(model_dir, "check_manifest.csv"), row.names = FALS
 saveRDS(as.list(manifest), file.path(model_dir, "check_manifest.rds"), compress = "xz")
 
 try(mfclkit::mfk_collect_diagnostics(model_dir, write_index = TRUE), silent = TRUE)
-compact_hessian_merge_outputs()
+compact_hessian_merge_outputs(
+  preserve_model_inputs = identical(attach_output_mode, "delta") ||
+    (identical(attach_output_mode, "full") && nzchar(base_fit_dir) && dir.exists(base_fit_dir))
+)
 try(mfclkit::mfk_collect_diagnostics(model_dir, write_index = TRUE), silent = TRUE)
-if (length(source_model_dirs)) {
+copy_diagnostic_status_ledger(model_dir, "hessian")
+if (length(source_model_dirs) || (nzchar(base_fit_dir) && dir.exists(base_fit_dir))) {
   write_attached_model_output(
     check_model_dir = model_dir,
     output_dir = output_dir,
     model_key = model_key,
     index = index,
     check_type = "hessian",
-    source_check_dirs = source_model_dirs
+    source_check_dirs = source_model_dirs,
+    output_mode = attach_output_mode
   )
 } else {
-  message("[checks] skipped attached model output because no Hessian source model folder was published")
+  message("[checks] skipped attached model output because neither a merge base nor a Hessian source model was published")
 }
 message("[checks] merged Hessian parts under ", model_dir)
 

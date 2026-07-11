@@ -70,7 +70,9 @@ lets a Kflow job open MFCL Shiny directly, and lets downstream results/report
 jobs scan the same payload folders later without needing stepwise-specific
 assumptions.
 
-Each check or merge job also writes an updated model-run-style output:
+Each check or merge job can also write an updated model-run-style output. In
+standalone-compatible `ATTACH_OUTPUT_MODE=full`, the output contains the full
+base case:
 
 ```text
 outputs/
@@ -87,17 +89,72 @@ outputs/
 
 This is the artifact results/report should consume. Original model-run archives
 are not modified; each check/merge job produces a new model bundle with its
-diagnostic folder attached. To accumulate checks, pass the previous updated
-model bundle as the input to the next check or merge job. For example,
-`jitter-merge` can write `outputs/models/<model>/jitter`, then a later
-`retro-merge` can use that output as its input and add
-`outputs/models/<model>/retro`.
+diagnostic folder attached. Kflow launches diagnostic merges independently from
+the same fitted base and composes their output overlays; merge jobs do not wait
+for one another.
+
+For Kflow attached outputs, `ATTACH_OUTPUT_MODE=delta` publishes a much smaller
+overlay instead:
+
+```text
+outputs/
+  models/<model_key>/
+    model_payload.rds
+    model_payload_manifest.{json,csv}
+    <updated-check>/
+    attached-checks-index.{csv,rds}
+  model-index.csv
+  attached-checks-index.csv
+  attached-model-bundle.{csv,rds}
+  attach-output-manifest.{csv,rds}
+```
+
+The full base case is used while rebuilding the payload, then `.frq`, `.ini`,
+`.par`, `.rep`, fit files, and static maps are removed from the published delta.
+Every diagnostic directory represented by an artifact's attached-checks index
+is retained. Independent merge deltas intentionally index only their own
+diagnostic; Kflow preserves sibling overlays during composition.
+`attached-model-bundle.csv` records
+`output_mode`, `overlay_base_required`, and the base job reference. Set
+`ATTACH_OUTPUT_MODE=full` when the artifact must remain a standalone MFCL case.
+The `attach-checks` Kflow task defaults to `full`, because a manual or legacy
+submission cannot infer Kflow's overlay metadata from the environment after the
+job has started. The submit helper opts independent diagnostic merges into
+`delta` explicitly and supplies the matching Kflow metadata at submission.
 
 When checks were run independently, use the `attach-checks` Kflow task to build
 a final compact model bundle from one base model output plus completed check
 outputs. Set `MODEL_BASE_INPUT_JOB` to the fitted model job, `CHECK_INPUT_JOBS`
 to the completed check/merge jobs, and optionally `ATTACH_CHECK_TYPES` to limit
 which diagnostic folders are copied.
+
+Each existing diagnostic merge task (`hessian-merge`, `profile-merge`,
+`jitter-merge`, `retro-merge`, `aspm-merge`, and `selftest-merge`) can also be
+the collector for its own diagnostic; no common extra merge task is required.
+Each merge is independent: it receives the original fitted model plus only its
+own unit jobs, refreshes a current-type payload for direct inspection, and
+publishes a delta containing only that diagnostic. Kflow composes those sibling
+overlays on the original model and dynamically collects all overlaid diagnostic
+directories. A failed or missing unit is retained as a status ledger instead of
+being hidden or omitted.
+
+The independent-merge environment contract is:
+
+- `MODEL_BASE_INPUT_JOB` / `BASE_MODEL_JOB`: original fitted model job;
+- `MODEL_ORIGINAL_BASE_INPUT_JOB`: the same original job that owns the overlay;
+- `CHECK_INPUT_JOBS`: only the current diagnostic's unit jobs;
+- `ATTACH_CHECK_TYPES`: the current merge diagnostic.
+
+The original fitted job remains the single owner of `.frq`, `.ini`, `.par`,
+reports, and other runnable/static files; independent deltas do not duplicate
+them or claim diagnostics produced by sibling jobs.
+
+With direct delta attachment enabled, each diagnostic merge is its own final
+collector. The submit helper marks it with `attached_output_overlay=true` and
+`attached_work_parent_job`, declares replaceable diagnostic names in
+`attached_output_overlay_replace_names`, and adds the fitted base job to the
+merge inputs. Each merge publishes its own diagnostic delta directly on the
+base job without duplicating the raw base case or `outputs/checks/...` tree.
 
 Use `model-bundle` when someone needs a portable MFCL run zip from an existing
 model job. It restores the fitted par as `11.par`, copies the `mfclo64`
@@ -123,6 +180,9 @@ make kflow CHECK_TYPE=model-bundle \
   input-driven report metadata. The submit helper forwards these values through
   unit, merge, and attach jobs so mfclshiny output is not tied to the BET 2026
   defaults used by this assessment repository.
+- `ATTACH_OUTPUT_MODE`: `delta` publishes only the refreshed payload/index plus
+  the current diagnostic folder for overlay on the base job; `full` preserves a
+  standalone base-model bundle. Direct diagnostic merges use `delta`.
 - `JITTER_SEEDS`: comma/space list of seeds, default `1`.
 - `JITTER_CV`: jitter CV, default `0.2`.
 - `JITTER_METHOD`: `phase1_doitall` by default. This builds a fresh

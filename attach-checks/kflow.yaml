@@ -4,8 +4,8 @@ command: bash run.sh
 target_folder: attach-checks
 docker_image: ghcr.io/pacificcommunity/tuna-flow:v2.1
 resources:
-  cpus: 2
-  memory: 12GB
+  cpus: 1
+  memory: 4GB
   disk: 10GB
 env:
   CHECK_TYPE: attach-checks
@@ -13,6 +13,10 @@ env:
   MODEL_BASE_INPUT_JOB: ""
   CHECK_INPUT_JOBS: ""
   ATTACH_CHECK_TYPES: ""
+  # A report task cannot infer Kflow overlay metadata from an environment
+  # value after submission. Keep manual/legacy runs standalone by default;
+  # the submit helper opts direct diagnostic merges into delta mode explicitly.
+  ATTACH_OUTPUT_MODE: full
   FLOW_GROUP: bet-2026-checks
   FLOW_SPECIES: BET
   FLOW_SPECIES_LABEL: bigeye tuna
@@ -45,6 +49,7 @@ metadata:
       - BASE_MODEL_JOB
       - CHECK_INPUT_JOBS
       - ATTACH_CHECK_TYPES
+      - ATTACH_OUTPUT_MODE
       - FLOW_GROUP
       - FLOW_SPECIES
       - FLOW_SPECIES_LABEL

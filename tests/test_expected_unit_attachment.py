@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import os
 import shutil
 import subprocess
@@ -51,7 +52,15 @@ class ExpectedUnitAttachmentTests(unittest.TestCase):
             }],
         )
 
-    def attach(self, input_root: Path, output_dir: Path, check_job: str, check_type: str) -> None:
+    def attach(
+        self,
+        input_root: Path,
+        output_dir: Path,
+        check_job: str,
+        check_type: str,
+        output_mode: str | None = None,
+    ) -> None:
+        extra_env = {"ATTACH_OUTPUT_MODE": output_mode} if output_mode else {}
         self.run_r(
             "R/attach_checks.R",
             {
@@ -63,6 +72,7 @@ class ExpectedUnitAttachmentTests(unittest.TestCase):
                 "ATTACH_CHECK_TYPES": check_type,
                 "CHECK_ENRICH_PAYLOADS": "false",
                 "CHECK_REQUIRE_PAYLOAD_REFRESH": "false",
+                **extra_env,
             },
         )
 
@@ -191,6 +201,188 @@ class ExpectedUnitAttachmentTests(unittest.TestCase):
             attached_jitter = attached_output / "models" / "model" / "jitter"
             self.assertTrue((attached_jitter / "jitter_seed_1" / "result.txt").is_file())
             self.assertEqual(read_csv(attached_jitter / "check-unit-status.csv"), status_rows)
+
+    def test_delta_attach_keeps_only_overlay_payload_and_updated_diagnostic(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            input_root = root / "inputs"
+            self.make_base_job(input_root)
+            base_model = input_root / "base" / "outputs" / "models" / "model"
+            for name in (
+                "model.frq", "model.ini", "final.par", "plot.rep",
+                "length.fit", "base-only.txt",
+            ):
+                (base_model / name).write_text(f"base {name}\n", encoding="utf-8")
+            # The integration test disables package enrichment, so retain a
+            # small prebuilt payload/manifest exactly as a real base job would.
+            (base_model / "model_payload.rds").write_bytes(b"payload-placeholder")
+            (base_model / "model_payload_manifest.json").write_text("{}\n", encoding="utf-8")
+            write_csv(
+                base_model / "model_payload_manifest.csv",
+                [{"role": "model_payload", "file": "model_payload.rds"}],
+            )
+            old_retro = base_model / "retro" / "peel_1" / "old.txt"
+            old_retro.parent.mkdir(parents=True)
+            old_retro.write_text("old retrospective\n", encoding="utf-8")
+
+            check_output = input_root / "merge" / "outputs"
+            check_model = check_output / "checks" / "jitter" / "model"
+            jitter_result = check_model / "jitter" / "jitter_seed_1" / "result.txt"
+            jitter_result.parent.mkdir(parents=True)
+            jitter_result.write_text("updated jitter\n", encoding="utf-8")
+            write_csv(
+                check_output / "checks" / "jitter" / "model-index.csv",
+                [{
+                    "check_type": "jitter",
+                    "model_key": "model",
+                    "step_id": "model",
+                    "model_dir": "model",
+                    "model_folder": "model",
+                    "payload_role": "check_model_root",
+                }],
+            )
+            write_csv(
+                check_model / "check-summary.csv",
+                [{"check_type": "jitter", "merge_status": "complete"}],
+            )
+
+            attached_output = root / "attached"
+            self.attach(input_root, attached_output, "merge", "jitter", output_mode="delta")
+            attached_model = attached_output / "models" / "model"
+
+            self.assertTrue((attached_model / "model_payload.rds").is_file())
+            self.assertTrue((attached_model / "model_payload_manifest.json").is_file())
+            self.assertTrue((attached_model / "model_payload_manifest.csv").is_file())
+            self.assertTrue((attached_model / "attached-checks-index.csv").is_file())
+            self.assertTrue((attached_model / "jitter" / "jitter_seed_1" / "result.txt").is_file())
+            self.assertTrue((attached_model / "retro" / "peel_1" / "old.txt").is_file())
+            for name in (
+                "model.frq", "model.ini", "final.par", "plot.rep",
+                "length.fit", "base-only.txt",
+            ):
+                self.assertFalse((attached_model / name).exists(), name)
+
+            self.assertFalse((attached_output / "base-model-candidates.csv").exists())
+            self.assertFalse((attached_output / "check-model-candidates.csv").exists())
+            self.assertTrue((attached_output / "model-index.csv").is_file())
+            self.assertTrue((attached_output / "attach-output-manifest.csv").is_file())
+            bundle = read_csv(attached_output / "attached-model-bundle.csv")[0]
+            self.assertEqual(bundle["output_mode"], "delta")
+            self.assertEqual(bundle["overlay_base_required"], "TRUE")
+            inventory = read_csv(attached_output / "attach-output-manifest.csv")
+            published = {row["relative_path"] for row in inventory}
+            self.assertIn("models/model/model_payload.rds", published)
+            self.assertIn("models/model/jitter/jitter_seed_1/result.txt", published)
+            self.assertIn("models/model/retro/peel_1/old.txt", published)
+            retained = {
+                row["check_type"]
+                for row in read_csv(attached_output / "attached-checks-index.csv")
+            }
+            self.assertEqual(retained, {"jitter", "retro"})
+            self.assertFalse(any(path.endswith((".frq", ".ini", ".par", ".rep")) for path in published))
+            excluded = {
+                "attached-model-bundle.csv",
+                "attached-model-bundle.rds",
+                "attach-output-manifest.csv",
+                "attach-output-manifest.rds",
+            }
+            self.assertTrue(excluded.isdisjoint(published))
+            self.assertEqual(
+                set(bundle["inventory_excluded_files"].split()),
+                excluded,
+            )
+            self.assertEqual(int(bundle["n_published_files"]), len(inventory))
+            self.assertEqual(
+                int(float(bundle["published_bytes"])),
+                sum(int(float(row["bytes"])) for row in inventory),
+            )
+            for row in inventory:
+                path = attached_output / row["relative_path"]
+                self.assertTrue(path.is_file(), row["relative_path"])
+                self.assertEqual(int(float(row["bytes"])), path.stat().st_size)
+                self.assertEqual(
+                    row["md5"],
+                    hashlib.md5(path.read_bytes()).hexdigest(),
+                    row["relative_path"],
+                )
+                self.assertEqual(
+                    set(row["inventory_excluded_files"].split()),
+                    excluded,
+                )
+
+    def test_full_attach_mode_preserves_standalone_base_files(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            input_root = root / "inputs"
+            self.make_base_job(input_root)
+            base_model = input_root / "base" / "outputs" / "models" / "model"
+            (base_model / "base-only.txt").write_text("standalone\n", encoding="utf-8")
+
+            check_output = input_root / "merge" / "outputs"
+            check_model = check_output / "checks" / "jitter" / "model"
+            result = check_model / "jitter" / "jitter_seed_1" / "result.txt"
+            result.parent.mkdir(parents=True)
+            result.write_text("updated jitter\n", encoding="utf-8")
+            write_csv(
+                check_output / "checks" / "jitter" / "model-index.csv",
+                [{
+                    "check_type": "jitter",
+                    "model_key": "model",
+                    "step_id": "model",
+                    "model_dir": "model",
+                    "model_folder": "model",
+                    "payload_role": "check_model_root",
+                }],
+            )
+
+            attached_output = root / "attached"
+            self.attach(input_root, attached_output, "merge", "jitter", output_mode="full")
+            self.assertTrue((attached_output / "models" / "model" / "base-only.txt").is_file())
+            bundle = read_csv(attached_output / "attached-model-bundle.csv")[0]
+            self.assertEqual(bundle["output_mode"], "full")
+            self.assertEqual(bundle["overlay_base_required"], "FALSE")
+
+    def test_direct_merge_delta_does_not_publish_duplicate_checks_tree(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            output_dir = root / "outputs"
+            check_model = output_dir / "checks" / "hessian" / "model"
+            hessian_info = check_model / "hessian" / "hessian_info.rds"
+            hessian_info.parent.mkdir(parents=True)
+            hessian_info.write_bytes(b"hessian-placeholder")
+            (check_model / "model_payload.rds").write_bytes(b"payload-placeholder")
+            (check_model / "model_payload_manifest.json").write_text("{}\n", encoding="utf-8")
+            write_csv(
+                check_model / "model_payload_manifest.csv",
+                [{"role": "model_payload", "file": "model_payload.rds"}],
+            )
+            (check_model / "final.par").write_text("base par\n", encoding="utf-8")
+            (check_model / "model.frq").write_text("base frq\n", encoding="utf-8")
+
+            expression = (
+                'source("R/model_output_adapter.R"); '
+                f'write_attached_model_output({str(check_model)!r}, {str(output_dir)!r}, '
+                '"model", check_type="hessian", output_mode="delta")'
+            )
+            subprocess.run(
+                ["Rscript", "-e", expression],
+                cwd=ROOT,
+                env={
+                    **os.environ,
+                    "CHECK_ENRICH_PAYLOADS": "false",
+                    "CHECK_REQUIRE_PAYLOAD_REFRESH": "false",
+                },
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+            published_model = output_dir / "models" / "model"
+            self.assertFalse((output_dir / "checks").exists())
+            self.assertTrue((published_model / "hessian" / "hessian_info.rds").is_file())
+            self.assertTrue((published_model / "model_payload.rds").is_file())
+            self.assertFalse((published_model / "final.par").exists())
+            self.assertFalse((published_model / "model.frq").exists())
 
     def test_r_integer_parser_rejects_invalid_and_deduplicates(self):
         expression = (

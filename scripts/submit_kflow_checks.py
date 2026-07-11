@@ -40,6 +40,16 @@ DEFAULT_JITTER_SEEDS = ["1", "2"]
 DEFAULT_RETRO_PEELS = ["1", "2", "3", "4", "5"]
 DEFAULT_SELFTEST_REPS = ["1", "2"]
 MAX_R_INTEGER = 2_147_483_647
+DIAGNOSTIC_OVERLAY_REPLACE_NAMES = [
+    "jitter",
+    "retro",
+    "hessian",
+    "profile",
+    "selftest",
+    "aspm",
+    "projection",
+]
+DIRECT_MERGE_CHECKS = tuple(MERGE_CHECKS)
 
 
 def split_values(raw: str) -> list[str]:
@@ -532,7 +542,64 @@ def latest_attached_output_job(base_url: str, token: str, base_job: str) -> str:
     output_job = str(latest.get("output_job") or "").strip().lstrip("#")
     if not output_job or output_job == str(base_job).strip().lstrip("#"):
         return ""
+    # The parent pointer is authoritative, but validate the child before using
+    # it as a prior standalone attachment. This rejects stale, failed, or
+    # unrelated attached-work records.
+    output = api_job(base_url, token, output_job)
+    if not output:
+        return ""
+    output_metadata = output.get("metadata") if isinstance(output.get("metadata"), dict) else {}
+    declared_parent = str(output_metadata.get("attached_work_parent_job") or "").strip().lstrip("#")
+    if declared_parent != str(base_job).strip().lstrip("#"):
+        return ""
+    status = str(output.get("status") or "").strip().lower()
+    if status not in {"success", "completed"}:
+        return ""
     return output_job
+
+
+def attached_output_ref(value: Any) -> str:
+    if isinstance(value, dict):
+        value = value.get("output_job") or value.get("job") or value.get("job_number") or ""
+    return str(value or "").strip().lstrip("#")
+
+
+def attached_work_slot_key(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    return re.sub(r"[^a-z0-9_.-]+", "-", text).strip("-_.")
+
+
+def latest_attached_output_jobs_by_slot(
+    base_url: str,
+    token: str,
+    base_job: str,
+) -> dict[str, str]:
+    """Return safe completed same-slot predecessors for independent overlays."""
+    parent = api_job(base_url, token, base_job)
+    metadata = parent.get("metadata") if isinstance(parent.get("metadata"), dict) else {}
+    raw = metadata.get("attached_work_latest_by_slot")
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, str] = {}
+    normalized_base = str(base_job or "").strip().lstrip("#")
+    for slot, value in raw.items():
+        slot_key = attached_work_slot_key(slot)
+        ref = attached_output_ref(value)
+        if not slot_key or not ref or ref == normalized_base:
+            continue
+        child = api_job(base_url, token, ref)
+        child_metadata = child.get("metadata") if isinstance(child.get("metadata"), dict) else {}
+        child_parent = str(child_metadata.get("attached_work_parent_job") or "").strip().lstrip("#")
+        child_slot = attached_work_slot_key(child_metadata.get("attached_work_slot"))
+        status = str(child.get("status") or "").strip().lower()
+        if child_parent != normalized_base or child_slot != slot_key or status not in {"success", "completed"}:
+            continue
+        out[slot_key] = ref
+    return out
+
+
+def diagnostic_attached_work_slot(model: str, check: str) -> str:
+    return f"diagnostics:{model}:{check}"
 
 
 def job_check_kind(job: dict[str, Any]) -> str:
@@ -620,10 +687,53 @@ def main() -> int:
     auto_merge = truthy(args.auto_merge, default=True)
     auto_attach = truthy(args.auto_attach, default=True)
     attach_merge_with_latest = truthy(os.environ.get("KFLOW_ATTACH_MERGE_WITH_LATEST", "true"), default=True)
+    requested_attach_mode = str(os.environ.get("ATTACH_OUTPUT_MODE", "delta")).strip().lower()
+    requested_delta_attach = requested_attach_mode in {"delta", "overlay", "delta_overlay"}
     base_input_job = input_jobs[0] if input_jobs else ""
-    previous_attached_job_for_base = ""
-    if base_input_job and not args.dry_run and token:
+    previous_attached_job_for_base = "" if requested_delta_attach else env_first(
+        "KFLOW_PREVIOUS_ATTACHED_OUTPUT_JOB",
+        "KFLOW_LATEST_ATTACHED_OUTPUT_JOB",
+    ).lstrip("#")
+    if previous_attached_job_for_base == base_input_job:
+        previous_attached_job_for_base = ""
+    if (
+        base_input_job
+        and not previous_attached_job_for_base
+        and not requested_delta_attach
+        and not args.dry_run
+        and token
+    ):
         previous_attached_job_for_base = latest_attached_output_job(base_url, token, base_input_job)
+    direct_merge_attach = (
+        auto_attach
+        and auto_merge
+        and bool(base_input_job)
+        and requested_delta_attach
+        and all(check in DIRECT_MERGE_CHECKS for check in checks)
+    )
+    previous_attached_output_by_slot: dict[str, str] = {}
+    previous_by_slot_raw = env_first(
+        "KFLOW_PREVIOUS_ATTACHED_OUTPUT_BY_SLOT",
+        "KFLOW_ATTACHED_OUTPUT_LATEST_BY_SLOT",
+    )
+    if direct_merge_attach and previous_by_slot_raw:
+        try:
+            parsed_by_slot = json.loads(previous_by_slot_raw)
+        except json.JSONDecodeError as exc:
+            raise SystemExit("KFLOW_PREVIOUS_ATTACHED_OUTPUT_BY_SLOT must be a JSON object.") from exc
+        if not isinstance(parsed_by_slot, dict):
+            raise SystemExit("KFLOW_PREVIOUS_ATTACHED_OUTPUT_BY_SLOT must be a JSON object.")
+        previous_attached_output_by_slot = {
+            attached_work_slot_key(slot): attached_output_ref(value)
+            for slot, value in parsed_by_slot.items()
+            if attached_work_slot_key(slot) and attached_output_ref(value)
+        }
+    elif direct_merge_attach and not args.dry_run and token:
+        previous_attached_output_by_slot = latest_attached_output_jobs_by_slot(
+            base_url,
+            token,
+            base_input_job,
+        )
     submitter_fields = {
         "remote_host": args.submitter or args.remote_host,
         "remote_user": args.remote_user,
@@ -758,6 +868,8 @@ def main() -> int:
                 }
             )
 
+    # All units above and all diagnostic-specific merges below are independent.
+    # Each merge rebuilds from the stable original fit and only its own units.
     for group in submitted_groups:
         check = group["check"]
         merge_check = merge_check_for(check)
@@ -813,6 +925,17 @@ def main() -> int:
             env.update(profile_merge_env)
         if check == "hessian":
             env["CHECK_TYPE"] = "hessian_merge"
+
+        if direct_merge_attach:
+            env.update({
+                "ATTACH_OUTPUT_MODE": "delta",
+                "ATTACH_CHECK_TYPES": check,
+                "ATTACH_UPDATED_CHECK_TYPES": check,
+                "MODEL_BASE_INPUT_JOB": base_input_job,
+                "BASE_MODEL_JOB": base_input_job,
+                "MODEL_ORIGINAL_BASE_INPUT_JOB": base_input_job,
+                "CHECK_INPUT_JOBS": " ".join(unit_job_ids),
+            })
         previous_merge_jobs = (
             previous_check_merge_jobs(base_url, token, previous_attached_job_for_base, check)
             if previous_attached_job_for_base and not args.dry_run and token
@@ -833,12 +956,58 @@ def main() -> int:
                     "jobs": [previous_attached_job_for_base],
                 }
             )
+        direct_attach_metadata: dict[str, Any] = {}
+        direct_attach_tags: dict[str, Any] = {}
+        if direct_merge_attach:
+            attached_work_slot = diagnostic_attached_work_slot(model, check)
+            same_slot_predecessor = previous_attached_output_by_slot.get(
+                attached_work_slot_key(attached_work_slot),
+                "",
+            )
+            direct_attach_metadata = {
+                "base_job": base_input_job,
+                "original_base_job": base_input_job,
+                "attach_base_input_job": base_input_job,
+                "check_input_jobs": list(unit_job_ids),
+                "attach_check_types": [check],
+                "attached_check_types": [check],
+                "attached_updated_check_types": [check],
+                "attached_output_overlay": True,
+                "attached_output_overlay_mode": "diagnostics_with_payload",
+                "attached_output_overlay_preserve_payload": True,
+                "attached_output_overlay_replace_payload": True,
+                "attached_output_overlay_replace_names": [check],
+                "attached_work_parent_job": base_input_job,
+                "attached_work_latest": True,
+                "attached_work_group": f"{args.flow_group}:{model}:diagnostics",
+                # Diagnostic-specific slots keep all independent overlays
+                # visible and prevent one check type from replacing another.
+                "attached_work_slot": attached_work_slot,
+                "attached_work_headline": os.environ.get("KFLOW_ATTACHED_WORK_HEADLINE", "Diagnostics"),
+                "attached_work_label": f"{model} {check} diagnostics",
+                "attached_work_summary": (
+                    f"Merged {check} diagnostic delta attached directly to the base model output."
+                ),
+                "attached_work_role": "updated output",
+                "direct_merge_attach": True,
+                "attach_output_mode": "delta",
+                "overlay_base_input_job": base_input_job,
+                "previous_attached_output_job": same_slot_predecessor,
+                "same_slot_predecessor_job": same_slot_predecessor,
+                "independent_diagnostic_merge": True,
+            }
+            direct_attach_tags = {"base_job": base_input_job, "attached_output_overlay": "true"}
+
+        merge_input_jobs = list(unit_job_ids)
+        if direct_merge_attach:
+            merge_input_jobs = list(dict.fromkeys([base_input_job, *unit_job_ids]))
+
         payload = {
             **submitter_fields,
             "env": {key: value for key, value in env.items() if value not in (None, "")},
             "title": title,
             "description": description,
-            "input_jobs": unit_job_ids,
+            "input_jobs": merge_input_jobs,
             "metadata": {
                 "flow_group": args.flow_group,
                 "job_title": title,
@@ -846,7 +1015,7 @@ def main() -> int:
                 "check_type": merge_check,
                 "merged_check_type": check,
                 "model_selector": model,
-                "input_jobs": unit_job_ids,
+                "input_jobs": merge_input_jobs,
                 "parallel_units": parallel_units,
                 "auto_merge": True,
                 "allow_failed_input_jobs": True,
@@ -864,6 +1033,7 @@ def main() -> int:
                 "previous_attached_output_job": previous_attached_job_for_base,
                 "previous_check_merge_jobs": previous_merge_jobs,
                 "input_history": input_history,
+                **direct_attach_metadata,
             },
             "tags": {
                 "stage": "checks",
@@ -871,20 +1041,26 @@ def main() -> int:
                 "check_type": merge_check,
                 "model": model,
                 "merge_for": check,
+                **direct_attach_tags,
             },
         }
         if args.dry_run:
             print(json.dumps({"task": task, "payload": payload}, indent=2, sort_keys=True))
-            group["final_job_ids"] = [f"DRY-{merge_check}-{model}-merge"]
+            merge_job_ref = f"DRY-{merge_check}-{model}-merge"
+            group["final_job_ids"] = [merge_job_ref]
             continue
         response = api_json("POST", f"{base_url}/api/job/{task}", token, payload)
         job = response.get("job", response)
         code = job.get("job_number") or job.get("number") or job.get("code") or job.get("id") or "?"
         if code and code != "?":
             group["final_job_ids"] = [str(code)]
+        elif direct_merge_attach:
+            raise RuntimeError(
+                f"{task} did not return a job reference for its diagnostic attachment."
+            )
         print(f"submitted {task} {model}: job {code}")
 
-    if auto_attach and base_input_job:
+    if auto_attach and base_input_job and not requested_delta_attach:
         groups_by_model: dict[str, dict[str, Any]] = {}
         for group in submitted_groups:
             model = str(group["model"])
@@ -921,6 +1097,7 @@ def main() -> int:
                 "MODEL_ORIGINAL_BASE_INPUT_JOB": base_input_job,
                 "CHECK_INPUT_JOBS": " ".join(final_job_ids),
                 "ATTACH_CHECK_TYPES": checks_text,
+                "ATTACH_OUTPUT_MODE": os.environ.get("ATTACH_OUTPUT_MODE", "delta"),
                 "KFLOW_JOB_TITLE": title,
                 "KFLOW_JOB_DESCRIPTION": description,
                 "MODEL_SOURCE_REPO": args.model_source_repo,
@@ -947,6 +1124,8 @@ def main() -> int:
                     continue
                 if key.startswith(("BET_", "JITTER_", "RETRO_", "HESSIAN_", "PROFILE_", "ASPM_", "BUNDLE_", "SELFTEST_", "MFK_", "CHECK_", "selftest_")) or key in {"TRIGGER_NEXT"} or key == "program_path":
                     env[key] = value
+            attach_output_mode = str(env.get("ATTACH_OUTPUT_MODE") or "delta").strip().lower()
+            attach_is_delta = attach_output_mode in {"delta", "overlay", "delta_overlay"}
             payload = {
                 **submitter_fields,
                 "env": {key: value for key, value in env.items() if value not in (None, "")},
@@ -967,6 +1146,15 @@ def main() -> int:
                     "attach_base_input_job": attach_base_input_job,
                     "attached_work_parent_job": base_input_job,
                     "attached_work_latest": True,
+                    "attached_output_overlay": attach_is_delta,
+                    "attached_output_overlay_mode": (
+                        "diagnostics_with_payload" if attach_is_delta else "standalone"
+                    ),
+                    "attached_output_overlay_replace_payload": attach_is_delta,
+                    "attached_output_overlay_replace_names": (
+                        DIAGNOSTIC_OVERLAY_REPLACE_NAMES if attach_is_delta else []
+                    ),
+                    "attach_output_mode": attach_output_mode,
                     "attached_work_group": f"{args.flow_group}:{model}:diagnostics",
                     "attached_work_headline": os.environ.get("KFLOW_ATTACHED_WORK_HEADLINE", "Diagnostics"),
                     "attached_work_label": f"{model} diagnostics",
