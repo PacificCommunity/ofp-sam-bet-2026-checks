@@ -2,7 +2,7 @@ name: ofp-sam-bet-2026-check-model-bundle
 description: Build a portable MFCL run bundle zip from a fitted Kflow model output.
 command: bash run.sh
 target_folder: model-bundle
-docker_image: ghcr.io/pacificcommunity/tuna-flow:v2.1
+docker_image: ghcr.io/pacificcommunity/tuna-flow:v2.2
 resources:
   cpus: 2
   memory: 8GB
