@@ -14,6 +14,10 @@ Kflow tasks for running `mfclkit` diagnostics on fitted MFCL model outputs:
 - `aspm`
 - `model-bundle`
 
+The registered Kflow tasks pin `mfclkit 0.0.0.9007` and
+`mfclshiny 0.0.0.9006` by commit so reruns do not drift when either package's
+`main` branch changes.
+
 The tasks are intentionally model-output driven, not stepwise-specific. A run can
 consume either:
 
@@ -195,6 +199,11 @@ make kflow CHECK_TYPE=model-bundle \
   method and as a conservative writer fallback.
 - `JITTER_TAG_MIXING_FIX`: `auto` by default. The tag/ini mixing-period patch is
   applied only when the staged model has a `.tag` file.
+- `JITTER_REQUIRE_INDEPVAR`: `true` by default. Native jitter uses MFCL's
+  `indepvar.rpt` so only active independent variables are perturbed. Set it to
+  `false` only as an explicit fallback for legacy cases without that report;
+  the fallback perturbs the configured safe slots and records
+  `jitter_parameter_scope=configured_slots_fallback` in the run result.
 - `BET_JITTER_MAX_EVALS`: maximum evaluations for the final-phase jitter fit,
   default `5000`. This applies to `JITTER_METHOD=simple`.
 - `RETRO_PEELS`: comma/space list of peels, default `1`.
@@ -211,7 +220,8 @@ make kflow CHECK_TYPE=model-bundle \
 - `RETRO_START_PAR_NAME`: when a `doitall.sh` run needs a conventional start
   par such as `00.par` or `02.par`, stage the fitted start par under this name
   if it is missing. Default is `auto` for `doitall.sh` retro runs, which uses
-  the first input `.par` referenced by `doitall.sh`.
+  the first input `.par` referenced by `doitall.sh`; direct warm-start runs
+  resolve `auto` to `retro-start.par` instead of treating `auto` as a filename.
 - `RETRO_REWRITE_PAR`: rewrite the fitted `.par` range for direct fitted-par
   retro runs. Default is `auto`, enabled only when `RETRO_USE_DOITALL=false`.
 - `HESSIAN_NSPLIT`: number of Hessian parts, default `30`.

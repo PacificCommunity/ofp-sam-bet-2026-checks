@@ -1376,6 +1376,7 @@ if (identical(check_type, "jitter")) {
   slots <- check_jitter_slots()
   jitter_method <- tolower(trimws(env("JITTER_METHOD", env("JITTER_STYLE", "phase1_doitall"))))
   if (!nzchar(jitter_method)) jitter_method <- "phase1_doitall"
+  jitter_require_indepvar <- truthy(env("JITTER_REQUIRE_INDEPVAR", "true"), TRUE)
   jitter_use_doitall <- truthy(env("JITTER_USE_DOITALL", if (jitter_method %in% c("phase1", "phase1_doitall", "bet")) "true" else "false"), FALSE)
   jitter_command <- if (isTRUE(jitter_use_doitall)) NULL else check_final_phase_command()
   write_run_manifest(list(
@@ -1383,6 +1384,7 @@ if (identical(check_type, "jitter")) {
     jitter_cv = cv,
     jitter_slots = paste(slots, collapse = " "),
     jitter_method = jitter_method,
+    jitter_require_indepvar = jitter_require_indepvar,
     jitter_use_doitall = jitter_use_doitall
   ))
   jitter_args <- list(
@@ -1395,6 +1397,7 @@ if (identical(check_type, "jitter")) {
     par = check_start_par,
     start_par_name = "00.par",
     output_par_name = "jitter.par",
+    require_indepvar = jitter_require_indepvar,
     run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
   )
   if (jitter_method %in% c("phase1", "phase1_doitall", "bet")) {
@@ -1403,7 +1406,6 @@ if (identical(check_type, "jitter")) {
     jitter_args$tag_mixing_fix <- env("JITTER_TAG_MIXING_FIX", "auto")
     jitter_args$n_mixing_periods <- as.integer(split_numbers(env("N_MIXING_PERIODS", "2"), default = 2)[[1L]])
     jitter_args$allow_new_ini_version_write <- truthy(env("JITTER_ALLOW_NEW_INI_VERSION_WRITE", "false"), FALSE)
-    jitter_args$require_indepvar <- truthy(env("JITTER_REQUIRE_INDEPVAR", "false"), FALSE)
     jitter_args$output_par_name <- NULL
     result <- do.call(mfk_run_jitter_phase1_doitall, jitter_args)
   } else {
@@ -1440,7 +1442,12 @@ if (identical(check_type, "jitter")) {
   } else {
     truthy(retro_remove_par_files_raw, isTRUE(retro_makepar_start))
   }
-  retro_start_par_name <- env("RETRO_START_PAR_NAME", if (isTRUE(retro_use_doitall)) "auto" else "retro-start.par")
+  retro_start_par_name_raw <- tolower(trimws(env("RETRO_START_PAR_NAME", "auto")))
+  retro_start_par_name <- if (retro_start_par_name_raw %in% c("", "auto")) {
+    if (isTRUE(retro_use_doitall)) "auto" else "retro-start.par"
+  } else {
+    env("RETRO_START_PAR_NAME", "retro-start.par")
+  }
   retro_rewrite_par_raw <- tolower(trimws(env("RETRO_REWRITE_PAR", "auto")))
   retro_rewrite_par <- if (retro_rewrite_par_raw %in% c("", "auto")) {
     !isTRUE(retro_use_doitall)
@@ -1468,6 +1475,7 @@ if (identical(check_type, "jitter")) {
     remove_par_files = isTRUE(retro_remove_par_files),
     rewrite_par = isTRUE(retro_rewrite_par),
     makepar_start = isTRUE(retro_makepar_start),
+    start_strategy = if (isTRUE(retro_use_doitall)) "fresh_makepar" else "fitted_warm_start",
     run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
   )
   if (nzchar(retro_start_par_name)) {
