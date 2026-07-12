@@ -5,8 +5,8 @@ target_folder: jitter
 docker_image: ghcr.io/pacificcommunity/tuna-flow:v2.2
 resources:
   cpus: 2
-  memory: 12GB
-  disk: 10GB
+  memory: 8GB
+  disk: 8GB
 env:
   CHECK_TYPE: jitter
   MODEL_SOURCE_REPO: PacificCommunity/ofp-sam-bet-2026-stepwise
