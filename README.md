@@ -14,8 +14,8 @@ Kflow tasks for running `mfclkit` diagnostics on fitted MFCL model outputs:
 - `aspm`
 - `model-bundle`
 
-The registered Kflow tasks pin `mfclkit 0.0.0.9012` and
-`mfclshiny 0.0.0.9014` by commit so reruns do not drift when either package's
+The registered Kflow tasks pin `mfclkit 0.0.0.9015` and
+`mfclshiny 0.0.0.9015` by commit so reruns do not drift when either package's
 `main` branch changes. Kflow forwards GitHub access only to the short-lived
 runtime installer because these package repositories require authenticated
 source access.
@@ -190,7 +190,7 @@ make kflow CHECK_TYPE=model-bundle \
   the current diagnostic folder for overlay on the base job; `full` preserves a
   standalone base-model bundle. Direct diagnostic merges use `delta`.
 - `JITTER_SEEDS`: comma/space list of seeds, default `1`.
-- `JITTER_CV`: jitter CV, default `0.2`.
+- `JITTER_CV`: jitter CV, default `0.1`.
 - `JITTER_METHOD`: `phase1_doitall` by default. This reads the first MFCL
   phase from the staged model-specific `doitall.sh`, stages or generates that
   phase's declared input PAR, jitters its declared output PAR, then resumes
@@ -211,9 +211,10 @@ make kflow CHECK_TYPE=model-bundle \
   default `5000`. This applies to `JITTER_METHOD=simple`.
 - `RETRO_PEELS`: comma/space list of peels, default `1`.
 - `N_MIXING_PERIODS`: MFCL retrospective mixing periods, default `2`.
-- `RETRO_USE_DOITALL`: use the staged `doitall.sh` when available. Default is
-  `auto`, which uses `doitall.sh` when the staged MFCL case provides one and
-  otherwise falls back to a direct fitted-par peel.
+- `RETRO_USE_DOITALL`: run each peel through the staged model-specific
+  `doitall.sh`. Default is `true`, and a missing `doitall.sh` is an error rather
+  than a silent change of retrospective method. Set it to `false` only for a
+  deliberate fitted-par warm-start sensitivity.
 - `RETRO_MAKEPAR_START`: build the retro start `.par` from the peeled `.frq`
   and `.ini` before a `doitall.sh` retro run. Default is `auto`, enabled when
   `RETRO_USE_DOITALL` is active.
@@ -283,6 +284,10 @@ make kflow CHECK_TYPE=model-bundle \
   checks use the native self-test runner bundled with `mfclkit`.
 - `SELFTEST_RUN_REFIT`: run self-test refits and write
   `selftest/refit/rep_*` outputs for mfclshiny. Default is `true`.
+- `SELFTEST_SOURCE_MODE`: source pseudo-data from the fitted best estimate.
+  Default is `last_par`.
+- `SELFTEST_REFIT_MODE`: refit each simulated data set through the complete
+  staged model-specific `doitall.sh`. Default is `doitall`.
 - `selftest_update_tags` / `SELFTEST_UPDATE_TAGS`: `auto` by default. Tag
   pseudo-data are generated only when the staged MFCL case has a `.tag` file.
 - `selftest_require_native_tags` / `SELFTEST_REQUIRE_NATIVE_TAGS`: `auto` by

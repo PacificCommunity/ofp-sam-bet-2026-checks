@@ -25,6 +25,14 @@ class DiagnosticRunnerControlTests(unittest.TestCase):
         self.assertNotIn('env("JITTER_MAKEPAR_PAR", "00.par")', runner)
         self.assertNotIn('env("JITTER_PHASE1_PAR", "01.par")', runner)
 
+    def test_jitter_default_cv_is_point_one(self) -> None:
+        runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
+        task = (ROOT / "jitter" / "kflow.yaml").read_text(encoding="utf-8")
+
+        self.assertIn('JITTER_CV: "0.1"', task)
+        self.assertIn('env("JITTER_CV", "0.1")', runner)
+        self.assertIn("default = 0.1", runner)
+
     def test_direct_retro_resolves_auto_to_a_real_warm_start_name(self) -> None:
         runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
 
@@ -36,6 +44,31 @@ class DiagnosticRunnerControlTests(unittest.TestCase):
             'start_strategy = if (isTRUE(retro_use_doitall)) "fresh_makepar" else "fitted_warm_start"',
             runner,
         )
+
+    def test_retro_defaults_to_full_doitall_and_fails_if_it_is_missing(self) -> None:
+        runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
+        task = (ROOT / "retro" / "kflow.yaml").read_text(encoding="utf-8")
+
+        self.assertIn('RETRO_USE_DOITALL: "true"', task)
+        self.assertIn('env("RETRO_USE_DOITALL", "true")', runner)
+        self.assertIn(
+            "if (isTRUE(retro_use_doitall) && !isTRUE(retro_has_doitall))",
+            runner,
+        )
+        self.assertIn(
+            '"RETRO_USE_DOITALL=true requires a staged doitall.sh. "',
+            runner,
+        )
+
+    def test_selftest_uses_fitted_truth_then_refits_the_full_doitall(self) -> None:
+        runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
+        task = (ROOT / "selftest" / "kflow.yaml").read_text(encoding="utf-8")
+
+        self.assertIn("SELFTEST_SOURCE_MODE: last_par", task)
+        self.assertIn("SELFTEST_REFIT_MODE: doitall", task)
+        self.assertIn('env("SELFTEST_SOURCE_MODE", "last_par")', runner)
+        self.assertIn('env("SELFTEST_REFIT_MODE", "doitall")', runner)
+        self.assertIn("par = check_start_par", runner)
 
     def test_hessian_units_preserve_regional_scaling_for_later_stitching(self) -> None:
         runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")

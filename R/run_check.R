@@ -1379,7 +1379,7 @@ if (identical(check_type, "jitter")) {
     default = 1L,
     option = "JITTER_SEEDS/JITTER_SEED"
   )
-  cv <- split_numbers(env("JITTER_CV", "0.2"), default = 0.2)[[1L]]
+  cv <- split_numbers(env("JITTER_CV", "0.1"), default = 0.1)[[1L]]
   slots <- check_jitter_slots()
   jitter_method <- tolower(trimws(env("JITTER_METHOD", env("JITTER_STYLE", "phase1_doitall"))))
   if (!nzchar(jitter_method)) jitter_method <- "phase1_doitall"
@@ -1447,11 +1447,19 @@ if (identical(check_type, "jitter")) {
   n_mixing_periods <- as.integer(split_numbers(env("N_MIXING_PERIODS", "2"), default = 2)[[1L]])
   retro_command <- split_values(env("RETRO_COMMAND", ""))
   retro_has_doitall <- file.exists(file.path(prepared$case_dir, "doitall.sh"))
-  retro_use_doitall_raw <- tolower(trimws(env("RETRO_USE_DOITALL", "auto")))
+  retro_use_doitall_raw <- tolower(trimws(env("RETRO_USE_DOITALL", "true")))
   retro_use_doitall <- if (retro_use_doitall_raw %in% c("", "auto")) {
     retro_has_doitall
   } else {
-    truthy(retro_use_doitall_raw, FALSE)
+    truthy(retro_use_doitall_raw, TRUE)
+  }
+  if (isTRUE(retro_use_doitall) && !isTRUE(retro_has_doitall)) {
+    stop(
+      "RETRO_USE_DOITALL=true requires a staged doitall.sh. ",
+      "Stage the model's complete run script or set RETRO_USE_DOITALL=false ",
+      "for an intentional fitted-par warm-start sensitivity.",
+      call. = FALSE
+    )
   }
   retro_makepar_start_raw <- tolower(trimws(env("RETRO_MAKEPAR_START", "auto")))
   retro_makepar_start <- if (retro_makepar_start_raw %in% c("", "auto")) {
@@ -1888,7 +1896,7 @@ if (identical(check_type, "jitter")) {
     Sys.setenv(selftest_source_mode = env("SELFTEST_SOURCE_MODE", "last_par"))
   }
   if (!nzchar(Sys.getenv("selftest_refit_mode", ""))) {
-    Sys.setenv(selftest_refit_mode = env("SELFTEST_REFIT_MODE", "last_par"))
+    Sys.setenv(selftest_refit_mode = env("SELFTEST_REFIT_MODE", "doitall"))
   }
   selftest_env_defaults <- c(
     selftest_refit_fevals = env("SELFTEST_REFIT_FEVALS", ""),
