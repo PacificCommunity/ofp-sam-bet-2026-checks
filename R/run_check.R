@@ -1463,37 +1463,57 @@ if (identical(check_type, "jitter")) {
   }
   retro_makepar_start_raw <- tolower(trimws(env("RETRO_MAKEPAR_START", "auto")))
   retro_makepar_start <- if (retro_makepar_start_raw %in% c("", "auto")) {
-    isTRUE(retro_use_doitall)
+    NA
   } else {
     truthy(retro_makepar_start_raw, isTRUE(retro_use_doitall))
   }
   retro_remove_par_files_raw <- tolower(trimws(env("RETRO_REMOVE_PAR_FILES", "auto")))
   retro_remove_par_files <- if (retro_remove_par_files_raw %in% c("", "auto")) {
-    isTRUE(retro_makepar_start)
+    NA
   } else {
-    truthy(retro_remove_par_files_raw, isTRUE(retro_makepar_start))
+    truthy(retro_remove_par_files_raw, FALSE)
   }
   retro_start_par_name_raw <- tolower(trimws(env("RETRO_START_PAR_NAME", "auto")))
   retro_start_par_name <- if (retro_start_par_name_raw %in% c("", "auto")) {
-    if (isTRUE(retro_use_doitall)) "auto" else "retro-start.par"
+    if (isTRUE(retro_use_doitall)) "" else "retro-start.par"
   } else {
     env("RETRO_START_PAR_NAME", "retro-start.par")
   }
   retro_rewrite_par_raw <- tolower(trimws(env("RETRO_REWRITE_PAR", "auto")))
   retro_rewrite_par <- if (retro_rewrite_par_raw %in% c("", "auto")) {
-    !isTRUE(retro_use_doitall)
+    NA
   } else {
     truthy(retro_rewrite_par_raw, !isTRUE(retro_use_doitall))
+  }
+  retro_start_strategy_raw <- tolower(trimws(env("RETRO_START_STRATEGY", "auto")))
+  allowed_retro_start_strategies <- c(
+    "auto", "model_phase_start", "fresh_makepar", "fitted_warm_start"
+  )
+  if (!retro_start_strategy_raw %in% allowed_retro_start_strategies) {
+    stop(
+      "RETRO_START_STRATEGY must be one of: ",
+      paste(allowed_retro_start_strategies, collapse = ", "),
+      call. = FALSE
+    )
+  }
+  retro_start_strategy <- if (!isTRUE(retro_use_doitall)) {
+    "fitted_warm_start"
+  } else if (identical(retro_start_strategy_raw, "auto") &&
+             isTRUE(retro_makepar_start)) {
+    "fresh_makepar"
+  } else {
+    retro_start_strategy_raw
   }
   write_run_manifest(list(
     retro_peels = paste(peels, collapse = " "),
     n_mixing_periods = n_mixing_periods,
     retro_has_doitall = retro_has_doitall,
     retro_use_doitall = retro_use_doitall,
-    retro_makepar_start = retro_makepar_start,
-    retro_remove_par_files = retro_remove_par_files,
-    retro_start_par_name = retro_start_par_name,
-    retro_rewrite_par = retro_rewrite_par
+    retro_makepar_start = if (is.na(retro_makepar_start)) "auto" else retro_makepar_start,
+    retro_remove_par_files = if (is.na(retro_remove_par_files)) "auto" else retro_remove_par_files,
+    retro_start_par_name = if (nzchar(retro_start_par_name)) retro_start_par_name else "auto",
+    retro_rewrite_par = if (is.na(retro_rewrite_par)) "auto" else retro_rewrite_par,
+    retro_start_strategy = retro_start_strategy
   ))
   retro_args <- list(
     backend = backend,
@@ -1503,12 +1523,18 @@ if (identical(check_type, "jitter")) {
     par = check_start_par,
     n_mixing_periods = n_mixing_periods,
     allow_new_ini_version_write = truthy(env("RETRO_ALLOW_NEW_INI_VERSION_WRITE", "false"), FALSE),
-    remove_par_files = isTRUE(retro_remove_par_files),
-    rewrite_par = isTRUE(retro_rewrite_par),
-    makepar_start = isTRUE(retro_makepar_start),
-    start_strategy = if (isTRUE(retro_use_doitall)) "fresh_makepar" else "fitted_warm_start",
+    start_strategy = retro_start_strategy,
     run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
   )
+  if (!is.na(retro_remove_par_files)) {
+    retro_args$remove_par_files <- isTRUE(retro_remove_par_files)
+  }
+  if (!is.na(retro_rewrite_par)) {
+    retro_args$rewrite_par <- isTRUE(retro_rewrite_par)
+  }
+  if (!is.na(retro_makepar_start)) {
+    retro_args$makepar_start <- isTRUE(retro_makepar_start)
+  }
   if (nzchar(retro_start_par_name)) {
     retro_args$start_par_name <- retro_start_par_name
   }

@@ -217,19 +217,22 @@ make kflow CHECK_TYPE=model-bundle \
   `doitall.sh`. Default is `true`, and a missing `doitall.sh` is an error rather
   than a silent change of retrospective method. Set it to `false` only for a
   deliberate fitted-par warm-start sensitivity.
-- `RETRO_MAKEPAR_START`: build the retro start `.par` from the peeled `.frq`
-  and `.ini` before a `doitall.sh` retro run. Default is `auto`, enabled when
-  `RETRO_USE_DOITALL` is active.
-- `RETRO_REMOVE_PAR_FILES`: remove copied `.par` files before a `doitall.sh`
-  retro run. Default is `auto`, enabled when `RETRO_MAKEPAR_START` is active so
-  stale fitted `.par` files do not conflict with peeled inputs.
-- `RETRO_START_PAR_NAME`: when a `doitall.sh` run needs a conventional start
-  par such as `00.par` or `02.par`, stage the fitted start par under this name
-  if it is missing. Default is `auto` for `doitall.sh` retro runs, which uses
-  the first input `.par` referenced by `doitall.sh`; direct warm-start runs
-  resolve `auto` to `retro-start.par` instead of treating `auto` as a filename.
-- `RETRO_REWRITE_PAR`: rewrite the fitted `.par` range for direct fitted-par
-  retro runs. Default is `auto`, enabled only when `RETRO_USE_DOITALL=false`.
+- `RETRO_START_STRATEGY`: default `auto`. The runner follows the actual model
+  script: an active matching `-makepar` creates the peeled start, while a PAR
+  supplied to the first model phase is preserved and windowed to the peel.
+  Explicit alternatives are `model_phase_start`, `fresh_makepar`, and
+  `fitted_warm_start`.
+- `RETRO_MAKEPAR_START`: legacy explicit override. Default `auto` delegates to
+  `RETRO_START_STRATEGY`; `true` requests `fresh_makepar` deliberately.
+- `RETRO_REMOVE_PAR_FILES`: explicit cleanup override. Default `auto` lets
+  `mfclkit` remove stale outputs while retaining or regenerating the exact
+  Phase-1 input required by the model script.
+- `RETRO_START_PAR_NAME`: optional arbitrary Phase-1 input PAR name. Default
+  `auto` parses it from `doitall.sh`; direct fitted warm starts use
+  `retro-start.par` when no name is supplied.
+- `RETRO_REWRITE_PAR`: explicit PAR-windowing override. Default `auto` lets the
+  selected strategy window supplied starts and leave active-makepar starts to
+  the model script.
 - `HESSIAN_NSPLIT`: number of Hessian parts, default `30`.
 - `HESSIAN_PARTS`: comma/space list of Hessian parts. If unset, all parts are
   submitted as parallel Kflow jobs when parallel units are enabled.

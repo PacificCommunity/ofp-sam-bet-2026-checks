@@ -37,11 +37,18 @@ class DiagnosticRunnerControlTests(unittest.TestCase):
         runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
 
         self.assertIn(
-            'if (isTRUE(retro_use_doitall)) "auto" else "retro-start.par"',
+            'if (isTRUE(retro_use_doitall)) "" else "retro-start.par"',
             runner,
         )
-        self.assertIn(
-            'start_strategy = if (isTRUE(retro_use_doitall)) "fresh_makepar" else "fitted_warm_start"',
+        self.assertIn('start_strategy = retro_start_strategy', runner)
+
+    def test_retro_auto_preserves_model_script_start_semantics(self) -> None:
+        runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
+
+        self.assertIn('env("RETRO_START_STRATEGY", "auto")', runner)
+        self.assertIn('"auto", "model_phase_start", "fresh_makepar", "fitted_warm_start"', runner)
+        self.assertNotIn(
+            'start_strategy = if (isTRUE(retro_use_doitall)) "fresh_makepar"',
             runner,
         )
 
