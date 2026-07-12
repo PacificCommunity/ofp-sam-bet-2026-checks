@@ -31,7 +31,7 @@ CHECK_ALIASES = {
 
 DEFAULT_RUNTIME_PACKAGES = (
     "mfclkit=PacificCommunity/ofp-sam-mfclkit@dfb70989557d5afd6f7eed06e247b8347f7a2767,"
-    "mfclshiny=PacificCommunity/mfclshiny@112fd8968745ecbbb8d881914924ee0bb2085ab2"
+    "mfclshiny=PacificCommunity/mfclshiny@24f13c5b7c51b137dde2ccabad27ffa039a7b523"
 )
 
 DEFAULT_PROFILE_VALUES = [float(value) for value in range(60, 145, 5)]
