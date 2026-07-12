@@ -17,6 +17,14 @@ class DiagnosticRunnerControlTests(unittest.TestCase):
         self.assertIn("require_indepvar = jitter_require_indepvar", runner)
         self.assertIn('JITTER_REQUIRE_INDEPVAR: "true"', task)
 
+    def test_phase1_jitter_infers_model_specific_par_names(self) -> None:
+        runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
+
+        self.assertIn('env("JITTER_MAKEPAR_PAR", "")', runner)
+        self.assertIn('env("JITTER_PHASE1_PAR", "")', runner)
+        self.assertNotIn('env("JITTER_MAKEPAR_PAR", "00.par")', runner)
+        self.assertNotIn('env("JITTER_PHASE1_PAR", "01.par")', runner)
+
     def test_direct_retro_resolves_auto_to_a_real_warm_start_name(self) -> None:
         runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
 

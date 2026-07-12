@@ -36,7 +36,10 @@ mfcl_command <- function(input_par = start_par_name, output_par = "check.par", e
   c(program_token, frq_name, input_par, output_par, extra)
 }
 
-check_final_phase_command <- function(script_name = "jitter.final.sh") {
+check_final_phase_command <- function(
+    script_name = "jitter.final.sh",
+    input_par = "mfk_jitter_start.par",
+    output_par = "mfk_jitter_fit.par") {
   out <- file.path(prepared$case_dir, script_name)
   lines <- c(
     "#!/bin/sh",
@@ -48,7 +51,10 @@ check_final_phase_command <- function(script_name = "jitter.final.sh") {
     "echo \"[checks] jitter final phase max evals: $max_evals\"",
     "echo \"[checks] jitter final phase convergence criterion: $phase10_11_convergence\"",
     "",
-    sprintf("$program_path %s 00.par jitter.par -file - <<JITTER_FINAL", shQuote(frq_name)),
+    sprintf(
+      "$program_path %s %s %s -file - <<JITTER_FINAL",
+      shQuote(frq_name), shQuote(input_par), shQuote(output_par)
+    ),
     "  1 1 $max_evals",
     "  1 50 $phase10_11_convergence",
     "  1 190 1",
@@ -1379,7 +1385,16 @@ if (identical(check_type, "jitter")) {
   if (!nzchar(jitter_method)) jitter_method <- "phase1_doitall"
   jitter_require_indepvar <- truthy(env("JITTER_REQUIRE_INDEPVAR", "true"), TRUE)
   jitter_use_doitall <- truthy(env("JITTER_USE_DOITALL", if (jitter_method %in% c("phase1", "phase1_doitall", "bet")) "true" else "false"), FALSE)
-  jitter_command <- if (isTRUE(jitter_use_doitall)) NULL else check_final_phase_command()
+  simple_start_par <- trimws(env("JITTER_START_PAR", "mfk_jitter_start.par"))
+  simple_output_par <- trimws(env("JITTER_OUTPUT_PAR", "mfk_jitter_fit.par"))
+  jitter_command <- if (isTRUE(jitter_use_doitall)) {
+    NULL
+  } else {
+    check_final_phase_command(
+      input_par = simple_start_par,
+      output_par = simple_output_par
+    )
+  }
   write_run_manifest(list(
     jitter_seeds = paste(seeds, collapse = " "),
     jitter_cv = cv,
@@ -1396,20 +1411,27 @@ if (identical(check_type, "jitter")) {
     cv = cv,
     jitter_args = list(include_slots = slots),
     par = check_start_par,
-    start_par_name = "00.par",
-    output_par_name = "jitter.par",
     require_indepvar = jitter_require_indepvar,
     run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
   )
   if (jitter_method %in% c("phase1", "phase1_doitall", "bet")) {
-    jitter_args$start_par_name <- env("JITTER_MAKEPAR_PAR", "00.par")
-    jitter_args$jittered_par_name <- env("JITTER_PHASE1_PAR", "01.par")
+    jitter_start_par <- trimws(env("JITTER_MAKEPAR_PAR", ""))
+    if (nzchar(jitter_start_par)) {
+      jitter_args$start_par_name <- jitter_start_par
+    }
+    jitter_phase1_par <- trimws(env("JITTER_PHASE1_PAR", ""))
+    if (nzchar(jitter_phase1_par)) {
+      jitter_args$jittered_par_name <- jitter_phase1_par
+    }
     jitter_args$tag_mixing_fix <- env("JITTER_TAG_MIXING_FIX", "auto")
     jitter_args$n_mixing_periods <- as.integer(split_numbers(env("N_MIXING_PERIODS", "2"), default = 2)[[1L]])
     jitter_args$allow_new_ini_version_write <- truthy(env("JITTER_ALLOW_NEW_INI_VERSION_WRITE", "false"), FALSE)
     jitter_args$output_par_name <- NULL
     result <- do.call(mfk_run_jitter_phase1_doitall, jitter_args)
   } else {
+    jitter_args$base_stage <- "fitted"
+    jitter_args$start_par_name <- simple_start_par
+    jitter_args$output_par_name <- simple_output_par
     if (!is.null(jitter_command)) jitter_args$command <- jitter_command
     result <- do.call(mfk_run_jitter, jitter_args)
   }

@@ -191,10 +191,11 @@ make kflow CHECK_TYPE=model-bundle \
   standalone base-model bundle. Direct diagnostic merges use `delta`.
 - `JITTER_SEEDS`: comma/space list of seeds, default `1`.
 - `JITTER_CV`: jitter CV, default `0.2`.
-- `JITTER_METHOD`: `phase1_doitall` by default. This builds a fresh
-  `00.par`, runs the staged `doitall.sh` through PHASE1, jitters the resulting
-  `01.par` starting values, then resumes the remaining phases. Use `simple` to
-  run the older direct fitted-par jitter path.
+- `JITTER_METHOD`: `phase1_doitall` by default. This reads the first MFCL
+  phase from the staged model-specific `doitall.sh`, stages or generates that
+  phase's declared input PAR, jitters its declared output PAR, then resumes
+  the remaining phases. No numeric PAR filename convention is assumed. Use
+  `simple` to run the older direct fitted-par jitter path.
 - `JITTER_SLOTS`: optional comma/space list of `MFCLPar` slots to perturb. If
   unset, the runner uses a conservative set of continuous dev/coefficient slots
   and leaves structural metadata untouched. This is used by the `simple`
