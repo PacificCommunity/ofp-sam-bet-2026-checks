@@ -41,6 +41,8 @@ all feed the same checks as long as they expose the same contract.
   `model-index.csv` row supplies `model_source`.
 - `PROGRAM_PATH`: MFCL executable path inside the Docker image.
 - `CHECK_START_PAR_NAME`: staged start par filename. Default is `final.par`.
+  ASPM and likelihood-profile checks start from this fitted best-estimate PAR;
+  they do not restart the model's full `doitall.sh` phase sequence.
 - `CHECK_DRY_RUN`: set `true` for a fast smoke test that stages the model and
   exits before running MFCL.
 - `CHECK_BUILD_REPORT_FIGURES`: build mfclshiny report-ready figures after the

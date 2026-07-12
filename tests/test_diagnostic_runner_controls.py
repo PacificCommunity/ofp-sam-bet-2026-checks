@@ -70,6 +70,15 @@ class DiagnosticRunnerControlTests(unittest.TestCase):
         self.assertIn('env("SELFTEST_REFIT_MODE", "doitall")', runner)
         self.assertIn("par = check_start_par", runner)
 
+    def test_aspm_and_profile_start_from_the_fitted_final_par(self) -> None:
+        runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
+        profile_start = runner.rindex('\n} else if (identical(check_type, "profile"))')
+        aspm_start = runner.rindex('\n} else if (identical(check_type, "aspm"))')
+        selftest_start = runner.rindex('\n} else if (identical(check_type, "selftest"))')
+
+        self.assertIn("par = check_start_par", runner[profile_start:aspm_start])
+        self.assertIn("input_par = check_start_par", runner[aspm_start:selftest_start])
+
     def test_hessian_units_preserve_regional_scaling_for_later_stitching(self) -> None:
         runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
         start = runner.index("stage_hessian_stitch_inputs <- function()")
