@@ -14,7 +14,7 @@ Kflow tasks for running `mfclkit` diagnostics on fitted MFCL model outputs:
 - `aspm`
 - `model-bundle`
 
-The registered Kflow tasks pin `mfclkit 0.0.0.9020` and
+The registered Kflow tasks pin `mfclkit 0.0.0.9021` and
 `mfclshiny 0.0.0.9016` by commit so reruns do not drift when either package's
 `main` branch changes. Kflow forwards GitHub access only to the short-lived
 runtime installer because these package repositories require authenticated
