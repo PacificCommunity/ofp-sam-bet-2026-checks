@@ -30,7 +30,7 @@ CHECK_ALIASES = {
 }
 
 DEFAULT_RUNTIME_PACKAGES = (
-    "mfclkit=PacificCommunity/ofp-sam-mfclkit@a093e40c0da6984e6f1c3d901e02846a5ee157f1,"
+    "mfclkit=PacificCommunity/ofp-sam-mfclkit@38290f6349274f1777a551e0807fb030af964b84,"
     "mfclshiny=PacificCommunity/mfclshiny@90acece572b41061cf3756bf2b2596eb2f1a43fa"
 )
 

@@ -29,7 +29,7 @@ env:
   KFLOW_REPORT_PUSH_GENERATED: "false"
   KFLOW_REPORT_PUBLISH_REQUIRED: "false"
   KFLOW_RUNTIME_PACKAGES: none
-  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@a093e40c0da6984e6f1c3d901e02846a5ee157f1,mfclshiny=PacificCommunity/mfclshiny@90acece572b41061cf3756bf2b2596eb2f1a43fa
+  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@38290f6349274f1777a551e0807fb030af964b84,mfclshiny=PacificCommunity/mfclshiny@90acece572b41061cf3756bf2b2596eb2f1a43fa
   KFLOW_REPO_RUNTIME_UPDATE: always
   KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
   KFLOW_RUNTIME_UPDATE: always
