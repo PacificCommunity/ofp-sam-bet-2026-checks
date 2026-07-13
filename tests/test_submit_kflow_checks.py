@@ -172,6 +172,35 @@ class IntegerUnitSpecTests(unittest.TestCase):
             self.assertEqual(env["FLOW_SPECIES_LABEL"], "yellowfin tuna")
             self.assertEqual(env["FLOW_ASSESSMENT_YEAR"], "2027")
 
+    def test_selftest_units_fail_on_failed_replicates_by_default(self):
+        argv = [
+            "submit_kflow_checks.py",
+            "--checks", "selftest",
+            "--models", "model",
+            "--input-jobs", "123",
+            "--parallel-units", "false",
+            "--dry-run",
+        ]
+        payloads = run_dry_run(argv, {"SELFTEST_REPS": "1"})
+
+        self.assertEqual(len(payloads), 2)
+        unit = payloads[0]["payload"]
+        merge = payloads[1]["payload"]
+        self.assertEqual(unit["env"]["CHECK_FAIL_ON_FAILED_UNITS"], "true")
+        self.assertNotIn("CHECK_FAIL_ON_FAILED_UNITS", merge["env"])
+
+        overridden = run_dry_run(
+            argv,
+            {
+                "SELFTEST_REPS": "1",
+                "CHECK_FAIL_ON_FAILED_UNITS": "false",
+            },
+        )
+        self.assertEqual(
+            overridden[0]["payload"]["env"]["CHECK_FAIL_ON_FAILED_UNITS"],
+            "false",
+        )
+
     def test_each_diagnostic_merge_is_its_own_direct_delta_attachment(self):
         for check in submit.DIRECT_MERGE_CHECKS:
             with self.subTest(check=check):

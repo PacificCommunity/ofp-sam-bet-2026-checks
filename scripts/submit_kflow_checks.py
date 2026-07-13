@@ -30,8 +30,8 @@ CHECK_ALIASES = {
 }
 
 DEFAULT_RUNTIME_PACKAGES = (
-    "mfclkit=PacificCommunity/ofp-sam-mfclkit@81385451e1336bf49ad693cd206c5c722828c199,"
-    "mfclshiny=PacificCommunity/mfclshiny@f24b848e8c304d7306c55d1739978570a81bf832"
+    "mfclkit=PacificCommunity/ofp-sam-mfclkit@95c646abce7d4c3f9aa885de31b6661df0be4730,"
+    "mfclshiny=PacificCommunity/mfclshiny@1d7cced723190967ebd33cff6f1b7126aff56780"
 )
 
 DEFAULT_PROFILE_VALUES = [float(value) for value in range(60, 145, 5)]
@@ -816,6 +816,16 @@ def main() -> int:
                     env.setdefault(
                         "SELFTEST_RUN_REFIT",
                         os.environ.get("SELFTEST_RUN_REFIT", os.environ.get("CHECK_SELFTEST_RUN_REFIT", "true")),
+                    )
+                    # A split self-test unit must surface an incomplete native
+                    # replicate as a failed Kflow job. A completed PAR remains
+                    # successful even when its convergence flag is false; the
+                    # viewer filters that diagnostic result later. Keep an
+                    # explicit caller override, but do not depend on the
+                    # registered task default being current.
+                    env["CHECK_FAIL_ON_FAILED_UNITS"] = (
+                        str(env.get("CHECK_FAIL_ON_FAILED_UNITS") or "").strip()
+                        or "true"
                     )
                 env.update(unit.get("env", {}))
                 env = {key: value for key, value in env.items() if value not in (None, "")}

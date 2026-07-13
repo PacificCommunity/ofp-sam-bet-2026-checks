@@ -196,7 +196,12 @@ check_status_success <- function(dat) {
     success[is.na(success)] <- FALSE
     return(success)
   }
-  status_names <- intersect(c("run_status", "status", "convergence_status"), names(dat))
+  status_candidates <- if (identical(check_type, "selftest")) {
+    c("run_status", "status")
+  } else {
+    c("run_status", "status", "convergence_status")
+  }
+  status_names <- intersect(status_candidates, names(dat))
   if (!length(status_names) && "n_failed" %in% names(dat)) {
     failed <- suppressWarnings(as.integer(dat$n_failed))
     success <- is.finite(failed) & failed == 0L
@@ -223,7 +228,7 @@ check_status_success <- function(dat) {
     completed <- suppressWarnings(as.logical(dat$run_completed))
     success <- success & (is.na(completed) | completed)
   }
-  if ("converged" %in% names(dat)) {
+  if (!identical(check_type, "selftest") && "converged" %in% names(dat)) {
     converged <- suppressWarnings(as.logical(dat$converged))
     success <- success & (is.na(converged) | converged)
   }
@@ -1848,6 +1853,8 @@ if (identical(check_type, "jitter")) {
   lf_flag_311 <- as.integer(split_numbers(env("ASPM_LF_FLAG_311", "11"), default = 11)[[1L]])
   wf_flag_301 <- as.integer(split_numbers(env("ASPM_WF_FLAG_301", "1"), default = 1)[[1L]])
   fix_selectivity <- truthy(env("ASPM_FIX_SELECTIVITY", "true"), TRUE)
+  recruitment_mode <- tolower(env("ASPM_RECRUITMENT_MODE", "constant"))
+  diagnostic_definition <- tolower(env("ASPM_DIAGNOSTIC_DEFINITION", "strict"))
   output_par <- env("ASPM_OUTPUT_PAR", "aspm.par")
   write_run_manifest(list(
     aspm_max_evals = max_evals,
@@ -1872,6 +1879,8 @@ if (identical(check_type, "jitter")) {
     min_lf_sample_size = min_lf_sample_size,
     min_wf_sample_size = min_wf_sample_size,
     extra_switch_lines = aspm_extra_switch_lines(),
+    recruitment_mode = recruitment_mode,
+    diagnostic_definition = diagnostic_definition,
     run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
   )
   saveRDS(result, file.path(model_dir, "aspm_runs.rds"), compress = "xz")
@@ -1978,11 +1987,23 @@ final_summary <- tryCatch(
   readRDS(file.path(model_dir, "check-summary.rds")),
   error = function(e) NULL
 )
-has_failed_units <- isTRUE(final_summary$has_failures %||% FALSE)
-fail_on_failed_units <- truthy(env("CHECK_FAIL_ON_FAILED_UNITS", "false"), FALSE)
+n_failed <- suppressWarnings(as.integer(final_summary$n_failed %||% NA_integer_))
+if (!length(n_failed) || !is.finite(n_failed[[1L]])) {
+  n_failed <- NA_integer_
+} else {
+  n_failed <- n_failed[[1L]]
+}
+has_failed_units <- isTRUE(final_summary$has_failures %||% FALSE) ||
+  (is.finite(n_failed) && n_failed > 0L)
+fail_on_failed_units_default <- identical(check_type, "selftest")
+fail_on_failed_units <- truthy(
+  env(
+    "CHECK_FAIL_ON_FAILED_UNITS",
+    if (isTRUE(fail_on_failed_units_default)) "true" else "false"
+  ),
+  fail_on_failed_units_default
+)
 if (isTRUE(fail_on_failed_units) && isTRUE(has_failed_units)) {
-  n_failed <- suppressWarnings(as.integer(final_summary$n_failed %||% NA_integer_))
-  if (!is.finite(n_failed)) n_failed <- NA_integer_
   message("[checks] failing task because ", check_type, " has failed diagnostic unit(s)",
           if (is.finite(n_failed)) paste0(": ", n_failed) else "")
   quit(save = "no", status = 1)

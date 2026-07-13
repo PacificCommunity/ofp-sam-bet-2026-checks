@@ -77,6 +77,40 @@ class DiagnosticRunnerControlTests(unittest.TestCase):
         self.assertIn('env("SELFTEST_REFIT_MODE", "doitall")', runner)
         self.assertIn("par = check_start_par", runner)
 
+    def test_selftest_failed_units_fail_the_unit_task_by_default(self) -> None:
+        runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
+        launcher = (ROOT / "run.sh").read_text(encoding="utf-8")
+        task = (ROOT / "selftest" / "kflow.yaml").read_text(encoding="utf-8")
+        merge_task = (ROOT / "selftest-merge" / "kflow.yaml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('CHECK_FAIL_ON_FAILED_UNITS: "true"', task)
+        self.assertIn(
+            'fail_on_failed_units_default <- identical(check_type, "selftest")',
+            runner,
+        )
+        self.assertIn("(is.finite(n_failed) && n_failed > 0L)", runner)
+        self.assertIn("set -euo pipefail", launcher)
+        self.assertIn('Rscript R/run_check.R "$CHECK_TYPE"', launcher)
+        self.assertNotIn("CHECK_FAIL_ON_FAILED_UNITS:", merge_task)
+
+        for check_type in ("jitter", "retro", "profile", "aspm", "hessian"):
+            unit_task = (ROOT / check_type / "kflow.yaml").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn('CHECK_FAIL_ON_FAILED_UNITS: "false"', unit_task)
+
+    def test_selftest_completion_is_not_the_same_as_convergence(self) -> None:
+        runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
+
+        self.assertIn('if (identical(check_type, "selftest")) {', runner)
+        self.assertIn('c("run_status", "status")', runner)
+        self.assertIn(
+            '!identical(check_type, "selftest") && "converged" %in% names(dat)',
+            runner,
+        )
+
     def test_aspm_and_profile_start_from_the_fitted_final_par(self) -> None:
         runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
         profile_start = runner.rindex('\n} else if (identical(check_type, "profile"))')
@@ -85,6 +119,17 @@ class DiagnosticRunnerControlTests(unittest.TestCase):
 
         self.assertIn("par = check_start_par", runner[profile_start:aspm_start])
         self.assertIn("input_par = check_start_par", runner[aspm_start:selftest_start])
+
+    def test_aspm_defaults_to_the_strict_constant_recruitment_definition(self) -> None:
+        runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
+        task = (ROOT / "aspm" / "kflow.yaml").read_text(encoding="utf-8")
+
+        self.assertIn('env("ASPM_RECRUITMENT_MODE", "constant")', runner)
+        self.assertIn('env("ASPM_DIAGNOSTIC_DEFINITION", "strict")', runner)
+        self.assertIn("recruitment_mode = recruitment_mode", runner)
+        self.assertIn("diagnostic_definition = diagnostic_definition", runner)
+        self.assertIn("ASPM_RECRUITMENT_MODE: constant", task)
+        self.assertIn("ASPM_DIAGNOSTIC_DEFINITION: strict", task)
 
     def test_hessian_units_preserve_regional_scaling_for_later_stitching(self) -> None:
         runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
