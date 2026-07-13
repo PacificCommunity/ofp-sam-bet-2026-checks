@@ -479,9 +479,9 @@ profile_add_missing_expected <- function(points) {
 
   profile_name <- if (is.data.frame(points) && nrow(points) && "profile" %in% names(points)) {
     value <- as.character(points$profile[[1L]])
-    if (!is.na(value) && nzchar(value)) value else env("PROFILE_NAME", "adult_biomass")
+    if (!is.na(value) && nzchar(value)) value else env("PROFILE_NAME", "total_average_biomass")
   } else {
-    env("PROFILE_NAME", "adult_biomass")
+    env("PROFILE_NAME", "total_average_biomass")
   }
   missing_rows <- data.frame(
     profile = profile_name,
@@ -508,7 +508,7 @@ profile_add_missing_expected <- function(points) {
 write_merged_profile_spec <- function(root, points = NULL) {
   row <- profile_first_point_row(root)
   profile_name <- profile_env_or_text(
-    "PROFILE_NAME", profile_row_text(row, "profile", "adult_biomass")
+    "PROFILE_NAME", profile_row_text(row, "profile", "total_average_biomass")
   )
   profile_dir <- file.path(root, "profile", profile_name)
   dir.create(profile_dir, recursive = TRUE, showWarnings = FALSE)
@@ -540,6 +540,16 @@ write_merged_profile_spec <- function(root, points = NULL) {
     center = profile_anchor_scalar(),
     side = "merged",
     preset = env("PROFILE_PRESET", env("MFK_PROFILE_PRESET", NA_character_)),
+    execution_mode = env(
+      "PROFILE_EXECUTION_MODE", env("MFK_PROFILE_EXECUTION_MODE", "continuation")
+    ),
+    parallel_mode = env("PROFILE_PARALLEL_MODE", "chains"),
+    doitall_penalty = suppressWarnings(as.numeric(env(
+      "PROFILE_DOITALL_PENALTY", env("MFK_PROFILE_DOITALL_PENALTY", NA_character_)
+    ))),
+    doitall_script = env(
+      "PROFILE_DOITALL_SCRIPT", env("MFK_PROFILE_DOITALL_SCRIPT", "doitall.sh")
+    ),
     created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
   )
   saveRDS(spec, file.path(profile_dir, "profile_spec.rds"), compress = "xz")
@@ -578,7 +588,7 @@ write_profile_base_anchor <- function(root) {
 
   point_row <- profile_first_point_row(root)
   profile_name <- profile_env_or_text(
-    "PROFILE_NAME", profile_row_text(point_row, "profile", "adult_biomass")
+    "PROFILE_NAME", profile_row_text(point_row, "profile", "total_average_biomass")
   )
   quantity <- profile_env_or_text(
     "PROFILE_QUANTITY", profile_row_text(point_row, "quantity", "avg_bio")
@@ -1546,7 +1556,7 @@ if (isTRUE(smoke_only)) {
     if (length(missing_values)) {
       if (!nrow(profile_qc)) {
         profile_qc <- data.frame(
-          profile = env("PROFILE_NAME", "adult_biomass"),
+          profile = env("PROFILE_NAME", "total_average_biomass"),
           qc = "Bad",
           reason = "missing_expected_scalars",
           stringsAsFactors = FALSE

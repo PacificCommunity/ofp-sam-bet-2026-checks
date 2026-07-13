@@ -14,7 +14,7 @@ Kflow tasks for running `mfclkit` diagnostics on fitted MFCL model outputs:
 - `aspm`
 - `model-bundle`
 
-The registered Kflow tasks pin `mfclkit 0.0.0.9022` and
+The registered Kflow tasks pin `mfclkit 0.0.0.9024` and
 `mfclshiny 0.0.0.9018` by commit so reruns do not drift when either package's
 `main` branch changes. Kflow forwards GitHub access only to the short-lived
 runtime installer because these package repositories require authenticated
@@ -41,8 +41,9 @@ all feed the same checks as long as they expose the same contract.
   `model-index.csv` row supplies `model_source`.
 - `PROGRAM_PATH`: MFCL executable path inside the Docker image.
 - `CHECK_START_PAR_NAME`: staged start par filename. Default is `final.par`.
-  ASPM and likelihood-profile checks start from this fitted best-estimate PAR;
-  they do not restart the model's full `doitall.sh` phase sequence.
+  ASPM and the default likelihood-profile continuation start from this fitted
+  best-estimate PAR. An explicitly requested full-doitall profile instead
+  rebuilds each scalar from the model INI through its staged phase sequence.
 - `CHECK_DRY_RUN`: set `true` for a fast smoke test that stages the model and
   exits before running MFCL.
 - `CHECK_BUILD_REPORT_FIGURES`: build mfclshiny report-ready figures after the
@@ -256,9 +257,21 @@ make kflow CHECK_TYPE=model-bundle \
 - Each profile point stores the constrained fit separately from a one-run,
   same-target, zero-penalty likelihood harvest. It never uses target zero to
   "refresh" a profile result.
-- `PROFILE_PARALLEL_MODE`: profile jobs run as downstream/upstream chains when
-  split for Kflow. Point-by-point scalar splitting is intentionally unsupported
-  because each side should continue from the previous profile point.
+- `PROFILE_PARALLEL_MODE`: `chains` remains the default and runs lower/upper
+  continuation chains that reuse neighbouring solutions. `scalars` submits one
+  independent Condor job per non-center value and gives a shorter critical path
+  when many slots are available; `scalar`, `point`, and `points` are aliases.
+- `PROFILE_EXECUTION_MODE`: `continuation` is the established fitted-PAR mode
+  (`fitted_par`, `final_par`, `ramp`, and `legacy` remain accepted aliases).
+  Set `doitall` together with `PROFILE_PARALLEL_MODE=scalars` to start every
+  scalar from the model INI and follow the complete model-specific `doitall.sh`
+  phase tuning with that profile constraint. Full scalar fan-out repeats the
+  phase sequence for every point, so total CPU use is higher even when elapsed
+  time is much lower. `doitall` with chain mode is rejected because independent
+  INI-based rebuilds have no neighbouring fitted PAR to continue from.
+- `PROFILE_DOITALL_PENALTY`: constraint weight carried through each full
+  doitall profile, default `1e7`. `PROFILE_DOITALL_SCRIPT` names the staged
+  model-specific script and defaults to `doitall.sh`.
 - `PROFILE_CENTER`: profile anchor scalar, default `100`. The center is the
   fitted base model and is not re-run as a profile unit; merge writes it once as
   the base-anchor point.
@@ -276,11 +289,14 @@ make kflow CHECK_TYPE=model-bundle \
   `PROFILE_RETRY_INVALID`, `PROFILE_RETRY_JAGGED`,
   `PROFILE_CONTINUATION_REPS`, and `PROFILE_JAGGED_TOLERANCE` control the
   selective retry policy.
-- `PROFILE_CHAIN`: run profile values sequentially within a job. Default is
-  `true`.
+- `PROFILE_CHAIN`: run profile values sequentially within a job. Scalar jobs
+  force this to `false`; chain mode forces it to `true`.
 - `PROFILE_NAME`: profile folder name.
 - `PROFILE_QUANTITY`: quantity profile target, for example `avg_bio` or
   `relative_depletion`.
+- The registered quantity-profile task names its `avg_bio`, `AF172=0` profile
+  `total_average_biomass`, matching the native MFCL definition. Override
+  `PROFILE_NAME` when deliberately profiling a different quantity/flag setup.
 - `PROFILE_BASE_QUANTITY`: optional fixed base quantity. If unset, mfclkit tries
   to read it from the staged fitted output.
 - `PROFILE_APPLY_SCRIPT`: required for `PROFILE_TYPE=fixed_parameter`; this is a
@@ -345,7 +361,7 @@ bash run.sh jitter
 ```sh
 CHECK_TYPE=profile \
 PROFILE_TYPE=quantity \
-PROFILE_NAME=adult_biomass \
+PROFILE_NAME=total_average_biomass \
 PROFILE_QUANTITY=avg_bio \
 PROFILE_VALUES="70 80 90 100 110 120 130" \
 PROFILE_PRESET=three_stage \

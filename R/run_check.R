@@ -21,11 +21,47 @@ dir.create(model_dir, recursive = TRUE, showWarnings = FALSE)
 
 program_token <- basename(program_path)
 frq_name <- basename(prepared$frq)
-check_start_par <- tryCatch(
-  mfclkit::mfk_latest_par(prepared$case_dir, required = FALSE),
-  error = function(e) NA_character_
+staged_fitted_par <- prepared$start_par
+trusted_indepvar_selections <- c(
+  "payload_fitted_indepvar", "compact_fitted_indepvar"
 )
-if (!file.exists(check_start_par)) check_start_par <- prepared$start_par
+staged_fitted_indepvar_selection <- as.character(
+  prepared$manifest$fitted_indepvar_selection %||% ""
+)
+if (!length(staged_fitted_indepvar_selection) ||
+    is.na(staged_fitted_indepvar_selection[[1L]])) {
+  staged_fitted_indepvar_selection <- ""
+} else {
+  staged_fitted_indepvar_selection <- staged_fitted_indepvar_selection[[1L]]
+}
+staged_fitted_indepvar <- ""
+if (staged_fitted_indepvar_selection %in% trusted_indepvar_selections) {
+  candidate <- file.path(prepared$case_dir, "indepvar.rpt")
+  expected_md5 <- as.character(
+    prepared$manifest$fitted_indepvar_md5 %||% ""
+  )
+  if (!length(expected_md5) || is.na(expected_md5[[1L]])) {
+    expected_md5 <- ""
+  } else {
+    expected_md5 <- expected_md5[[1L]]
+  }
+  if (!file.exists(candidate) || !nzchar(expected_md5) ||
+      !identical(file_md5(candidate), expected_md5)) {
+    stop(
+      "Trusted fitted indepvar staging is missing or failed its checksum.",
+      call. = FALSE
+    )
+  }
+  staged_fitted_indepvar <- candidate
+}
+check_start_par <- staged_fitted_par
+if (!identical(check_type, "jitter")) {
+  latest_candidate <- tryCatch(
+    mfclkit::mfk_latest_par(prepared$case_dir, required = FALSE),
+    error = function(e) NA_character_
+  )
+  if (file.exists(latest_candidate)) check_start_par <- latest_candidate
+}
 start_par_name <- basename(check_start_par)
 if (!identical(normalize_loose(check_start_par), normalize_loose(prepared$start_par))) {
   message("[checks] using fitted start par ", start_par_name,
@@ -1344,6 +1380,7 @@ compact_check_outputs <- function() {
 }
 
 write_run_manifest <- function(extra = list()) {
+  input_manifest <- prepared$manifest
   manifest <- c(
     list(
       check_type = check_type,
@@ -1354,7 +1391,14 @@ write_run_manifest <- function(extra = list()) {
       frq = frq_name,
       start_par = start_par_name,
       start_par_path = normalize_loose(check_start_par),
-      staged_start_par = basename(prepared$start_par)
+      start_par_md5 = file_md5(check_start_par),
+      staged_start_par = basename(staged_fitted_par),
+      staged_start_par_path = normalize_loose(staged_fitted_par),
+      staged_start_par_md5 = file_md5(staged_fitted_par),
+      staged_start_par_source = as.character(input_manifest$start_par_source %||% ""),
+      staged_start_par_selection = as.character(input_manifest$start_par_selection %||% ""),
+      staged_input_file_manifest = as.character(input_manifest$input_file_manifest %||% ""),
+      staged_input_file_manifest_md5 = as.character(input_manifest$input_file_manifest_md5 %||% "")
     ),
     extra
   )
@@ -1379,6 +1423,24 @@ if (truthy(env("CHECK_DRY_RUN", env("CHECK_SMOKE_ONLY", "false")), FALSE)) {
 message("[checks] running ", check_type, " for ", model_key)
 
 if (identical(check_type, "jitter")) {
+  fitted_par_selection <- as.character(
+    prepared$manifest$start_par_selection %||% ""
+  )
+  if (!length(fitted_par_selection) || is.na(fitted_par_selection[[1L]])) {
+    fitted_par_selection <- ""
+  } else {
+    fitted_par_selection <- fitted_par_selection[[1L]]
+  }
+  if (!fitted_par_selection %in%
+      c("payload_fitted_par", "direct_fitted_par") ||
+      !par_is_completed_fit(staged_fitted_par)) {
+    stop(
+      "Jitter requires a completed parent fitted PAR; selection was ",
+      if (nzchar(fitted_par_selection)) fitted_par_selection else "unknown",
+      ". Original/makepar PAR files are not valid jitter mask references.",
+      call. = FALSE
+    )
+  }
   seeds <- positive_integer_values(
     env("JITTER_SEEDS", env("JITTER_SEED", "1")),
     default = 1L,
@@ -1389,6 +1451,7 @@ if (identical(check_type, "jitter")) {
   jitter_method <- tolower(trimws(env("JITTER_METHOD", env("JITTER_STYLE", "phase1_doitall"))))
   if (!nzchar(jitter_method)) jitter_method <- "phase1_doitall"
   jitter_require_indepvar <- truthy(env("JITTER_REQUIRE_INDEPVAR", "true"), TRUE)
+  jitter_strict_active_mask <- truthy(env("JITTER_STRICT_ACTIVE_MASK", "false"), FALSE)
   jitter_use_doitall <- truthy(env("JITTER_USE_DOITALL", if (jitter_method %in% c("phase1", "phase1_doitall", "bet")) "true" else "false"), FALSE)
   simple_start_par <- trimws(env("JITTER_START_PAR", "mfk_jitter_start.par"))
   simple_output_par <- trimws(env("JITTER_OUTPUT_PAR", "mfk_jitter_fit.par"))
@@ -1406,7 +1469,30 @@ if (identical(check_type, "jitter")) {
     jitter_slots = paste(slots, collapse = " "),
     jitter_method = jitter_method,
     jitter_require_indepvar = jitter_require_indepvar,
-    jitter_use_doitall = jitter_use_doitall
+    jitter_use_doitall = jitter_use_doitall,
+    jitter_base_stage = if (jitter_method %in% c("phase1", "phase1_doitall", "bet")) "phase1" else "fitted",
+    jitter_strict_active_mask = jitter_strict_active_mask,
+    jitter_fitted_mask_par = basename(staged_fitted_par),
+    jitter_fitted_mask_par_path = normalize_loose(staged_fitted_par),
+    jitter_fitted_mask_par_md5 = file_md5(staged_fitted_par),
+    jitter_fitted_indepvar = if (nzchar(staged_fitted_indepvar)) basename(staged_fitted_indepvar) else "",
+    jitter_fitted_indepvar_path = if (nzchar(staged_fitted_indepvar)) {
+      normalize_loose(staged_fitted_indepvar)
+    } else {
+      ""
+    },
+    jitter_fitted_indepvar_md5 = file_md5(staged_fitted_indepvar),
+    jitter_fitted_indepvar_source = as.character(prepared$manifest$fitted_indepvar_source %||% ""),
+    jitter_fitted_indepvar_selection = as.character(prepared$manifest$fitted_indepvar_selection %||% ""),
+    jitter_active_mask_source = if (
+      staged_fitted_indepvar_selection %in% trusted_indepvar_selections &&
+        nzchar(staged_fitted_indepvar)
+    ) {
+      "validated_parent_full_fit_indepvar"
+    } else {
+      "fresh_fitted_native_xinit_source_registry"
+    },
+    jitter_value_source = if (jitter_method %in% c("phase1", "phase1_doitall", "bet")) "post_phase1_current_values" else "fitted_values"
   ))
   jitter_args <- list(
     backend = backend,
@@ -1415,11 +1501,12 @@ if (identical(check_type, "jitter")) {
     seeds = seeds,
     cv = cv,
     jitter_args = list(include_slots = slots),
-    par = check_start_par,
+    par = staged_fitted_par,
     require_indepvar = jitter_require_indepvar,
     run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
   )
   if (jitter_method %in% c("phase1", "phase1_doitall", "bet")) {
+    jitter_args$base_stage <- "phase1"
     jitter_start_par <- trimws(env("JITTER_MAKEPAR_PAR", ""))
     if (nzchar(jitter_start_par)) {
       jitter_args$start_par_name <- jitter_start_par
@@ -1432,7 +1519,20 @@ if (identical(check_type, "jitter")) {
     jitter_args$n_mixing_periods <- as.integer(split_numbers(env("N_MIXING_PERIODS", "2"), default = 2)[[1L]])
     jitter_args$allow_new_ini_version_write <- truthy(env("JITTER_ALLOW_NEW_INI_VERSION_WRITE", "false"), FALSE)
     jitter_args$output_par_name <- NULL
-    result <- do.call(mfk_run_jitter_phase1_doitall, jitter_args)
+    phase1_runner <- getExportedValue("mfclkit", "mfk_run_jitter_phase1_doitall")
+    phase1_formals <- names(formals(phase1_runner))
+    if ("fitted_indepvar" %in% phase1_formals && nzchar(staged_fitted_indepvar)) {
+      jitter_args$fitted_indepvar <- staged_fitted_indepvar
+    }
+    if ("strict_active_mask" %in% phase1_formals) {
+      jitter_args$strict_active_mask <- jitter_strict_active_mask
+    } else if (isTRUE(jitter_strict_active_mask)) {
+      stop(
+        "JITTER_STRICT_ACTIVE_MASK=true requires an updated mfclkit with strict active-mask support.",
+        call. = FALSE
+      )
+    }
+    result <- do.call(phase1_runner, jitter_args)
   } else {
     jitter_args$base_stage <- "fitted"
     jitter_args$start_par_name <- simple_start_par
@@ -1606,7 +1706,10 @@ if (identical(check_type, "jitter")) {
 
 } else if (identical(check_type, "profile")) {
   profile_type <- tolower(trimws(env("PROFILE_TYPE", env("MFK_PROFILE_TYPE", "quantity"))))
-  profile_name <- env("PROFILE_NAME", if (identical(profile_type, "quantity")) "adult_biomass" else "profile")
+  profile_name <- env(
+    "PROFILE_NAME",
+    if (identical(profile_type, "quantity")) "total_average_biomass" else "profile"
+  )
   profile_name <- env("MFK_PROFILE_NAME", env("PROFILE_NAME", env("MFK_PROFILE", profile_name)))
   profile_values <- split_numbers(
     env("MFK_PROFILE_VALUES", env("PROFILE_VALUES", env("MFK_SCALAR", ""))),
@@ -1664,6 +1767,33 @@ if (identical(check_type, "jitter")) {
         call. = FALSE
       )
     }
+
+    profile_execution_mode <- tolower(trimws(env(
+      "MFK_PROFILE_EXECUTION_MODE", env("PROFILE_EXECUTION_MODE", "continuation")
+    )))
+    profile_execution_mode <- switch(
+      gsub("-", "_", profile_execution_mode, fixed = TRUE),
+      fitted_par =, final_par =, ramp =, legacy = "continuation",
+      full_doitall = "doitall",
+      profile_execution_mode
+    )
+    if (!profile_execution_mode %in% c("continuation", "doitall")) {
+      stop(
+        "Unsupported PROFILE_EXECUTION_MODE: ", profile_execution_mode,
+        ". Use continuation or doitall.",
+        call. = FALSE
+      )
+    }
+    profile_doitall_penalty <- split_numbers(env(
+      "MFK_PROFILE_DOITALL_PENALTY", env("PROFILE_DOITALL_PENALTY", "10000000")
+    ), default = 1e7)[[1L]]
+    if (!is.finite(profile_doitall_penalty) || profile_doitall_penalty <= 0) {
+      stop("PROFILE_DOITALL_PENALTY must be finite and positive.", call. = FALSE)
+    }
+    profile_doitall_script <- trimws(env(
+      "MFK_PROFILE_DOITALL_SCRIPT", env("PROFILE_DOITALL_SCRIPT", "doitall.sh")
+    ))
+    if (!nzchar(profile_doitall_script)) profile_doitall_script <- "doitall.sh"
 
     profile_penalties <- split_numbers(env(
       "MFK_PROFILE_PENALTIES",
@@ -1766,6 +1896,9 @@ if (identical(check_type, "jitter")) {
       profile_quantity = quantity,
       profile_style = profile_style,
       profile_preset = profile_preset,
+      profile_execution_mode = profile_execution_mode,
+      profile_doitall_penalty = profile_doitall_penalty,
+      profile_doitall_script = profile_doitall_script,
       profile_side = profile_side,
       profile_center = profile_center,
       profile_expected_values = env("PROFILE_EXPECTED_VALUES", ""),
@@ -1778,7 +1911,17 @@ if (identical(check_type, "jitter")) {
         call. = FALSE
       )
     }
-    result <- mfclkit::mfk_run_quantity_profile(
+    profile_runner <- getExportedValue("mfclkit", "mfk_run_quantity_profile")
+    runner_formals <- names(formals(profile_runner))
+    if (identical(profile_execution_mode, "doitall") &&
+        !"execution" %in% runner_formals) {
+      stop(
+        "PROFILE_EXECUTION_MODE=doitall requires an updated mfclkit with ",
+        "full-doitall quantity profile support.",
+        call. = FALSE
+      )
+    }
+    profile_args <- list(
       backend = backend,
       input_dir = prepared$case_dir,
       model_dir = model_dir,
@@ -1808,6 +1951,16 @@ if (identical(check_type, "jitter")) {
       jagged_tolerance = profile_jagged_tolerance,
       run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
     )
+    # Keep older mfclkit continuation runs working unchanged while making the
+    # new full-doitall path explicit. Condor already supplies one scalar per
+    # unit, so nested point parallelism must remain disabled here.
+    if ("execution" %in% runner_formals) {
+      profile_args$execution <- profile_execution_mode
+      profile_args$doitall <- profile_doitall_script
+      profile_args$doitall_penalty <- profile_doitall_penalty
+      profile_args$parallel_points <- FALSE
+    }
+    result <- do.call(profile_runner, profile_args)
   } else if (identical(profile_type, "fixed_parameter")) {
     parameter <- env("PROFILE_PARAMETER", "")
     apply_script <- env("PROFILE_APPLY_SCRIPT", "")

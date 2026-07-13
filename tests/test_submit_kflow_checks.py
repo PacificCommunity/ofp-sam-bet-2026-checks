@@ -201,6 +201,117 @@ class IntegerUnitSpecTests(unittest.TestCase):
             "false",
         )
 
+    def test_scalar_mode_emits_one_non_center_job_per_value_and_one_merge(self):
+        values = "80 90 110 120"
+        expected_values = "80 90 100 110 120"
+        payloads = run_dry_run(
+            [
+                "submit_kflow_checks.py",
+                "--checks", "profile",
+                "--models", "model",
+                "--input-jobs", "3001",
+                "--parallel-units", "true",
+                "--auto-attach", "false",
+                "--dry-run",
+            ],
+            {
+                "PROFILE_PARALLEL_MODE": "scalars",
+                "PROFILE_EXECUTION_MODE": "doitall",
+                "PROFILE_VALUES": values,
+                "PROFILE_CENTER": "100",
+            },
+        )
+
+        self.assertEqual(len(payloads), 5)
+        units, merge = payloads[:-1], payloads[-1]
+        self.assertTrue(all(item["task"].endswith("-profile") for item in units))
+        self.assertTrue(merge["task"].endswith("-profile-merge"))
+        self.assertEqual(
+            [item["payload"]["metadata"]["check_unit"] for item in units],
+            ["80", "90", "110", "120"],
+        )
+        self.assertNotIn(
+            "100",
+            [item["payload"]["metadata"]["check_unit"] for item in units],
+        )
+
+        for item, side in zip(units, ["downstream", "downstream", "upstream", "upstream"]):
+            payload = item["payload"]
+            env = payload["env"]
+            metadata = payload["metadata"]
+            self.assertEqual(env["PROFILE_PARALLEL_MODE"], "scalars")
+            self.assertEqual(env["PROFILE_EXECUTION_MODE"], "doitall")
+            self.assertEqual(env["PROFILE_CHAIN"], "false")
+            self.assertEqual(env["PROFILE_CHAIN_SIDE"], side)
+            self.assertEqual(env["PROFILE_INCLUDE_BASE_ANCHOR"], "false")
+            self.assertEqual(env["PROFILE_EXPECTED_VALUES"], expected_values)
+            self.assertEqual(metadata["check_unit_type"], "profile_scalar")
+            self.assertEqual(metadata["profile_side"], side)
+            self.assertEqual(metadata["profile_execution_mode"], "doitall")
+            self.assertEqual(metadata["profile_doitall_penalty"], "10000000")
+            self.assertEqual(metadata["profile_doitall_script"], "doitall.sh")
+
+        unit_refs = [
+            f"DRY-profile-model-{value}" for value in ("80", "90", "110", "120")
+        ]
+        merge_payload = merge["payload"]
+        self.assertEqual(merge_payload["input_jobs"], unit_refs)
+        self.assertEqual(merge_payload["env"]["PROFILE_EXPECTED_VALUES"], expected_values)
+        self.assertEqual(merge_payload["env"]["PROFILE_EXECUTION_MODE"], "doitall")
+        self.assertEqual(merge_payload["metadata"]["profile_expected_values"], expected_values)
+        self.assertEqual(merge_payload["metadata"]["profile_execution_mode"], "doitall")
+        self.assertEqual(merge_payload["metadata"]["profile_parallel_mode"], "scalars")
+        self.assertEqual(merge_payload["metadata"]["profile_doitall_penalty"], "10000000")
+
+    def test_point_alias_uses_scalar_jobs_and_default_continuation_mode(self):
+        with mock.patch.dict(
+            os.environ,
+            {
+                "PROFILE_PARALLEL_MODE": "points",
+                "PROFILE_VALUES": "95 100 105",
+            },
+            clear=True,
+        ):
+            specs = submit.check_unit_specs("profile", parallel_units=True)
+
+        self.assertEqual([spec["metadata"]["check_unit"] for spec in specs], ["95", "105"])
+        self.assertTrue(all(spec["env"]["PROFILE_CHAIN"] == "false" for spec in specs))
+        self.assertTrue(all(spec["env"]["PROFILE_EXECUTION_MODE"] == "continuation" for spec in specs))
+
+    def test_chain_mode_remains_selectable(self):
+        with mock.patch.dict(
+            os.environ,
+            {
+                "PROFILE_PARALLEL_MODE": "chains",
+                "PROFILE_EXECUTION_MODE": "fitted_par",
+                "PROFILE_VALUES": "90 100 110",
+            },
+            clear=True,
+        ):
+            specs = submit.check_unit_specs("profile", parallel_units=True)
+
+        self.assertEqual(
+            [spec["metadata"]["check_unit"] for spec in specs],
+            ["downstream", "upstream"],
+        )
+        self.assertTrue(all(spec["env"]["PROFILE_CHAIN"] == "true" for spec in specs))
+        self.assertTrue(all(spec["env"]["PROFILE_EXECUTION_MODE"] == "continuation" for spec in specs))
+
+    def test_full_doitall_rejects_chain_parallelism_with_actionable_error(self):
+        with mock.patch.dict(
+            os.environ,
+            {
+                "PROFILE_PARALLEL_MODE": "chains",
+                "PROFILE_EXECUTION_MODE": "doitall",
+                "PROFILE_VALUES": "90 100 110",
+            },
+            clear=True,
+        ):
+            with self.assertRaisesRegex(SystemExit, "PROFILE_PARALLEL_MODE=scalars"):
+                submit.check_unit_specs("profile", parallel_units=True)
+            with self.assertRaisesRegex(SystemExit, "PROFILE_PARALLEL_MODE=scalars"):
+                submit.check_unit_specs("profile", parallel_units=False)
+
     def test_each_diagnostic_merge_is_its_own_direct_delta_attachment(self):
         for check in submit.DIRECT_MERGE_CHECKS:
             with self.subTest(check=check):
@@ -485,6 +596,21 @@ class AttachedTaskDefaultsTests(unittest.TestCase):
                 task = (ROOT / folder / "kflow.yaml").read_text(encoding="utf-8")
                 self.assertIn('PROFILE_MAX_GRAD_THRESHOLD: "0.001"', task)
                 self.assertEqual(task.count("PROFILE_MAX_GRAD_THRESHOLD"), 2)
+
+    def test_profile_task_keeps_chain_continuation_defaults(self):
+        task = (ROOT / "profile" / "kflow.yaml").read_text(encoding="utf-8")
+        self.assertIn("PROFILE_PARALLEL_MODE: chains", task)
+        self.assertIn("PROFILE_EXECUTION_MODE: continuation", task)
+        self.assertIn('PROFILE_CHAIN: "true"', task)
+
+    def test_total_average_biomass_default_matches_af172_zero(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            env = submit.resolved_profile_env([90.0, 110.0])
+        self.assertEqual(env["PROFILE_NAME"], "total_average_biomass")
+        self.assertEqual(env["PROFILE_AF172"], "0")
+
+        task = (ROOT / "profile" / "kflow.yaml").read_text(encoding="utf-8")
+        self.assertIn("PROFILE_NAME: total_average_biomass", task)
 
     def test_manual_attach_task_defaults_to_standalone_full_output(self):
         task = (ROOT / "attach-checks" / "kflow.yaml").read_text(encoding="utf-8")

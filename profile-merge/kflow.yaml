@@ -1,5 +1,5 @@
 name: ofp-sam-bet-2026-check-profile-merge
-description: Merge split mfclkit likelihood profile chains and optionally publish an independent attached diagnostic delta.
+description: Merge split mfclkit likelihood profile points or chains and optionally publish an independent attached diagnostic delta.
 command: bash run.sh
 target_folder: profile-merge
 docker_image: ghcr.io/pacificcommunity/tuna-flow:v2.2
@@ -19,7 +19,7 @@ env:
   ATTACH_CHECK_TYPES: profile
   PROGRAM_PATH: /home/mfcl/mfclo64
   KFLOW_RUNTIME_PACKAGES: none
-  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@95c646abce7d4c3f9aa885de31b6661df0be4730,mfclshiny=PacificCommunity/mfclshiny@1d7cced723190967ebd33cff6f1b7126aff56780
+  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@ac9a2c26f51ec6e6ad95593e3372e4928ca117a8,mfclshiny=PacificCommunity/mfclshiny@1d7cced723190967ebd33cff6f1b7126aff56780
   KFLOW_REPO_RUNTIME_UPDATE: always
   KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
   KFLOW_RUNTIME_UPDATE: always
@@ -73,6 +73,9 @@ metadata:
       - PROFILE_AF173
       - PROFILE_AF174
       - PROFILE_PARALLEL_MODE
+      - PROFILE_EXECUTION_MODE
+      - PROFILE_DOITALL_PENALTY
+      - PROFILE_DOITALL_SCRIPT
       - PROFILE_CENTER
       - PROFILE_INCLUDE_BASE_ANCHOR
       - PROFILE_EXPECTED_VALUES

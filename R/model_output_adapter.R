@@ -77,6 +77,44 @@ normalize_loose <- function(path) {
   normalizePath(path, winslash = "/", mustWork = FALSE)
 }
 
+file_md5 <- function(path) {
+  if (!length(path) || is.na(path[[1L]]) || !nzchar(path[[1L]]) ||
+      !file.exists(path[[1L]]) || dir.exists(path[[1L]])) {
+    return("")
+  }
+  unname(tools::md5sum(path[[1L]]))
+}
+
+write_case_input_inventory <- function(case_dir, output_dir) {
+  files <- list.files(
+    case_dir,
+    recursive = TRUE,
+    full.names = TRUE,
+    all.files = TRUE,
+    no.. = TRUE
+  )
+  if (length(files)) {
+    info <- file.info(files)
+    files <- files[!is.na(info$isdir) & !info$isdir]
+  }
+  root <- paste0(normalize_loose(case_dir), "/")
+  inventory <- data.frame(
+    relative_path = if (length(files)) {
+      substring(normalize_loose(files), nchar(root) + 1L)
+    } else {
+      character()
+    },
+    bytes = if (length(files)) suppressWarnings(as.numeric(file.info(files)$size)) else numeric(),
+    md5 = if (length(files)) unname(tools::md5sum(files)) else character(),
+    stringsAsFactors = FALSE
+  )
+  inventory <- inventory[order(inventory$relative_path), , drop = FALSE]
+  dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+  path <- file.path(output_dir, "check-input-files.csv")
+  write.csv(inventory, path, row.names = FALSE)
+  list(path = normalize_loose(path), inventory = inventory, md5 = file_md5(path))
+}
+
 input_job_dirs <- function(root, job) {
   job <- trimws(as.character(job %||% "")[[1L]])
   if (!nzchar(job) || !dir.exists(root)) return(character())
@@ -945,16 +983,33 @@ latest_file <- function(files) {
   normalize_loose(rownames(info)[which.max(info$mtime)])
 }
 
+par_summary_value <- function(par_file, label) {
+  if (!file.exists(par_file)) return(NA_real_)
+  lines <- tryCatch(
+    readLines(par_file, warn = FALSE),
+    error = function(e) character()
+  )
+  idx <- grep(paste0("^#\\s*", label, "\\s*$"), lines)
+  if (!length(idx) || idx[[1L]] >= length(lines)) return(NA_real_)
+  tail <- lines[seq.int(idx[[1L]] + 1L, length(lines))]
+  tail <- trimws(tail)
+  tail <- tail[nzchar(tail) & !grepl("^#", tail)]
+  if (!length(tail)) return(NA_real_)
+  token <- strsplit(tail[[1L]], "[[:space:]]+")[[1L]][[1L]]
+  suppressWarnings(as.numeric(token))
+}
+
 par_npars_marker <- function(par_file) {
-  if (!file.exists(par_file)) return(NA_integer_)
-  lines <- tryCatch(readLines(par_file, warn = FALSE), error = function(e) character())
-  idx <- grep("#\\s*The number of parameters", lines)
-  if (length(idx) && idx[[1L]] < length(lines)) {
-    n <- suppressWarnings(as.integer(scan(par_file, skip = idx[[1L]],
-                                          nlines = 1L, quiet = TRUE)))
-    if (is.finite(n) && n > 0L) return(as.integer(n))
+  value <- par_summary_value(par_file, "The number of parameters")
+  if (is.finite(value) && value > 0 && value == as.integer(value)) {
+    return(as.integer(value))
   }
   NA_integer_
+}
+
+par_objective_marker <- function(par_file) {
+  value <- par_summary_value(par_file, "Objective function value")
+  if (is.finite(value)) value else NA_real_
 }
 
 par_has_fit_summary <- function(par_file) {
@@ -962,6 +1017,11 @@ par_has_fit_summary <- function(par_file) {
   lines <- tryCatch(readLines(par_file, warn = FALSE), error = function(e) character())
   any(grepl("^#\\s*(Objective function value|The number of parameters)\\s*$",
             lines))
+}
+
+par_is_completed_fit <- function(par_file) {
+  is.finite(par_objective_marker(par_file)) &&
+    is.finite(par_npars_marker(par_file))
 }
 
 order_par_files <- function(files) {
@@ -1262,30 +1322,53 @@ find_final_par <- function(row) {
   ""
 }
 
-restore_payload_par <- function(payload_file, dest) {
+restore_payload_artifact <- function(payload_file, role, dest,
+                                     required = TRUE) {
   payload <- tryCatch(readRDS(payload_file), error = function(e) e)
   if (inherits(payload, "error")) {
-    stop("Could not read compact payload par from ", payload_file, ": ", conditionMessage(payload), call. = FALSE)
+    stop(
+      "Could not read compact payload from ", payload_file, ": ",
+      conditionMessage(payload), call. = FALSE
+    )
   }
-  artifact <- tryCatch(payload$artifacts$files$par, error = function(e) NULL)
+  role <- as.character(role[[1L]])
+  artifact <- tryCatch(payload$artifacts$files[[role]], error = function(e) NULL)
   bytes <- tryCatch(artifact$bytes, error = function(e) NULL)
   if (is.null(artifact) || is.null(bytes) || !is.raw(bytes)) {
-    stop("Compact payload does not contain a par artifact: ", payload_file, call. = FALSE)
+    if (isTRUE(required)) {
+      stop(
+        "Compact payload does not contain a ", role, " artifact: ",
+        payload_file, call. = FALSE
+      )
+    }
+    return("")
   }
   compression <- tryCatch(as.character(artifact$compression[[1L]]), error = function(e) "none")
   if (!nzchar(compression) || is.na(compression)) compression <- "none"
   if (!identical(compression, "none")) {
     bytes <- tryCatch(memDecompress(bytes, type = compression), error = function(e) e)
     if (inherits(bytes, "error") || is.null(bytes)) {
-      stop("Could not decompress par artifact from ", payload_file, call. = FALSE)
+      stop(
+        "Could not decompress ", role, " artifact from ", payload_file,
+        call. = FALSE
+      )
     }
   }
   dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
   writeBin(bytes, dest)
   if (!file.exists(dest) || file.info(dest)$size <= 0) {
-    stop("Could not restore par artifact from compact payload: ", payload_file, call. = FALSE)
+    stop(
+      "Could not restore ", role, " artifact from compact payload: ",
+      payload_file, call. = FALSE
+    )
   }
-  invisible(dest)
+  normalize_loose(dest)
+}
+
+restore_payload_par <- function(payload_file, dest) {
+  invisible(restore_payload_artifact(
+    payload_file, role = "par", dest = dest, required = TRUE
+  ))
 }
 
 stage_selected_model <- function(row, work_dir = env("WORK_DIR", "work"), output_dir = env("OUTPUT_DIR", "outputs")) {
@@ -1313,16 +1396,47 @@ stage_selected_model <- function(row, work_dir = env("WORK_DIR", "work"), output
   start_name <- env("CHECK_START_PAR_NAME", "final.par")
   start_par <- file.path(stage_dir, start_name)
   start_par_restored <- FALSE
+  start_par_selection <- ""
+  fitted_indepvar_source <- ""
+  fitted_indepvar_selection <- ""
   start_par_source <- find_final_par(row)
-  if (!nzchar(start_par_source) || !file.exists(start_par_source)) {
-    start_par_source <- latest_par(stage_dir)
+  payload_file <- file.path(compact_dir, "model_payload.rds")
+  payload_par <- ""
+  payload_par_temp <- tempfile(".payload-fitted-", tmpdir = stage_dir,
+                               fileext = ".par")
+  on.exit(unlink(payload_par_temp, force = TRUE), add = TRUE)
+  if (file.exists(payload_file)) {
+    payload_par <- restore_payload_artifact(
+      payload_file, role = "par", dest = payload_par_temp, required = FALSE
+    )
+    if (nzchar(payload_par) && !par_is_completed_fit(payload_par)) {
+      stop(
+        "Compact payload PAR is not a completed fitted model: ",
+        payload_file, call. = FALSE
+      )
+    }
   }
-  if (!nzchar(start_par_source) || !file.exists(start_par_source)) {
-    payload_file <- file.path(compact_dir, "model_payload.rds")
-    if (file.exists(payload_file)) {
-      restore_payload_par(payload_file, start_par)
-      start_par_source <- paste0(normalize_loose(payload_file), ":par")
-      start_par_restored <- TRUE
+  direct_fitted_par <- nzchar(start_par_source) &&
+    file.exists(start_par_source) && par_is_completed_fit(start_par_source)
+  if (nzchar(payload_par)) {
+    # Keep the completed PAR and indepvar from one payload together. A direct
+    # compact PAR must not be paired with a different payload's active mask.
+    if (!file.copy(payload_par, start_par, overwrite = TRUE,
+                   copy.mode = TRUE, copy.date = TRUE) ||
+        !par_is_completed_fit(start_par)) {
+      stop("Could not stage the completed payload PAR.", call. = FALSE)
+    }
+    start_par_source <- paste0(normalize_loose(payload_file), ":par")
+    start_par_restored <- TRUE
+    start_par_selection <- "payload_fitted_par"
+  } else if (isTRUE(direct_fitted_par)) {
+    start_par_selection <- "direct_fitted_par"
+  } else if (nzchar(start_par_source) && file.exists(start_par_source)) {
+    start_par_selection <- "direct_par_without_fit_summary"
+  } else {
+    start_par_source <- latest_par(stage_dir)
+    if (nzchar(start_par_source) && file.exists(start_par_source)) {
+      start_par_selection <- "staged_latest_par_fallback"
     }
   }
   if (!isTRUE(start_par_restored) && (!nzchar(start_par_source) || !file.exists(start_par_source))) {
@@ -1332,21 +1446,67 @@ stage_selected_model <- function(row, work_dir = env("WORK_DIR", "work"), output
     "model_payload.rds", "profile_payload.rds", "info.rds", "model_info.rds"
   ))
   for (payload in compact_payloads[file.exists(compact_payloads)]) {
-    file.copy(payload, file.path(stage_dir, basename(payload)), overwrite = TRUE, copy.date = TRUE)
+      file.copy(payload, file.path(stage_dir, basename(payload)), overwrite = TRUE, copy.date = TRUE)
   }
-  compact_aux <- file.path(compact_dir, c("indepvar.rpt", "doitall.sh"))
-  for (aux in compact_aux[file.exists(compact_aux)]) {
-    target <- file.path(stage_dir, basename(aux))
+
+  # Jitter is a dependency check: its active mask and optimizer bounds must
+  # come from the completed parent fit, not from an original/stale case file.
+  # Core mfclshiny payloads retain indepvar.rpt even when the compact Kflow
+  # archive does not expose it as a standalone file.
+  staged_indepvar <- file.path(stage_dir, "indepvar.rpt")
+  # copy_dir() may have brought an arbitrary source-case report. It is not a
+  # trusted full-fit mask and must not survive unless replaced by a verified
+  # artifact paired with the selected completed PAR.
+  unlink(staged_indepvar, force = TRUE)
+  if (identical(start_par_selection, "payload_fitted_par")) {
+    restored_indepvar <- restore_payload_artifact(
+      payload_file, role = "indepvar", dest = staged_indepvar,
+      required = FALSE
+    )
+    if (nzchar(restored_indepvar)) {
+      fitted_indepvar_source <- paste0(
+        normalize_loose(payload_file), ":indepvar"
+      )
+      fitted_indepvar_selection <- "payload_fitted_indepvar"
+    }
+  }
+  compact_indepvar <- file.path(compact_dir, "indepvar.rpt")
+  if (identical(start_par_selection, "direct_fitted_par") &&
+      file.exists(compact_indepvar)) {
+    unlink(staged_indepvar, force = TRUE)
+    copied_indepvar <- file.copy(
+      compact_indepvar, staged_indepvar, overwrite = TRUE, copy.date = TRUE
+    )
+    if (!isTRUE(copied_indepvar) || !file.exists(staged_indepvar) ||
+        file.info(staged_indepvar)$size <= 0) {
+      unlink(staged_indepvar, force = TRUE)
+      stop("Could not stage the compact fitted indepvar.rpt.", call. = FALSE)
+    }
+    fitted_indepvar_source <- normalize_loose(compact_indepvar)
+    fitted_indepvar_selection <- "compact_fitted_indepvar"
+  }
+  compact_doitall <- file.path(compact_dir, "doitall.sh")
+  if (file.exists(compact_doitall)) {
+    target <- file.path(stage_dir, basename(compact_doitall))
     if (!file.exists(target)) {
-      file.copy(aux, target, overwrite = TRUE, copy.date = TRUE)
+      file.copy(compact_doitall, target, overwrite = TRUE, copy.date = TRUE)
     }
   }
   if (!isTRUE(start_par_restored)) {
-    file.copy(start_par_source, start_par, overwrite = TRUE, copy.date = TRUE)
+    copied_par <- file.copy(
+      start_par_source, start_par, overwrite = TRUE,
+      copy.mode = TRUE, copy.date = TRUE
+    )
+    if (!isTRUE(copied_par) || !file.exists(start_par) ||
+        file.info(start_par)$size <= 0) {
+      stop("Could not stage the selected model PAR.", call. = FALSE)
+    }
   }
 
   frq <- latest_file(case_files(stage_dir, "[.]frq$"))
   if (!nzchar(frq)) stop("Staged model case has no .frq file.", call. = FALSE)
+
+  input_inventory <- write_case_input_inventory(stage_dir, output_dir)
 
   row_program_path <- as.character(row$mfcl_program_path %||% "")
   requested_program_path <- Sys.getenv("PROGRAM_PATH", unset = "")
@@ -1371,8 +1531,27 @@ stage_selected_model <- function(row, work_dir = env("WORK_DIR", "work"), output
     source_case = source_case,
     stage_dir = normalize_loose(stage_dir),
     frq = basename(frq),
+    frq_md5 = file_md5(frq),
     start_par = basename(start_par),
     start_par_source = start_par_source,
+    start_par_selection = start_par_selection,
+    start_par_md5 = file_md5(start_par),
+    fitted_indepvar = if (nzchar(fitted_indepvar_selection) &&
+                            file.exists(staged_indepvar)) {
+      basename(staged_indepvar)
+    } else {
+      ""
+    },
+    fitted_indepvar_source = fitted_indepvar_source,
+    fitted_indepvar_selection = fitted_indepvar_selection,
+    fitted_indepvar_md5 = if (nzchar(fitted_indepvar_selection)) {
+      file_md5(staged_indepvar)
+    } else {
+      ""
+    },
+    input_file_manifest = basename(input_inventory$path),
+    input_file_manifest_md5 = input_inventory$md5,
+    input_file_count = nrow(input_inventory$inventory),
     program_path = program_path,
     stringsAsFactors = FALSE
   )

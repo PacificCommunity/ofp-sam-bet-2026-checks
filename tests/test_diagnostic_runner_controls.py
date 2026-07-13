@@ -120,6 +120,18 @@ class DiagnosticRunnerControlTests(unittest.TestCase):
         self.assertIn("par = check_start_par", runner[profile_start:aspm_start])
         self.assertIn("input_par = check_start_par", runner[aspm_start:selftest_start])
 
+    def test_profile_full_doitall_is_an_explicit_mfclkit_dispatch(self) -> None:
+        runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
+        task = (ROOT / "profile" / "kflow.yaml").read_text(encoding="utf-8")
+
+        self.assertIn('env("PROFILE_EXECUTION_MODE", "continuation")', runner)
+        self.assertIn('profile_args$execution <- profile_execution_mode', runner)
+        self.assertIn('profile_args$doitall <- profile_doitall_script', runner)
+        self.assertIn('profile_args$doitall_penalty <- profile_doitall_penalty', runner)
+        self.assertIn('profile_args$parallel_points <- FALSE', runner)
+        self.assertIn("PROFILE_EXECUTION_MODE: continuation", task)
+        self.assertIn('PROFILE_DOITALL_PENALTY: "10000000"', task)
+
     def test_aspm_defaults_to_the_strict_constant_recruitment_definition(self) -> None:
         runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
         task = (ROOT / "aspm" / "kflow.yaml").read_text(encoding="utf-8")

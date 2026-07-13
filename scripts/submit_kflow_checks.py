@@ -30,7 +30,7 @@ CHECK_ALIASES = {
 }
 
 DEFAULT_RUNTIME_PACKAGES = (
-    "mfclkit=PacificCommunity/ofp-sam-mfclkit@95c646abce7d4c3f9aa885de31b6661df0be4730,"
+    "mfclkit=PacificCommunity/ofp-sam-mfclkit@ac9a2c26f51ec6e6ad95593e3372e4928ca117a8,"
     "mfclshiny=PacificCommunity/mfclshiny@1d7cced723190967ebd33cff6f1b7126aff56780"
 )
 
@@ -175,7 +175,9 @@ def resolved_profile_env(values: list[float] | None = None) -> dict[str, str]:
         raise SystemExit(f"PROFILE_CENTER must be numeric, got {center_raw!r}.") from exc
 
     profile_type = env_first("MFK_PROFILE_TYPE", "PROFILE_TYPE") or "quantity"
-    profile_name = env_first("MFK_PROFILE_NAME", "PROFILE_NAME", "MFK_PROFILE") or "adult_biomass"
+    profile_name = env_first(
+        "MFK_PROFILE_NAME", "PROFILE_NAME", "MFK_PROFILE"
+    ) or "total_average_biomass"
     profile_label = env_first("MFK_PROFILE_LABEL", "PROFILE_LABEL") or profile_name
     quantity = env_first("MFK_PROFILE_QUANTITY", "PROFILE_QUANTITY") or "avg_bio"
     quantity_type = env_first("MFK_PROFILE_QUANTITY_TYPE", "PROFILE_QUANTITY_TYPE") or "2"
@@ -248,6 +250,25 @@ def resolved_profile_env(values: list[float] | None = None) -> dict[str, str]:
         expected = [value for value in expected if abs(value - center) > 1e-10]
     expected = sorted(set(expected))
 
+    execution_mode_raw = env_first(
+        "MFK_PROFILE_EXECUTION_MODE", "PROFILE_EXECUTION_MODE",
+    ) or "continuation"
+    execution_mode_key = execution_mode_raw.strip().lower().replace("-", "_")
+    execution_mode = {
+        "continuation": "continuation",
+        "fitted_par": "continuation",
+        "final_par": "continuation",
+        "ramp": "continuation",
+        "legacy": "continuation",
+        "doitall": "doitall",
+        "full_doitall": "doitall",
+    }.get(execution_mode_key)
+    if execution_mode is None:
+        raise SystemExit(
+            f"Unsupported PROFILE_EXECUTION_MODE={execution_mode_raw!r}. "
+            "Use continuation or doitall."
+        )
+
     resolved = {
         "PROFILE_SPEC_VERSION": "mfclkit.quantity-profile.v2",
         "PROFILE_TYPE": profile_type,
@@ -261,6 +282,13 @@ def resolved_profile_env(values: list[float] | None = None) -> dict[str, str]:
         "PROFILE_PRESET": preset,
         "PROFILE_STYLE": legacy_style,
         "PROFILE_PARALLEL_MODE": env_first("PROFILE_PARALLEL_MODE") or "chains",
+        "PROFILE_EXECUTION_MODE": execution_mode,
+        "PROFILE_DOITALL_PENALTY": env_first(
+            "MFK_PROFILE_DOITALL_PENALTY", "PROFILE_DOITALL_PENALTY",
+        ) or "10000000",
+        "PROFILE_DOITALL_SCRIPT": env_first(
+            "MFK_PROFILE_DOITALL_SCRIPT", "PROFILE_DOITALL_SCRIPT",
+        ) or "doitall.sh",
         "PROFILE_CHAIN": env_first("MFK_PROFILE_CHAIN", "PROFILE_CHAIN") or "true",
         "PROFILE_INCLUDE_BASE_ANCHOR": "true" if include_anchor else "false",
         "PROFILE_AF172": env_first("MFK_PROFILE_AF172", "PROFILE_AF172") or "0",
@@ -376,6 +404,20 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
         if check_key == "profile":
             values = profile_values_from_env()
             common_env = resolved_profile_env(values)
+            mode = common_env["PROFILE_PARALLEL_MODE"].strip().lower() or "chains"
+            execution_mode = common_env["PROFILE_EXECUTION_MODE"].strip().lower()
+            if (
+                mode in {
+                    "chain", "chains", "left-right", "left_right",
+                    "upstream-downstream", "upstream_downstream",
+                }
+                and execution_mode == "doitall"
+            ):
+                raise SystemExit(
+                    "PROFILE_EXECUTION_MODE=doitall requires independent profile points. "
+                    "Set PROFILE_PARALLEL_MODE=scalars, or keep chain mode with "
+                    "PROFILE_EXECUTION_MODE=continuation."
+                )
             return [{
                 "label": "",
                 "env": common_env,
@@ -393,7 +435,14 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
         profile_name = common_env["PROFILE_NAME"]
         label_name = profile_name if profile_name and profile_name != "profile" else "scalar"
         mode = common_env["PROFILE_PARALLEL_MODE"].strip().lower() or "chains"
+        execution_mode = common_env["PROFILE_EXECUTION_MODE"].strip().lower().replace("-", "_")
         if mode in {"chain", "chains", "left-right", "left_right", "upstream-downstream", "upstream_downstream"}:
+            if execution_mode in {"doitall", "full_doitall"}:
+                raise SystemExit(
+                    "PROFILE_EXECUTION_MODE=doitall requires independent profile points. "
+                    "Set PROFILE_PARALLEL_MODE=scalars, or keep chain mode with "
+                    "PROFILE_EXECUTION_MODE=continuation."
+                )
             center = common_env["PROFILE_CENTER"]
             chains = split_profile_chains(values, center)
             return [
@@ -413,6 +462,9 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
                         "profile_center": center,
                         "profile_name": profile_name,
                         "profile_preset": common_env["PROFILE_PRESET"],
+                        "profile_execution_mode": common_env["PROFILE_EXECUTION_MODE"],
+                        "profile_doitall_penalty": common_env["PROFILE_DOITALL_PENALTY"],
+                        "profile_doitall_script": common_env["PROFILE_DOITALL_SCRIPT"],
                         "profile_expected_values": common_env["PROFILE_EXPECTED_VALUES"],
                         "profile_chain_values": " ".join(format_number(value) for value in chain_values),
                     },
@@ -420,11 +472,47 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
                 for side, chain_values in chains.items()
             ]
         if mode in {"scalar", "scalars", "point", "points"}:
-            raise SystemExit(
-                "PROFILE_PARALLEL_MODE=scalars is not supported for these checks. "
-                "Use PROFILE_PARALLEL_MODE=chains so profile points run as left/right chains."
-            )
-        raise SystemExit(f"Unsupported PROFILE_PARALLEL_MODE={mode!r}. Use chains.")
+            center = float(common_env["PROFILE_CENTER"])
+            scalar_values = sorted({
+                value for value in values if abs(value - center) > 1e-10
+            })
+            if not scalar_values:
+                raise SystemExit(
+                    "PROFILE_PARALLEL_MODE=scalars requires at least one non-center "
+                    "PROFILE_VALUES entry."
+                )
+            specs = []
+            for value in scalar_values:
+                scalar = format_number(value)
+                side = "downstream" if value < center else "upstream"
+                specs.append({
+                    "label": f"{label_name} {scalar}",
+                    "env": {
+                        **common_env,
+                        "PROFILE_VALUES": scalar,
+                        "PROFILE_CHAIN": "false",
+                        "PROFILE_CHAIN_SIDE": side,
+                        "PROFILE_CENTER": common_env["PROFILE_CENTER"],
+                        "PROFILE_INCLUDE_BASE_ANCHOR": "false",
+                    },
+                    "metadata": {
+                        "check_unit_type": "profile_scalar",
+                        "check_unit": scalar,
+                        "profile_scalar": scalar,
+                        "profile_side": side,
+                        "profile_center": common_env["PROFILE_CENTER"],
+                        "profile_name": profile_name,
+                        "profile_preset": common_env["PROFILE_PRESET"],
+                        "profile_execution_mode": common_env["PROFILE_EXECUTION_MODE"],
+                        "profile_doitall_penalty": common_env["PROFILE_DOITALL_PENALTY"],
+                        "profile_doitall_script": common_env["PROFILE_DOITALL_SCRIPT"],
+                        "profile_expected_values": common_env["PROFILE_EXPECTED_VALUES"],
+                    },
+                })
+            return specs
+        raise SystemExit(
+            f"Unsupported PROFILE_PARALLEL_MODE={mode!r}. Use scalars or chains."
+        )
 
     if check_key == "hessian":
         parts = split_values(env_first("HESSIAN_PARTS", "HESSIAN_PART"))
@@ -1037,6 +1125,10 @@ def main() -> int:
                 **({
                     "profile_name": profile_merge_env.get("PROFILE_NAME", ""),
                     "profile_preset": profile_merge_env.get("PROFILE_PRESET", ""),
+                    "profile_execution_mode": profile_merge_env.get("PROFILE_EXECUTION_MODE", ""),
+                    "profile_parallel_mode": profile_merge_env.get("PROFILE_PARALLEL_MODE", ""),
+                    "profile_doitall_penalty": profile_merge_env.get("PROFILE_DOITALL_PENALTY", ""),
+                    "profile_doitall_script": profile_merge_env.get("PROFILE_DOITALL_SCRIPT", ""),
                     "profile_expected_values": profile_merge_env.get("PROFILE_EXPECTED_VALUES", ""),
                     "profile_spec_version": profile_merge_env.get("PROFILE_SPEC_VERSION", ""),
                 } if check == "profile" else {}),
