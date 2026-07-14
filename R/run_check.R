@@ -1753,7 +1753,7 @@ if (identical(check_type, "jitter")) {
   } else {
     split_numbers(
       env("MFK_PROFILE_VALUES", env("PROFILE_VALUES", env("MFK_SCALAR", ""))),
-      default = seq(60, 140, by = 5)
+      default = seq(60, 140, by = 2.5)
     )
   }
   profile_label <- env("MFK_PROFILE_LABEL", env("PROFILE_LABEL", profile_name))

@@ -34,7 +34,7 @@ DEFAULT_RUNTIME_PACKAGES = (
     "mfclshiny=PacificCommunity/mfclshiny@50af0245bdb9d184729ac411484c7ee20dd6f02c"
 )
 
-DEFAULT_PROFILE_VALUES = [float(value) for value in range(60, 145, 5)]
+DEFAULT_PROFILE_VALUES = [value / 2 for value in range(120, 281, 5)]
 DEFAULT_PROFILE_CENTER = "100"
 DEFAULT_JITTER_SEEDS = [str(value) for value in range(1, 31)]
 DEFAULT_RETRO_PEELS = [str(value) for value in range(1, 7)]
