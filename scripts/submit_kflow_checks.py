@@ -30,7 +30,7 @@ CHECK_ALIASES = {
 }
 
 DEFAULT_RUNTIME_PACKAGES = (
-    "mfclkit=PacificCommunity/ofp-sam-mfclkit@2cc3ac5e3024ad1a25a57d4b76b5dd5c7191eb25,"
+    "mfclkit=PacificCommunity/ofp-sam-mfclkit@5488178229ec0f15e3a5e141af036f3bed6bd3f9,"
     "mfclshiny=PacificCommunity/mfclshiny@50af0245bdb9d184729ac411484c7ee20dd6f02c"
 )
 
@@ -41,6 +41,7 @@ DEFAULT_RETRO_PEELS = [str(value) for value in range(1, 7)]
 DEFAULT_SELFTEST_REPS = [str(value) for value in range(1, 31)]
 DEFAULT_SELFTEST_REFIT_CONVERGENCE = "-3"
 MAX_R_INTEGER = 2_147_483_647
+HBASE_PROFILE_MODES = {"h-base", "h_base", "hbase", "hessian-base", "hessian_base"}
 DIAGNOSTIC_OVERLAY_REPLACE_NAMES = [
     "jitter",
     "retro",
@@ -136,6 +137,10 @@ def format_number(value: float) -> str:
     if value.is_integer():
         return str(int(value))
     return f"{value:g}"
+
+
+def is_hbase_profile_mode(raw: str) -> bool:
+    return str(raw or "").strip().lower().replace(" ", "-") in HBASE_PROFILE_MODES
 
 
 def split_profile_chains(values: list[float], center_raw: str) -> dict[str, list[float]]:
@@ -334,7 +339,11 @@ def resolved_profile_env(values: list[float] | None = None) -> dict[str, str]:
         "PROFILE_CENTER": format_number(center),
         "PROFILE_PRESET": preset,
         "PROFILE_STYLE": legacy_style,
-        "PROFILE_PARALLEL_MODE": env_first("PROFILE_PARALLEL_MODE") or "chains",
+        "PROFILE_PARALLEL_MODE": (
+            "h-base"
+            if is_hbase_profile_mode(env_first("PROFILE_PARALLEL_MODE"))
+            else env_first("PROFILE_PARALLEL_MODE") or "chains"
+        ),
         "PROFILE_EXECUTION_MODE": execution_mode,
         "PROFILE_DOITALL_PENALTY": env_first(
             "MFK_PROFILE_DOITALL_PENALTY", "PROFILE_DOITALL_PENALTY",
@@ -409,6 +418,22 @@ def resolved_profile_env(values: list[float] | None = None) -> dict[str, str]:
         "PROFILE_JAGGED_TOLERANCE": env_first(
             "MFK_PROFILE_JAGGED_TOLERANCE", "PROFILE_JAGGED_TOLERANCE",
         ) or "0.1",
+        "PROFILE_HBASE_ENABLED": (
+            "true" if is_hbase_profile_mode(env_first("PROFILE_PARALLEL_MODE")) else "false"
+        ),
+        "PROFILE_HBASE_CONDITION_CAP": env_first("PROFILE_HBASE_CONDITION_CAP") or "10000000",
+        "PROFILE_HBASE_EIGEN_FLOOR_RELATIVE": env_first("PROFILE_HBASE_EIGEN_FLOOR_RELATIVE") or "1e-10",
+        "PROFILE_HBASE_NEGATIVE_TOLERANCE": env_first("PROFILE_HBASE_NEGATIVE_TOLERANCE") or "1e-8",
+        "PROFILE_HBASE_MAX_QUADRATIC_STEP": env_first("PROFILE_HBASE_MAX_QUADRATIC_STEP") or "25",
+        "PROFILE_HBASE_MAX_COORDINATE_STEP": env_first("PROFILE_HBASE_MAX_COORDINATE_STEP") or "0.35",
+        "PROFILE_HBASE_BASE_REL_TOLERANCE": env_first("PROFILE_HBASE_BASE_REL_TOLERANCE") or "1e-5",
+        "PROFILE_HBASE_RESTART_BASE": env_first("PROFILE_HBASE_RESTART_BASE") or "920000",
+        "PROFILE_HBASE_REPAIR_PASSES": env_first("PROFILE_HBASE_REPAIR_PASSES") or "2",
+        "PROFILE_HBASE_REPAIR_CPUS": env_first("PROFILE_HBASE_REPAIR_CPUS") or "4",
+        "PROFILE_HBASE_REPAIR_MEMORY_GB": env_first("PROFILE_HBASE_REPAIR_MEMORY_GB") or "32",
+        "PROFILE_HBASE_REPAIR_MEMORY_PER_WORKER_GB": env_first(
+            "PROFILE_HBASE_REPAIR_MEMORY_PER_WORKER_GB"
+        ) or "8",
     }
     return {key: value for key, value in resolved.items() if str(value).strip()}
 
@@ -544,7 +569,11 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
                 }
                 for side, chain_values in chains.items()
             ]
-        if mode in {"scalar", "scalars", "point", "points"}:
+        if mode in {"scalar", "scalars", "point", "points", *HBASE_PROFILE_MODES}:
+            if is_hbase_profile_mode(mode) and execution_mode not in {"continuation", "ramp", "legacy"}:
+                raise SystemExit(
+                    "PROFILE_PARALLEL_MODE=h-base requires PROFILE_EXECUTION_MODE=continuation."
+                )
             center = float(common_env["PROFILE_CENTER"])
             values_key = (
                 "PROFILE_TARGET_VALUES"
@@ -572,6 +601,10 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
                         "PROFILE_CHAIN_SIDE": side,
                         "PROFILE_CENTER": common_env["PROFILE_CENTER"],
                         "PROFILE_INCLUDE_BASE_ANCHOR": "false",
+                        **({
+                            "PROFILE_HBASE_ENABLED": "true",
+                            "PROFILE_HBASE_ROLE": "scalar",
+                        } if is_hbase_profile_mode(mode) else {}),
                     },
                     "metadata": {
                         "check_unit_type": "profile_scalar",
@@ -589,7 +622,7 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
                 })
             return specs
         raise SystemExit(
-            f"Unsupported PROFILE_PARALLEL_MODE={mode!r}. Use scalars or chains."
+            f"Unsupported PROFILE_PARALLEL_MODE={mode!r}. Use scalars, chains, or h-base."
         )
 
     if check_key == "hessian":
@@ -918,8 +951,104 @@ def main() -> int:
             unit_job_ids: list[str] = []
             unit_specs = check_unit_specs(check, parallel_units)
             expected_unit_type, expected_units = expected_unit_ledger(unit_specs)
+            profile_submit_env = (
+                resolved_profile_env(profile_values_from_env())
+                if check == "profile" else {}
+            )
+            is_hbase = check == "profile" and is_hbase_profile_mode(
+                profile_submit_env.get("PROFILE_PARALLEL_MODE", "")
+            )
+            prep_job_id = ""
+            unit_input_jobs = list(input_jobs)
+            if is_hbase:
+                if not base_input_job:
+                    raise SystemExit("h-base profile submission requires the fitted base job first.")
+                hessian_jobs = [
+                    job.lstrip("#")
+                    for job in split_values(env_first("PROFILE_HBASE_HESSIAN_JOBS"))
+                ] or list(input_jobs[1:])
+                hessian_jobs = list(dict.fromkeys(
+                    job for job in hessian_jobs if job and job != base_input_job
+                ))
+                if not hessian_jobs:
+                    raise SystemExit(
+                        "h-base requires Hessian part/merge jobs after the base job or in "
+                        "PROFILE_HBASE_HESSIAN_JOBS."
+                    )
+                prep_task = f"{args.task_prefix}-profile-h-base-prep"
+                prep_title = args.job_title or f"h-base prep: {model}"
+                prep_description = args.job_description or (
+                    f"Validate the native Hessian/gradient and prepare profile starts for {model}."
+                )
+                prep_env = {
+                    "CHECK_TYPE": "profile",
+                    "MODEL_SELECTOR": model,
+                    "KFLOW_JOB_TITLE": prep_title,
+                    "KFLOW_JOB_DESCRIPTION": prep_description,
+                    "MODEL_SOURCE_REPO": args.model_source_repo,
+                    "MODEL_SOURCE_REF": args.model_source_ref,
+                    "MODEL_SOURCE_PATH": args.model_source_path,
+                    "PROGRAM_PATH": args.program_path,
+                    "FLOW_GROUP": args.flow_group,
+                    **flow_metadata_env(),
+                    **profile_submit_env,
+                    "PROFILE_HBASE_ENABLED": "true",
+                    "PROFILE_HBASE_ROLE": "prep",
+                    "PROFILE_HBASE_HESSIAN_JOBS": " ".join(hessian_jobs),
+                    "CHECK_COMPACT_OUTPUTS": "true",
+                    "CHECK_FAIL_ON_FAILED_UNITS": "false",
+                    "KFLOW_RUNTIME_UPDATE": os.environ.get("KFLOW_RUNTIME_UPDATE", "always"),
+                    "TUNA_FLOW_RUNTIME_UPDATE": os.environ.get("TUNA_FLOW_RUNTIME_UPDATE", "always"),
+                    "KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS": os.environ.get("KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS", "0"),
+                    "KFLOW_RUNTIME_PACKAGES": os.environ.get("KFLOW_RUNTIME_PACKAGES", DEFAULT_RUNTIME_PACKAGES),
+                    "KFLOW_REPO_RUNTIME_PACKAGES": os.environ.get("KFLOW_REPO_RUNTIME_PACKAGES", "none"),
+                    "KFLOW_REPO_RUNTIME_UPDATE": os.environ.get("KFLOW_REPO_RUNTIME_UPDATE", "always"),
+                    "KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES": os.environ.get("KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES", "true"),
+                    "KFLOW_RUNTIME_GITHUB_AUTH": os.environ.get("KFLOW_RUNTIME_GITHUB_AUTH", "true"),
+                    "KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME": os.environ.get("KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME", "true"),
+                }
+                prep_inputs = list(dict.fromkeys([base_input_job, *hessian_jobs]))
+                prep_payload: dict[str, Any] = {
+                    **submitter_fields,
+                    "env": {key: value for key, value in prep_env.items() if value not in (None, "")},
+                    "title": prep_title,
+                    "description": prep_description,
+                    "input_jobs": prep_inputs,
+                    "metadata": {
+                        "flow_group": args.flow_group,
+                        "check_type": "profile-h-base-prep",
+                        "model_selector": model,
+                        "base_job": base_input_job,
+                        "hessian_jobs": hessian_jobs,
+                        "input_jobs": prep_inputs,
+                        "profile_parallel_mode": "h-base",
+                    },
+                    "tags": {
+                        "stage": "checks",
+                        "flow": args.flow_group,
+                        "check_type": "profile-h-base-prep",
+                        "model": model,
+                    },
+                }
+                if args.dry_run:
+                    print(json.dumps({"task": prep_task, "payload": prep_payload}, indent=2, sort_keys=True))
+                    prep_job_id = f"DRY-profile-h-base-prep-{model}"
+                else:
+                    prep_response = api_json("POST", f"{base_url}/api/job/{prep_task}", token, prep_payload)
+                    prep_job = prep_response.get("job", prep_response)
+                    prep_job_id = str(
+                        prep_job.get("job_number") or prep_job.get("number") or
+                        prep_job.get("code") or prep_job.get("id") or ""
+                    )
+                    if not prep_job_id:
+                        raise RuntimeError("Kflow did not return an h-base prep job ID.")
+                    print(f"submitted {prep_task} {model}: job {prep_job_id}")
+                unit_input_jobs = [base_input_job, prep_job_id]
             for unit in unit_specs:
-                task = f"{args.task_prefix}-{check}"
+                task = (
+                    f"{args.task_prefix}-profile-h-base"
+                    if is_hbase else f"{args.task_prefix}-{check}"
+                )
                 unit_label = str(unit.get("label") or "").strip()
                 if check == "model-bundle":
                     title = args.job_title or f"MFCL bundle: {model}"
@@ -998,6 +1127,12 @@ def main() -> int:
                         or "true"
                     )
                 env.update(unit.get("env", {}))
+                if is_hbase:
+                    env.update({
+                        "PROFILE_HBASE_ENABLED": "true",
+                        "PROFILE_HBASE_ROLE": "scalar",
+                        "PROFILE_HBASE_PREP_JOB": prep_job_id,
+                    })
                 env = {key: value for key, value in env.items() if value not in (None, "")}
                 unit_metadata = unit.get("metadata", {})
                 check_unit = str(unit_metadata.get("check_unit") or "")
@@ -1014,14 +1149,14 @@ def main() -> int:
                     "env": env,
                     "title": title,
                     "description": description,
-                    "input_jobs": input_jobs,
+                    "input_jobs": unit_input_jobs,
                     "metadata": {
                         "flow_group": args.flow_group,
                         "job_title": title,
                         "job_description": description,
                         "check_type": check,
                         "model_selector": model,
-                        "input_jobs": input_jobs,
+                        "input_jobs": unit_input_jobs,
                         "parallel_units": parallel_units,
                         **unit_metadata,
                     },
@@ -1045,6 +1180,8 @@ def main() -> int:
                     "final_job_ids": list(unit_job_ids),
                     "expected_unit_type": expected_unit_type,
                     "expected_units": expected_units,
+                    "is_hbase": is_hbase,
+                    "prep_job_id": prep_job_id,
                 }
             )
 
@@ -1057,7 +1194,11 @@ def main() -> int:
         if not auto_merge or not merge_check or not unit_job_ids:
             continue
         model = group["model"]
-        task = f"{args.task_prefix}-{merge_check}"
+        is_hbase = bool(group.get("is_hbase"))
+        task = (
+            f"{args.task_prefix}-profile-h-base-merge"
+            if is_hbase else f"{args.task_prefix}-{merge_check}"
+        )
         title = args.job_title or f"{merge_check}: {model}"
         description = args.job_description or f"Merge split {check} check outputs for {model}."
         env = {
@@ -1103,6 +1244,16 @@ def main() -> int:
             profile_merge_env = resolved_profile_env(profile_values_from_env())
             profile_merge_env.pop("PROFILE_CHAIN_SIDE", None)
             env.update(profile_merge_env)
+            if is_hbase:
+                env.update({
+                    "PROFILE_HBASE_ENABLED": "true",
+                    "PROFILE_HBASE_ROLE": "merge",
+                    "PROFILE_HBASE_PREP_JOB": str(group.get("prep_job_id") or ""),
+                    "MODEL_BASE_INPUT_JOB": base_input_job,
+                    "BASE_MODEL_JOB": base_input_job,
+                    "MODEL_ORIGINAL_BASE_INPUT_JOB": base_input_job,
+                    "CHECK_INPUT_JOBS": " ".join(unit_job_ids),
+                })
         if check == "hessian":
             env["CHECK_TYPE"] = "hessian_merge"
 
@@ -1179,7 +1330,7 @@ def main() -> int:
             direct_attach_tags = {"base_job": base_input_job, "attached_output_overlay": "true"}
 
         merge_input_jobs = list(unit_job_ids)
-        if direct_merge_attach:
+        if direct_merge_attach or is_hbase:
             merge_input_jobs = list(dict.fromkeys([base_input_job, *unit_job_ids]))
 
         payload = {

@@ -1,12 +1,12 @@
-name: ofp-sam-bet-2026-check-profile-merge
-description: Merge split mfclkit likelihood profile points or chains and optionally publish an independent attached diagnostic delta.
+name: ofp-sam-bet-2026-check-profile-h-base-merge
+description: Merge independent h-base profile scalars and repair only invalid or jagged points.
 command: bash run.sh
-target_folder: profile-merge
+target_folder: profile-h-base-merge
 docker_image: ghcr.io/pacificcommunity/tuna-flow:v2.4
 resources:
-  cpus: 1
-  memory: 4GB
-  disk: 10GB
+  cpus: 4
+  memory: 32GB
+  disk: 20GB
 env:
   CHECK_TYPE: profile-merge
   CHECK_MERGE_TYPE: profile
@@ -31,6 +31,13 @@ env:
   CHECK_ENRICH_PAYLOADS: "true"
   CHECK_KEEP_RAW_OUTPUTS: "false"
   PROFILE_INCLUDE_BASE_ANCHOR: "true"
+  PROFILE_PARALLEL_MODE: h-base
+  PROFILE_HBASE_ENABLED: "true"
+  PROFILE_HBASE_ROLE: merge
+  PROFILE_HBASE_REPAIR_PASSES: "2"
+  PROFILE_HBASE_REPAIR_CPUS: "4"
+  PROFILE_HBASE_REPAIR_MEMORY_GB: "32"
+  PROFILE_HBASE_REPAIR_MEMORY_PER_WORKER_GB: "8"
   PROFILE_PRESET: three_stage
   PROFILE_VALUE_MODE: percent
   PROFILE_TARGET_VALUES: ""
@@ -81,6 +88,21 @@ metadata:
       - PROFILE_AF173
       - PROFILE_AF174
       - PROFILE_PARALLEL_MODE
+      - PROFILE_HBASE_ENABLED
+      - PROFILE_HBASE_ROLE
+      - PROFILE_HBASE_PREP_JOB
+      - PROFILE_HBASE_HESSIAN_JOBS
+      - PROFILE_HBASE_CONDITION_CAP
+      - PROFILE_HBASE_EIGEN_FLOOR_RELATIVE
+      - PROFILE_HBASE_NEGATIVE_TOLERANCE
+      - PROFILE_HBASE_MAX_QUADRATIC_STEP
+      - PROFILE_HBASE_MAX_COORDINATE_STEP
+      - PROFILE_HBASE_BASE_REL_TOLERANCE
+      - PROFILE_HBASE_RESTART_BASE
+      - PROFILE_HBASE_REPAIR_PASSES
+      - PROFILE_HBASE_REPAIR_CPUS
+      - PROFILE_HBASE_REPAIR_MEMORY_GB
+      - PROFILE_HBASE_REPAIR_MEMORY_PER_WORKER_GB
       - PROFILE_EXECUTION_MODE
       - PROFILE_DOITALL_PENALTY
       - PROFILE_DOITALL_SCRIPT

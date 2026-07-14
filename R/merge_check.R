@@ -773,6 +773,139 @@ write_profile_base_anchor <- function(root) {
   invisible(TRUE)
 }
 
+repair_hbase_profile <- function(root, selected_base) {
+  enabled <- truthy(env("PROFILE_HBASE_ENABLED", "false"), FALSE) ||
+    identical(tolower(trimws(env("PROFILE_PARALLEL_MODE", ""))), "h-base")
+  role <- tolower(trimws(env("PROFILE_HBASE_ROLE", "")))
+  repair_passes <- as.integer(profile_env_or_number(
+    "PROFILE_HBASE_REPAIR_PASSES", 2
+  ))
+  if (!isTRUE(enabled) || !role %in% c("", "merge") ||
+      !is.finite(repair_passes) || repair_passes < 1L) {
+    return(invisible(NULL))
+  }
+  if (!"mfk_repair_hbase_profile" %in% getNamespaceExports("mfclkit")) {
+    warning("h-base merge repair requires an updated mfclkit.", call. = FALSE)
+    return(invisible(NULL))
+  }
+  profile_roots <- list.dirs(file.path(root, "profile"), recursive = FALSE, full.names = TRUE)
+  points <- bind_rows_fill_local(lapply(profile_roots, mfclkit::mfk_read_profile_points))
+  points <- dedupe_profile_points(profile_add_missing_expected(points))
+  center <- profile_anchor_scalar()
+  tolerance <- profile_env_or_number("PROFILE_JAGGED_TOLERANCE", 0.1)
+  blocks <- mfclkit::mfk_hbase_suspect_blocks(
+    points, center = center, tolerance = tolerance
+  )
+  if (!length(blocks)) {
+    saveRDS(
+      list(status = "not_needed", points = points, created_at = as.character(Sys.time())),
+      file.path(root, "hbase-repair-result.rds"), compress = "xz"
+    )
+    return(invisible(NULL))
+  }
+  if (!is.data.frame(selected_base) || !nrow(selected_base)) {
+    warning("h-base repair skipped because the fitted base model was unavailable.", call. = FALSE)
+    return(invisible(NULL))
+  }
+
+  result <- tryCatch({
+    staged <- stage_selected_model(
+      selected_base[seq_len(1L), , drop = FALSE],
+      work_dir = file.path(output_dir, ".hbase-repair-work"),
+      output_dir = file.path(output_dir, ".hbase-repair-stage")
+    )
+    row <- profile_first_point_row(root)
+    value_mode <- tolower(trimws(env("PROFILE_VALUE_MODE", "percent")))
+    values <- profile_expected_values()
+    if (!length(values)) {
+      values <- sort(unique(suppressWarnings(as.numeric(points$scalar))))
+      values <- values[is.finite(values)]
+    }
+    profile_name <- profile_env_or_text(
+      "PROFILE_NAME", profile_row_text(row, "profile", "total_average_biomass")
+    )
+    quantity <- profile_env_or_text(
+      "PROFILE_QUANTITY", profile_row_text(row, "quantity", "avg_bio")
+    )
+    quantity_type <- as.integer(profile_env_or_number(
+      "PROFILE_QUANTITY_TYPE", profile_row_number(row, "quantity_type", 2L)
+    ))
+    base_quantity <- profile_env_or_number(
+      "PROFILE_BASE_QUANTITY", profile_row_number(row, "base_quantity", NA_real_)
+    )
+    if (!is.finite(base_quantity)) base_quantity <- NULL
+    profile <- mfclkit::mfk_quantity_profile_from_model(
+      model_dir = staged$case_dir,
+      name = profile_name,
+      values = values,
+      quantity = quantity,
+      quantity_type = quantity_type,
+      base_quantity = base_quantity,
+      target = if (identical(value_mode, "absolute")) values else NA_real_,
+      scalar_is_percent = !identical(value_mode, "absolute"),
+      Af172 = as.integer(profile_env_or_number(
+        "PROFILE_AF172", profile_row_number(row, "Af172", 0L)
+      )),
+      Af173 = as.integer(profile_env_or_number(
+        "PROFILE_AF173", profile_row_number(row, "Af173", 0L)
+      )),
+      Af174 = as.integer(profile_env_or_number(
+        "PROFILE_AF174", profile_row_number(row, "Af174", 0L)
+      )),
+      penalty = 1e7,
+      reps = 2000L,
+      convergence_exponent = as.integer(profile_env_or_number(
+        "PROFILE_CONVERGENCE_EXPONENT", -3
+      ))
+    )
+    backend <- mfclkit::mfk_native_backend(
+      program_path = env("PROGRAM_PATH", staged$program_path %||% "/home/mfcl/mfclo64")
+    )
+    repaired <- mfclkit::mfk_repair_hbase_profile(
+      backend = backend,
+      input_dir = staged$case_dir,
+      model_dir = root,
+      profile = profile,
+      par = staged$start_par,
+      frq = staged$frq,
+      preset = env("PROFILE_PRESET", "three_stage"),
+      center = center,
+      penalties = split_numbers(env("PROFILE_PENALTIES", "100000 1000000 10000000")),
+      reps = split_numbers(env("PROFILE_RAMP_REPS", "50 50 2000")),
+      convergence_exponent = as.integer(profile_env_or_number(
+        "PROFILE_CONVERGENCE_EXPONENT", -3
+      )),
+      max_grad_threshold = {
+        value <- profile_env_or_number("PROFILE_MAX_GRAD_THRESHOLD", NA_real_)
+        if (is.finite(value)) value else NULL
+      },
+      target_rel_tolerance = profile_env_or_number(
+        "PROFILE_TARGET_REL_TOLERANCE", 0.001
+      ),
+      continuation_reps = as.integer(profile_env_or_number(
+        "PROFILE_CONTINUATION_REPS", 1000
+      )),
+      jagged_tolerance = tolerance,
+      repair_passes = repair_passes,
+      max_repair_scalars = profile_env_or_number("PROFILE_MAX_JAGGED_REPAIRS", 6),
+      cpus = as.integer(profile_env_or_number("PROFILE_HBASE_REPAIR_CPUS", 4)),
+      memory_gb = profile_env_or_number("PROFILE_HBASE_REPAIR_MEMORY_GB", 32),
+      memory_gb_per_worker = profile_env_or_number(
+        "PROFILE_HBASE_REPAIR_MEMORY_PER_WORKER_GB", 8
+      ),
+      run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
+    )
+    repaired$status <- "completed"
+    repaired$initial_suspect_blocks <- blocks
+    repaired
+  }, error = function(e) {
+    warning("h-base profile repair failed: ", conditionMessage(e), call. = FALSE)
+    list(status = "failed", error = conditionMessage(e), initial_suspect_blocks = blocks)
+  })
+  saveRDS(result, file.path(root, "hbase-repair-result.rds"), compress = "xz")
+  invisible(result)
+}
+
 copy_check_units <- function(source_dirs, target_dir, check_type) {
   copied <- character()
   if (identical(check_type, "jitter")) {
@@ -1517,6 +1650,7 @@ if (length(profile_duplicate_records)) {
 }
 if (identical(check_type, "profile")) {
   write_profile_base_anchor(model_dir)
+  repair_hbase_profile(model_dir, base_selected)
 }
 
 if (isTRUE(smoke_only)) {

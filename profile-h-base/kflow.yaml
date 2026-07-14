@@ -1,7 +1,7 @@
-name: ofp-sam-bet-2026-check-profile
-description: Run mfclkit likelihood profile checks on a fitted MFCL model output.
+name: ofp-sam-bet-2026-check-profile-h-base
+description: Run one independent native MFCL profile scalar from a validated h-base predictor.
 command: bash run.sh
-target_folder: profile
+target_folder: profile-h-base
 docker_image: ghcr.io/pacificcommunity/tuna-flow:v2.4
 resources:
   cpus: 2
@@ -35,7 +35,9 @@ env:
   # For abundant Condor slots, explicitly set PROFILE_PARALLEL_MODE=scalars
   # together with PROFILE_EXECUTION_MODE=doitall to rebuild every point through
   # the model-specific phase sequence in its own job.
-  PROFILE_PARALLEL_MODE: chains
+  PROFILE_PARALLEL_MODE: h-base
+  PROFILE_HBASE_ENABLED: "true"
+  PROFILE_HBASE_ROLE: scalar
   PROFILE_EXECUTION_MODE: continuation
   PROFILE_DOITALL_PENALTY: "10000000"
   PROFILE_DOITALL_SCRIPT: doitall.sh
@@ -117,6 +119,21 @@ metadata:
       - PROFILE_RUNNER
       - PROFILE_USE_RAMP
       - PROFILE_PARALLEL_MODE
+      - PROFILE_HBASE_ENABLED
+      - PROFILE_HBASE_ROLE
+      - PROFILE_HBASE_PREP_JOB
+      - PROFILE_HBASE_HESSIAN_JOBS
+      - PROFILE_HBASE_CONDITION_CAP
+      - PROFILE_HBASE_EIGEN_FLOOR_RELATIVE
+      - PROFILE_HBASE_NEGATIVE_TOLERANCE
+      - PROFILE_HBASE_MAX_QUADRATIC_STEP
+      - PROFILE_HBASE_MAX_COORDINATE_STEP
+      - PROFILE_HBASE_BASE_REL_TOLERANCE
+      - PROFILE_HBASE_RESTART_BASE
+      - PROFILE_HBASE_REPAIR_PASSES
+      - PROFILE_HBASE_REPAIR_CPUS
+      - PROFILE_HBASE_REPAIR_MEMORY_GB
+      - PROFILE_HBASE_REPAIR_MEMORY_PER_WORKER_GB
       - PROFILE_EXECUTION_MODE
       - PROFILE_DOITALL_PENALTY
       - PROFILE_DOITALL_SCRIPT

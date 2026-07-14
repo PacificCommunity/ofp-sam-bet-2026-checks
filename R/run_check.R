@@ -1338,7 +1338,11 @@ compact_check_outputs <- function() {
     scalar_dirs <- list.dirs(file.path(model_dir, "profile"), recursive = TRUE, full.names = TRUE)
     scalar_dirs <- scalar_dirs[grepl("^scalar_", basename(scalar_dirs))]
     deleted <- lapply(scalar_dirs, compact_prune_files,
-      keep_names = c("profile_payload.rds", "profile_point_info.rds", "info.rds", "test_plot_output", "hessian_info.rds"),
+      keep_names = c(
+        "profile_payload.rds", "profile_point_info.rds", "info.rds",
+        "test_plot_output", "hessian_info.rds",
+        if (isTRUE(profile_hbase_enabled)) "profile.par" else character()
+      ),
       keep_patterns = c(log_patterns, "(^|/)neigenvalues$"),
       recursive = TRUE
     )
@@ -1422,7 +1426,71 @@ if (truthy(env("CHECK_DRY_RUN", env("CHECK_SMOKE_ONLY", "false")), FALSE)) {
 
 message("[checks] running ", check_type, " for ", model_key)
 
-if (identical(check_type, "jitter")) {
+profile_hbase_role <- tolower(trimws(env("PROFILE_HBASE_ROLE", "")))
+profile_hbase_enabled <- truthy(env("PROFILE_HBASE_ENABLED", "false"), FALSE)
+
+if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
+  if (!"mfk_prepare_hbase_profile" %in% getNamespaceExports("mfclkit")) {
+    stop("h-base prep requires an updated mfclkit with mfk_prepare_hbase_profile().",
+         call. = FALSE)
+  }
+  value_mode <- tolower(trimws(env("PROFILE_VALUE_MODE", "percent")))
+  if (!value_mode %in% c("percent", "absolute")) {
+    stop("PROFILE_VALUE_MODE must be percent or absolute for h-base prep.", call. = FALSE)
+  }
+  values <- if (identical(value_mode, "absolute")) {
+    split_numbers(env("PROFILE_TARGET_VALUES", ""), default = numeric())
+  } else {
+    split_numbers(env("PROFILE_VALUES", ""), default = seq(60, 140, by = 2.5))
+  }
+  center <- split_numbers(
+    if (identical(value_mode, "absolute")) {
+      env("PROFILE_TARGET_CENTER", "")
+    } else {
+      env("PROFILE_CENTER", "100")
+    },
+    default = if (identical(value_mode, "absolute")) numeric() else 100
+  )
+  if (!length(values) || !length(center) || !is.finite(center[[1L]])) {
+    stop("h-base prep requires profile values and a finite center.", call. = FALSE)
+  }
+  base_quantity <- split_numbers(env("PROFILE_BASE_QUANTITY", ""), default = numeric())
+  base_quantity <- if (length(base_quantity)) base_quantity[[1L]] else NULL
+  hbase_dir <- file.path(model_dir, "hbase")
+  source_jobs <- split_values(env("PROFILE_HBASE_HESSIAN_JOBS", ""))
+  result <- mfk_prepare_hbase_profile(
+    backend = backend,
+    input_dir = prepared$case_dir,
+    output_dir = hbase_dir,
+    par = check_start_par,
+    frq = prepared$frq,
+    hessian_search_roots = default_input_root(),
+    values = values,
+    center = center[[1L]],
+    value_mode = value_mode,
+    Af172 = as.integer(split_numbers(env("PROFILE_AF172", "0"), default = 0)[[1L]]),
+    Af173 = as.integer(split_numbers(env("PROFILE_AF173", "0"), default = 0)[[1L]]),
+    Af174 = as.integer(split_numbers(env("PROFILE_AF174", "0"), default = 0)[[1L]]),
+    base_quantity = base_quantity,
+    condition_cap = split_numbers(env("PROFILE_HBASE_CONDITION_CAP", "10000000"), default = 1e7)[[1L]],
+    eigen_floor_relative = split_numbers(env("PROFILE_HBASE_EIGEN_FLOOR_RELATIVE", "1e-10"), default = 1e-10)[[1L]],
+    negative_tolerance = split_numbers(env("PROFILE_HBASE_NEGATIVE_TOLERANCE", "1e-8"), default = 1e-8)[[1L]],
+    max_quadratic_step = split_numbers(env("PROFILE_HBASE_MAX_QUADRATIC_STEP", "25"), default = 25)[[1L]],
+    max_coordinate_step = split_numbers(env("PROFILE_HBASE_MAX_COORDINATE_STEP", "0.35"), default = 0.35)[[1L]],
+    base_relative_tolerance = split_numbers(env("PROFILE_HBASE_BASE_REL_TOLERANCE", "1e-5"), default = 1e-5)[[1L]],
+    source_jobs = source_jobs
+  )
+  saveRDS(result, file.path(model_dir, "hbase-prep-result.rds"), compress = "xz")
+  write_run_manifest(list(
+    profile_hbase_role = "prep",
+    profile_hbase_bundle = normalize_loose(file.path(hbase_dir, "hbase_predictor.rds")),
+    profile_hbase_hessian_jobs = paste(source_jobs, collapse = " "),
+    profile_hbase_values = paste(values, collapse = " "),
+    profile_hbase_center = center[[1L]],
+    profile_hbase_value_mode = value_mode
+  ))
+
+} else if (identical(check_type, "jitter")) {
   fitted_par_selection <- as.character(
     prepared$manifest$start_par_selection %||% ""
   )
@@ -2038,6 +2106,41 @@ if (identical(check_type, "jitter")) {
         call. = FALSE
       )
     }
+    hbase_start <- NULL
+    if (isTRUE(profile_hbase_enabled) || identical(profile_hbase_role, "scalar")) {
+      if (!identical(profile_execution_mode, "continuation")) {
+        stop("h-base scalar profiles require PROFILE_EXECUTION_MODE=continuation.", call. = FALSE)
+      }
+      if (length(profile_values) != 1L) {
+        stop("Each h-base Kflow scalar job must contain exactly one profile value.", call. = FALSE)
+      }
+      if (!"mfk_hbase_start" %in% getNamespaceExports("mfclkit")) {
+        stop("h-base scalar profiles require an updated mfclkit.", call. = FALSE)
+      }
+      bundle_files <- list.files(
+        default_input_root(), pattern = "^hbase_predictor[.]rds$",
+        recursive = TRUE, full.names = TRUE
+      )
+      bundle_files <- normalize_loose(bundle_files[file.exists(bundle_files)])
+      if (length(bundle_files)) {
+        hashes <- unname(tools::md5sum(bundle_files))
+        bundle_files <- bundle_files[!duplicated(hashes)]
+      }
+      if (length(bundle_files) != 1L) {
+        stop(
+          "Expected exactly one unique h-base prep bundle; found ",
+          length(bundle_files), ".",
+          call. = FALSE
+        )
+      }
+      hbase_start <- mfk_hbase_start(
+        bundle = bundle_files[[1L]],
+        scalar = profile_values[[1L]],
+        par = check_start_par,
+        frq = prepared$frq
+      )
+      saveRDS(hbase_start, file.path(model_dir, "hbase-start.rds"), compress = "xz")
+    }
     profile_args <- list(
       backend = backend,
       input_dir = prepared$case_dir,
@@ -2072,6 +2175,10 @@ if (identical(check_type, "jitter")) {
       max_jagged_repairs = profile_max_jagged_repairs,
       run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
     )
+    if (!is.null(hbase_start)) {
+      profile_args$initial_x_vector <- hbase_start$x
+      profile_args$initial_restart_id <- hbase_start$restart_id
+    }
     # Keep older mfclkit continuation runs working unchanged while making the
     # new full-doitall path explicit. Condor already supplies one scalar per
     # unit, so nested point parallelism must remain disabled here.

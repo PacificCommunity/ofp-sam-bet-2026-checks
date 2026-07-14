@@ -1,12 +1,12 @@
-name: ofp-sam-bet-2026-check-profile
-description: Run mfclkit likelihood profile checks on a fitted MFCL model output.
+name: ofp-sam-bet-2026-check-profile-h-base-prep
+description: Validate the native Hessian and dependent gradient and prepare trusted h-base profile starts.
 command: bash run.sh
-target_folder: profile
+target_folder: profile-h-base-prep
 docker_image: ghcr.io/pacificcommunity/tuna-flow:v2.4
 resources:
-  cpus: 2
-  memory: 8GB
-  disk: 10GB
+  cpus: 4
+  memory: 16GB
+  disk: 20GB
 env:
   CHECK_TYPE: profile
   MODEL_SOURCE_REPO: PacificCommunity/ofp-sam-bet-2026-stepwise
@@ -35,7 +35,15 @@ env:
   # For abundant Condor slots, explicitly set PROFILE_PARALLEL_MODE=scalars
   # together with PROFILE_EXECUTION_MODE=doitall to rebuild every point through
   # the model-specific phase sequence in its own job.
-  PROFILE_PARALLEL_MODE: chains
+  PROFILE_PARALLEL_MODE: h-base
+  PROFILE_HBASE_ENABLED: "true"
+  PROFILE_HBASE_ROLE: prep
+  PROFILE_HBASE_CONDITION_CAP: "10000000"
+  PROFILE_HBASE_EIGEN_FLOOR_RELATIVE: "1e-10"
+  PROFILE_HBASE_NEGATIVE_TOLERANCE: "1e-8"
+  PROFILE_HBASE_MAX_QUADRATIC_STEP: "25"
+  PROFILE_HBASE_MAX_COORDINATE_STEP: "0.35"
+  PROFILE_HBASE_BASE_REL_TOLERANCE: "1e-5"
   PROFILE_EXECUTION_MODE: continuation
   PROFILE_DOITALL_PENALTY: "10000000"
   PROFILE_DOITALL_SCRIPT: doitall.sh
@@ -117,6 +125,21 @@ metadata:
       - PROFILE_RUNNER
       - PROFILE_USE_RAMP
       - PROFILE_PARALLEL_MODE
+      - PROFILE_HBASE_ENABLED
+      - PROFILE_HBASE_ROLE
+      - PROFILE_HBASE_PREP_JOB
+      - PROFILE_HBASE_HESSIAN_JOBS
+      - PROFILE_HBASE_CONDITION_CAP
+      - PROFILE_HBASE_EIGEN_FLOOR_RELATIVE
+      - PROFILE_HBASE_NEGATIVE_TOLERANCE
+      - PROFILE_HBASE_MAX_QUADRATIC_STEP
+      - PROFILE_HBASE_MAX_COORDINATE_STEP
+      - PROFILE_HBASE_BASE_REL_TOLERANCE
+      - PROFILE_HBASE_RESTART_BASE
+      - PROFILE_HBASE_REPAIR_PASSES
+      - PROFILE_HBASE_REPAIR_CPUS
+      - PROFILE_HBASE_REPAIR_MEMORY_GB
+      - PROFILE_HBASE_REPAIR_MEMORY_PER_WORKER_GB
       - PROFILE_EXECUTION_MODE
       - PROFILE_DOITALL_PENALTY
       - PROFILE_DOITALL_SCRIPT
