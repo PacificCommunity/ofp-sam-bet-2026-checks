@@ -1,5 +1,5 @@
 name: ofp-sam-bet-2026-check-hessian-merge
-description: Merge split mfclkit Hessian parts and optionally publish an independent attached diagnostic delta.
+description: Merge split mfclrtmb Hessian parts and optionally publish an independent attached diagnostic delta.
 command: bash run.sh
 target_folder: hessian-merge
 docker_image: ghcr.io/pacificcommunity/tuna-flow:v2.4
@@ -9,6 +9,7 @@ resources:
   disk: 10GB
 env:
   CHECK_TYPE: hessian_merge
+  CHECK_ENGINE: mfclrtmb
   MODEL_SELECTOR: ""
   MODEL_BASE_INPUT_JOB: ""
   BASE_MODEL_JOB: ""
@@ -16,9 +17,9 @@ env:
   ATTACH_OUTPUT_MODE: full
   CHECK_INPUT_JOBS: ""
   ATTACH_CHECK_TYPES: hessian
-  PROGRAM_PATH: /home/mfcl/mfclo64
+  PROGRAM_PATH: mfclrtmb
   KFLOW_RUNTIME_PACKAGES: none
-  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@963e6f18e70b54fafb3c072ce454f14d6b076821,mfclshiny=PacificCommunity/mfclshiny@558ca51f50d8afb02f537cc6eac9021b232567ce
+  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@963e6f18e70b54fafb3c072ce454f14d6b076821,mfclshiny=PacificCommunity/mfclshiny@558ca51f50d8afb02f537cc6eac9021b232567ce,mfclrtmb=PacificCommunity/ofp-sam-mfclrtmb@2b0deb1f7bcec05112f5d0357623f4e615dc0249
   KFLOW_REPO_RUNTIME_UPDATE: always
   KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
   KFLOW_RUNTIME_UPDATE: always
@@ -38,6 +39,7 @@ metadata:
   job_config:
     optional:
       - CHECK_TYPE
+      - CHECK_ENGINE
       - MODEL_SELECTOR
       - MODEL_BASE_INPUT_JOB
       - BASE_MODEL_JOB

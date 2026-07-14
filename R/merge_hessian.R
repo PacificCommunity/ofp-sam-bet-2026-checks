@@ -8,6 +8,14 @@ output_dir <- env("OUTPUT_DIR", "outputs")
 work_dir <- env("WORK_DIR", "work")
 model_selector <- env("MODEL_SELECTOR", "")
 program_path <- env("PROGRAM_PATH", "/home/mfcl/mfclo64")
+check_engine <- tolower(trimws(env("CHECK_ENGINE", "native")))
+if (check_engine %in% c("rtmb", "mfcl_rtmb")) check_engine <- "mfclrtmb"
+if (!check_engine %in% c("native", "mfclrtmb")) {
+  stop("CHECK_ENGINE must be native or mfclrtmb; got ", shQuote(check_engine), ".", call. = FALSE)
+}
+if (identical(check_engine, "mfclrtmb") && !requireNamespace("mfclrtmb", quietly = TRUE)) {
+  stop("CHECK_ENGINE=mfclrtmb requires the private mfclrtmb package.", call. = FALSE)
+}
 smoke_only <- truthy(env("CHECK_SMOKE_ONLY", env("CHECK_DRY_RUN", "false")), FALSE)
 attach_output_mode <- normalize_attached_output_mode()
 base_input_job <- env("MODEL_BASE_INPUT_JOB", env("BASE_MODEL_JOB", ""))
@@ -796,22 +804,100 @@ if (isTRUE(run_stitch)) {
   }
 }
 
+run_mfclrtmb_hessian_merge <- function() {
+  if (!isTRUE(run_stitch)) {
+    return(incomplete_info(
+      "stitch_not_requested", "NOT_REQUESTED", "HESSIAN_MERGE_RUN=false"
+    ))
+  }
+  part_files <- file.path(
+    hessian_dir,
+    paste0("part_", part_status$part),
+    "hessian_part.rds"
+  )
+  missing_part_files <- part_files[!file.exists(part_files)]
+  if (length(missing_part_files)) {
+    stop(
+      "Missing mfclrtmb Hessian part file(s): ",
+      paste(basename(dirname(missing_part_files)), collapse = ", "),
+      call. = FALSE
+    )
+  }
+  stitched_file <- file.path(hessian_dir, "hessian_stitched.rds")
+  hessian <- mfclrtmb::mfclrtmb_stitch_hessian(
+    part_files,
+    output = stitched_file,
+    strict = TRUE
+  )
+  eigen <- if (isTRUE(run_eigen)) {
+    mfclrtmb::mfclrtmb_hessian_eigen(
+      hessian,
+      vectors = FALSE,
+      output = file.path(hessian_dir, "hessian_eigen.rds")
+    )
+  } else {
+    NULL
+  }
+  write_info <- getFromNamespace(".mfclrtmb_write_hessian_info", "mfclrtmb")
+  info <- write_info(
+    output_dir = hessian_dir,
+    hessian = hessian,
+    eigen = eigen,
+    root_name = model_key,
+    requested = TRUE,
+    attempted = TRUE,
+    run_ok = TRUE
+  )
+  info$meta$model_key <- model_key
+  info$meta$engine <- "mfclrtmb"
+  info$diagnostics$part_status <- part_status
+  info$smoke <- FALSE
+  info$run_stitch <- isTRUE(run_stitch)
+  info$run_eigen <- isTRUE(run_eigen)
+  if (!is.null(eigen)) {
+    values <- suppressWarnings(as.numeric(eigen$eigenvalues))
+    zero_tol <- sqrt(.Machine$double.eps)
+    n_strict_negative <- sum(values < -zero_tol, na.rm = TRUE)
+    n_zero <- sum(abs(values) <= zero_tol, na.rm = TRUE)
+    n_positive <- sum(values > zero_tol, na.rm = TRUE)
+    info$eigen$n_nonpositive_eigenvalues <- n_strict_negative + n_zero
+    info$eigen$n_strictly_negative_eigenvalues <- n_strict_negative
+    info$eigen$n_zero_eigenvalues <- n_zero
+    info$eigen$n_positive_eigenvalues <- n_positive
+    info$eigen$eigenvalue_counts_source <- "mfclrtmb_hessian_eigen"
+    info$eigen$eigenvalue_counts_status <- "complete"
+    info$eigen$eigenvalue_counts_failure_reason <- NA_character_
+    info$diagnostics$summary$hessian_ok <- isTRUE(eigen$is_pdh)
+    info$diagnostics$summary$n_nonpositive_eigenvalues <- n_strict_negative + n_zero
+    info$diagnostics$summary$n_strictly_negative_eigenvalues <- n_strict_negative
+    info$diagnostics$summary$n_zero_eigenvalues <- n_zero
+    info$diagnostics$summary$n_positive_eigenvalues <- n_positive
+    info$diagnostics$summary$eigenvalue_counts_source <- "mfclrtmb_hessian_eigen"
+    info$diagnostics$summary$eigenvalue_counts_status <- "complete"
+  }
+  info
+}
+
 info <- if (isTRUE(smoke_only)) {
   incomplete_info("smoke_only", "SMOKE", "CHECK_SMOKE_ONLY=true")
 } else if (!complete_for_stitch) {
   incomplete_info("incomplete_parts", "FAILED_PARTS", "One or more Hessian parts failed or are missing.")
 } else {
   tryCatch(
-    mfclkit::mfk_stitch_native_hessian(
-      model_dir,
-      model_dir = model_dir,
-      program_path = program_path,
-      run = run_stitch,
-      eigen = run_eigen,
-      require_complete = TRUE,
-      fail_on_command_error = FALSE,
-      run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
-    ),
+    if (identical(check_engine, "mfclrtmb")) {
+      run_mfclrtmb_hessian_merge()
+    } else {
+      mfclkit::mfk_stitch_native_hessian(
+        model_dir,
+        model_dir = model_dir,
+        program_path = program_path,
+        run = run_stitch,
+        eigen = run_eigen,
+        require_complete = TRUE,
+        fail_on_command_error = FALSE,
+        run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
+      )
+    },
     error = function(e) {
       merge_status <<- "stitch_failed"
       incomplete_info("stitch_failed", "STITCH_FAILED", conditionMessage(e))
@@ -823,7 +909,9 @@ info_hessian_dir <- if (is.list(info) && is.list(info$meta)) {
 } else {
   hessian_dir
 }
-info <- annotate_native_hessian_eigenvalue_counts(info, info_hessian_dir)
+if (!identical(check_engine, "mfclrtmb")) {
+  info <- annotate_native_hessian_eigenvalue_counts(info, info_hessian_dir)
+}
 saveRDS(info, file.path(model_dir, "hessian_merge.rds"), compress = "xz")
 saveRDS(info, file.path(hessian_dir, "hessian_info.rds"), compress = "xz")
 

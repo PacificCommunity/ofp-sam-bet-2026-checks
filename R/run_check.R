@@ -5,6 +5,16 @@ check_type <- tolower(check_type)
 source("R/model_output_adapter.R")
 suppressPackageStartupMessages(library(mfclkit))
 
+check_engine <- tolower(trimws(env("CHECK_ENGINE", "native")))
+if (check_engine %in% c("rtmb", "mfcl_rtmb")) check_engine <- "mfclrtmb"
+if (!check_engine %in% c("native", "mfclrtmb")) {
+  stop("CHECK_ENGINE must be native or mfclrtmb; got ", shQuote(check_engine), ".", call. = FALSE)
+}
+if (identical(check_type, "hessian") && identical(check_engine, "mfclrtmb") &&
+    !requireNamespace("mfclrtmb", quietly = TRUE)) {
+  stop("CHECK_ENGINE=mfclrtmb requires the private mfclrtmb package.", call. = FALSE)
+}
+
 message("[checks] preparing model input")
 prepared <- prepare_model_for_check()
 
@@ -1362,7 +1372,7 @@ compact_check_outputs <- function() {
     part_dirs <- list.dirs(file.path(model_dir, "hessian"), recursive = FALSE, full.names = TRUE)
     part_dirs <- part_dirs[grepl("^part_[0-9]+$", basename(part_dirs))]
     deleted <- lapply(part_dirs, compact_prune_files,
-      keep_names = c("hessian_info.rds", "mfcl_hessian_log.txt", "depgrad.rpt", "Hess.rpt", "neigenvalues"),
+      keep_names = c("hessian_info.rds", "hessian_part.rds", "mfcl_hessian_log.txt", "depgrad.rpt", "Hess.rpt", "neigenvalues"),
       keep_patterns = c(log_patterns, "[.]hes$"),
       recursive = TRUE
     )
@@ -1665,7 +1675,31 @@ if (identical(check_type, "jitter")) {
   part_values <- split_numbers(env("HESSIAN_PARTS", env("HESSIAN_PART", "")), default = seq_len(nsplit))
   parts <- as.integer(part_values)
   stitch_inputs <- stage_hessian_stitch_inputs()
+  hessian_engine <- if (identical(check_engine, "mfclrtmb")) "mfclrtmb" else "native"
+  rtmb_root <- sub("[.]frq$", "", basename(prepared$frq), ignore.case = TRUE)
+  rtmb_fit <- NULL
+  get_rtmb_fit <- function() {
+    if (!is.null(rtmb_fit)) return(rtmb_fit)
+    rtmb_fit <<- mfclrtmb::mfclrtmb_fit(
+      case_dir = prepared$case_dir,
+      root = rtmb_root,
+      par = check_start_par,
+      run_optimization = FALSE,
+      write_outputs = FALSE,
+      write_payload = FALSE,
+      write_mfcl_files = FALSE,
+      build_report = FALSE,
+      exact_report = FALSE,
+      verbose = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE),
+      openmp_threads = as.integer(split_numbers(
+        env("MFCLRTMB_OPENMP_THREADS", "1"), default = 1
+      )[[1L]]),
+      openmp_autopar = truthy(env("MFCLRTMB_OPENMP_AUTOPAR", "false"), FALSE)
+    )
+    rtmb_fit
+  }
   write_run_manifest(list(
+    hessian_engine = hessian_engine,
     hessian_nsplit = nsplit,
     hessian_parts = paste(parts, collapse = " "),
     hessian_stitch_inputs = paste(names(stitch_inputs)[stitch_inputs], collapse = " ")
@@ -1673,28 +1707,69 @@ if (identical(check_type, "jitter")) {
   result <- lapply(parts, function(part) {
     part_dir <- file.path(model_dir, "hessian", paste0("part_", part))
     tryCatch(
-      mfk_run_hessian_part(
-        backend,
-        input_dir = prepared$case_dir,
-        output_dir = part_dir,
-        part = part,
-        nsplit = nsplit,
-        par = check_start_par,
-        frq = prepared$frq,
-        compact = truthy(env("HESSIAN_COMPACT", "true"), TRUE),
-        run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
-      ),
+      if (identical(hessian_engine, "mfclrtmb")) {
+        dir.create(part_dir, recursive = TRUE, showWarnings = FALSE)
+        fit <- get_rtmb_fit()
+        part_rds <- file.path(part_dir, "hessian_part.rds")
+        hes_file <- file.path(part_dir, paste0(rtmb_root, ".hes"))
+        part_result <- mfclrtmb::mfclrtmb_hessian_part(
+          fit$rtmb$model,
+          x = fit$par,
+          part = part,
+          nsplit = nsplit,
+          output = part_rds,
+          hes_output = hes_file,
+          progress_every = as.integer(split_numbers(
+            env("HESSIAN_PROGRESS_EVERY", "0"), default = 0
+          )[[1L]])
+        )
+        info <- list(
+          engine = "mfclrtmb",
+          hessian_part = as.integer(part),
+          nsplit = as.integer(nsplit),
+          start_par = as.integer(part_result$start),
+          end_par = as.integer(part_result$end),
+          npars = as.integer(part_result$npar),
+          frq_file = basename(prepared$frq),
+          program_path = "mfclrtmb",
+          part_dir = normalize_loose(part_dir),
+          input_dir = normalize_loose(prepared$case_dir),
+          input_par = basename(check_start_par),
+          input_par_md5 = file_md5(check_start_par),
+          output_par = basename(check_start_par),
+          output_hessian = basename(hes_file),
+          output_part = basename(part_rds),
+          command = "mfclrtmb::mfclrtmb_hessian_part",
+          run_status = "completed",
+          objective = suppressWarnings(as.numeric(fit$objective)),
+          max_gradient = suppressWarnings(as.numeric(fit$max_gradient))
+        )
+        saveRDS(info, file.path(part_dir, "hessian_info.rds"), compress = "xz")
+        list(part = part_result, info = info)
+      } else {
+        mfk_run_hessian_part(
+          backend,
+          input_dir = prepared$case_dir,
+          output_dir = part_dir,
+          part = part,
+          nsplit = nsplit,
+          par = check_start_par,
+          frq = prepared$frq,
+          compact = truthy(env("HESSIAN_COMPACT", "true"), TRUE),
+          run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
+        )
+      },
       error = function(e) {
         dir.create(part_dir, recursive = TRUE, showWarnings = FALSE)
         info <- list(
-          engine = "native",
+          engine = hessian_engine,
           hessian_part = as.integer(part),
           nsplit = as.integer(nsplit),
           start_par = NA_integer_,
           end_par = NA_integer_,
           npars = NA_integer_,
           frq_file = basename(prepared$frq),
-          program_path = program_path,
+          program_path = if (identical(hessian_engine, "mfclrtmb")) "mfclrtmb" else program_path,
           part_dir = normalize_loose(part_dir),
           input_dir = normalize_loose(prepared$case_dir),
           input_par = basename(check_start_par),
