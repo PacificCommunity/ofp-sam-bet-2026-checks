@@ -1719,10 +1719,33 @@ if (identical(check_type, "jitter")) {
     if (identical(profile_type, "quantity")) "total_average_biomass" else "profile"
   )
   profile_name <- env("MFK_PROFILE_NAME", env("PROFILE_NAME", env("MFK_PROFILE", profile_name)))
-  profile_values <- split_numbers(
-    env("MFK_PROFILE_VALUES", env("PROFILE_VALUES", env("MFK_SCALAR", ""))),
-    default = seq(60, 140, by = 5)
+  profile_target_values_raw <- env(
+    "MFK_PROFILE_TARGET_VALUES", env("PROFILE_TARGET_VALUES", "")
   )
+  profile_value_mode <- tolower(trimws(env(
+    "MFK_PROFILE_VALUE_MODE",
+    env(
+      "PROFILE_VALUE_MODE",
+      if (nzchar(trimws(profile_target_values_raw))) "absolute" else "percent"
+    )
+  )))
+  profile_value_mode <- switch(
+    gsub("-", "_", profile_value_mode, fixed = TRUE),
+    scalar =, scalars =, percentage = "percent",
+    actual =, target =, targets = "absolute",
+    profile_value_mode
+  )
+  if (!profile_value_mode %in% c("percent", "absolute")) {
+    stop("PROFILE_VALUE_MODE must be percent or absolute.", call. = FALSE)
+  }
+  profile_values <- if (identical(profile_value_mode, "absolute")) {
+    split_numbers(profile_target_values_raw, default = numeric())
+  } else {
+    split_numbers(
+      env("MFK_PROFILE_VALUES", env("PROFILE_VALUES", env("MFK_SCALAR", ""))),
+      default = seq(60, 140, by = 5)
+    )
+  }
   profile_label <- env("MFK_PROFILE_LABEL", env("PROFILE_LABEL", profile_name))
   profile_style <- tolower(trimws(env("PROFILE_STYLE", env("PROFILE_RUNNER", "bet"))))
   if (!nzchar(profile_style)) profile_style <- "bet"
@@ -1740,9 +1763,23 @@ if (identical(check_type, "jitter")) {
       "MFK_PROFILE_BASE_QUANTITY", env("PROFILE_BASE_QUANTITY", NA_character_)
     )))
     if (!is.finite(base_quantity)) base_quantity <- NULL
-    profile_center <- split_numbers(
-      env("MFK_PROFILE_CENTER", env("PROFILE_CENTER", "100")), default = 100
-    )[[1L]]
+    profile_center_raw <- if (identical(profile_value_mode, "absolute")) {
+      env("MFK_PROFILE_TARGET_CENTER", env("PROFILE_TARGET_CENTER", ""))
+    } else {
+      env("MFK_PROFILE_CENTER", env("PROFILE_CENTER", "100"))
+    }
+    profile_center_values <- split_numbers(
+      profile_center_raw,
+      default = if (identical(profile_value_mode, "absolute")) numeric() else 100
+    )
+    if (!length(profile_center_values)) {
+      stop(
+        "Absolute profile targets require PROFILE_TARGET_CENTER set to the ",
+        "fitted model's actual quantity.",
+        call. = FALSE
+      )
+    }
+    profile_center <- profile_center_values[[1L]]
     include_base_anchor <- truthy(env(
       "MFK_PROFILE_INCLUDE_BASE_ANCHOR",
       env("PROFILE_INCLUDE_BASE_ANCHOR", "false")
@@ -1878,10 +1915,15 @@ if (identical(check_type, "jitter")) {
     ), default = 3)[[1L]]
     profile_jagged_repair_passes <- split_numbers(env(
       "MFK_PROFILE_JAGGED_REPAIR_PASSES",
-      env("PROFILE_JAGGED_REPAIR_PASSES", "3")
-    ), default = 3)[[1L]]
+      env("PROFILE_JAGGED_REPAIR_PASSES", "2")
+    ), default = 2)[[1L]]
+    profile_max_jagged_repairs <- split_numbers(env(
+      "MFK_PROFILE_MAX_JAGGED_REPAIRS",
+      env("PROFILE_MAX_JAGGED_REPAIRS", "6")
+    ), default = 6)[[1L]]
     for (control_name in c(
-      "profile_invalid_retry_passes", "profile_jagged_repair_passes"
+      "profile_invalid_retry_passes", "profile_jagged_repair_passes",
+      "profile_max_jagged_repairs"
     )) {
       control_value <- get(control_name, inherits = FALSE)
       if (!is.finite(control_value) || control_value < 0 ||
@@ -1921,6 +1963,12 @@ if (identical(check_type, "jitter")) {
       quantity = quantity,
       quantity_type = quantity_type,
       base_quantity = base_quantity,
+      target = if (identical(profile_value_mode, "absolute")) {
+        profile_values
+      } else {
+        NA_real_
+      },
+      scalar_is_percent = identical(profile_value_mode, "percent"),
       Af172 = as.integer(split_numbers(env(
         "MFK_PROFILE_AF172", env("PROFILE_AF172", "0")
       ), default = 0)[[1L]]),
@@ -1939,6 +1987,17 @@ if (identical(check_type, "jitter")) {
       profile_type = profile_type,
       profile_name = profile_name,
       profile_quantity = quantity,
+      profile_value_mode = profile_value_mode,
+      profile_target_values = if (identical(profile_value_mode, "absolute")) {
+        paste(profile_values, collapse = " ")
+      } else {
+        ""
+      },
+      profile_target_center = if (identical(profile_value_mode, "absolute")) {
+        profile_center
+      } else {
+        NA_real_
+      },
       profile_style = profile_style,
       profile_preset = profile_preset,
       profile_execution_mode = profile_execution_mode,
@@ -2000,6 +2059,7 @@ if (identical(check_type, "jitter")) {
       jagged_tolerance = profile_jagged_tolerance,
       invalid_retry_passes = profile_invalid_retry_passes,
       jagged_repair_passes = profile_jagged_repair_passes,
+      max_jagged_repairs = profile_max_jagged_repairs,
       run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
     )
     # Keep older mfclkit continuation runs working unchanged while making the

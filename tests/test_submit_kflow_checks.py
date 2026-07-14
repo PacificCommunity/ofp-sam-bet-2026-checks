@@ -604,7 +604,8 @@ class AttachedTaskDefaultsTests(unittest.TestCase):
         self.assertIn("PROFILE_EXECUTION_MODE: continuation", task)
         self.assertIn('PROFILE_CHAIN: "true"', task)
         self.assertIn('PROFILE_INVALID_RETRY_PASSES: "3"', task)
-        self.assertIn('PROFILE_JAGGED_REPAIR_PASSES: "3"', task)
+        self.assertIn('PROFILE_JAGGED_REPAIR_PASSES: "2"', task)
+        self.assertIn('PROFILE_MAX_JAGGED_REPAIRS: "6"', task)
 
     def test_total_average_biomass_default_matches_af172_zero(self):
         with mock.patch.dict(os.environ, {}, clear=True):
@@ -613,7 +614,29 @@ class AttachedTaskDefaultsTests(unittest.TestCase):
         self.assertEqual(env["PROFILE_AF172"], "0")
         self.assertEqual(env["PROFILE_CONVERGENCE_EXPONENT"], "-3")
         self.assertEqual(env["PROFILE_INVALID_RETRY_PASSES"], "3")
-        self.assertEqual(env["PROFILE_JAGGED_REPAIR_PASSES"], "3")
+        self.assertEqual(env["PROFILE_JAGGED_REPAIR_PASSES"], "2")
+        self.assertEqual(env["PROFILE_MAX_JAGGED_REPAIRS"], "6")
+
+    def test_absolute_profile_targets_keep_the_fitted_quantity_anchor(self):
+        with mock.patch.dict(os.environ, {
+            "PROFILE_VALUE_MODE": "absolute",
+            "PROFILE_TARGET_VALUES": "2500000 2600000 2700000 2800000",
+            "PROFILE_TARGET_CENTER": "2677499",
+        }, clear=True):
+            values = submit.profile_values_from_env()
+            env = submit.resolved_profile_env(values)
+
+        self.assertEqual(env["PROFILE_VALUE_MODE"], "absolute")
+        self.assertEqual(
+            env["PROFILE_TARGET_VALUES"],
+            "2500000 2600000 2700000 2800000",
+        )
+        self.assertNotIn("PROFILE_VALUES", env)
+        self.assertEqual(env["PROFILE_TARGET_CENTER"], "2677499")
+        self.assertEqual(
+            env["PROFILE_EXPECTED_VALUES"],
+            "2500000 2600000 2677499 2700000 2800000",
+        )
 
         task = (ROOT / "profile" / "kflow.yaml").read_text(encoding="utf-8")
         self.assertIn("PROFILE_NAME: total_average_biomass", task)

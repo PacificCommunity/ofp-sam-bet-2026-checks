@@ -30,7 +30,7 @@ CHECK_ALIASES = {
 }
 
 DEFAULT_RUNTIME_PACKAGES = (
-    "mfclkit=PacificCommunity/ofp-sam-mfclkit@037cf8083d0b62bb4dfe3a81b219b2a34bd6dcca,"
+    "mfclkit=PacificCommunity/ofp-sam-mfclkit@8cf322dd3f6ea9ca5f17c4234d9c6e4696742d6b,"
     "mfclshiny=PacificCommunity/mfclshiny@558ca51f50d8afb02f537cc6eac9021b232567ce"
 )
 
@@ -160,16 +160,59 @@ def split_profile_chains(values: list[float], center_raw: str) -> dict[str, list
 
 
 def profile_values_from_env() -> list[float]:
-    raw = env_first("MFK_PROFILE_VALUES", "PROFILE_VALUES", "MFK_SCALAR")
+    mode = profile_value_mode()
+    raw = (
+        env_first("MFK_PROFILE_TARGET_VALUES", "PROFILE_TARGET_VALUES")
+        if mode == "absolute"
+        else env_first("MFK_PROFILE_VALUES", "PROFILE_VALUES", "MFK_SCALAR")
+    )
     if not raw:
+        if mode == "absolute":
+            raise SystemExit(
+                "PROFILE_VALUE_MODE=absolute requires PROFILE_TARGET_VALUES."
+            )
         return list(DEFAULT_PROFILE_VALUES)
     return numeric_values(raw)
+
+
+def profile_value_mode() -> str:
+    raw = env_first("MFK_PROFILE_VALUE_MODE", "PROFILE_VALUE_MODE")
+    target_raw = env_first("MFK_PROFILE_TARGET_VALUES", "PROFILE_TARGET_VALUES")
+    key = raw.strip().lower().replace("-", "_") if raw else (
+        "absolute" if target_raw else "percent"
+    )
+    mode = {
+        "percent": "percent",
+        "percentage": "percent",
+        "scalar": "percent",
+        "scalars": "percent",
+        "absolute": "absolute",
+        "actual": "absolute",
+        "target": "absolute",
+        "targets": "absolute",
+    }.get(key)
+    if mode is None:
+        raise SystemExit(
+            f"Unsupported PROFILE_VALUE_MODE={raw!r}; use percent or absolute."
+        )
+    return mode
 
 
 def resolved_profile_env(values: list[float] | None = None) -> dict[str, str]:
     """Resolve one profile contract for side jobs and their merge job."""
     values = list(profile_values_from_env() if values is None else values)
-    center_raw = env_first("MFK_PROFILE_CENTER", "PROFILE_CENTER") or DEFAULT_PROFILE_CENTER
+    value_mode = profile_value_mode()
+    center_raw = (
+        env_first("MFK_PROFILE_TARGET_CENTER", "PROFILE_TARGET_CENTER")
+        if value_mode == "absolute"
+        else env_first("MFK_PROFILE_CENTER", "PROFILE_CENTER")
+    )
+    if value_mode == "absolute" and not center_raw:
+        raise SystemExit(
+            "PROFILE_VALUE_MODE=absolute requires PROFILE_TARGET_CENTER set to "
+            "the fitted model's actual quantity."
+        )
+    center_raw = center_raw or DEFAULT_PROFILE_CENTER
     try:
         center = float(center_raw)
     except ValueError as exc:
@@ -277,7 +320,18 @@ def resolved_profile_env(values: list[float] | None = None) -> dict[str, str]:
         "PROFILE_LABEL": profile_label,
         "PROFILE_QUANTITY": quantity,
         "PROFILE_QUANTITY_TYPE": quantity_type,
-        "PROFILE_VALUES": " ".join(format_number(value) for value in values),
+        "PROFILE_VALUE_MODE": value_mode,
+        "PROFILE_VALUES": (
+            " ".join(format_number(value) for value in values)
+            if value_mode == "percent" else ""
+        ),
+        "PROFILE_TARGET_VALUES": (
+            " ".join(format_number(value) for value in values)
+            if value_mode == "absolute" else ""
+        ),
+        "PROFILE_TARGET_CENTER": (
+            format_number(center) if value_mode == "absolute" else ""
+        ),
         "PROFILE_EXPECTED_VALUES": " ".join(format_number(value) for value in expected),
         "PROFILE_CENTER": format_number(center),
         "PROFILE_PRESET": preset,
@@ -350,7 +404,10 @@ def resolved_profile_env(values: list[float] | None = None) -> dict[str, str]:
         ) or "3",
         "PROFILE_JAGGED_REPAIR_PASSES": env_first(
             "MFK_PROFILE_JAGGED_REPAIR_PASSES", "PROFILE_JAGGED_REPAIR_PASSES",
-        ) or "3",
+        ) or "2",
+        "PROFILE_MAX_JAGGED_REPAIRS": env_first(
+            "MFK_PROFILE_MAX_JAGGED_REPAIRS", "PROFILE_MAX_JAGGED_REPAIRS",
+        ) or "6",
         "PROFILE_JAGGED_TOLERANCE": env_first(
             "MFK_PROFILE_JAGGED_TOLERANCE", "PROFILE_JAGGED_TOLERANCE",
         ) or "0.1",
@@ -458,12 +515,17 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
                 )
             center = common_env["PROFILE_CENTER"]
             chains = split_profile_chains(values, center)
+            values_key = (
+                "PROFILE_TARGET_VALUES"
+                if common_env["PROFILE_VALUE_MODE"] == "absolute"
+                else "PROFILE_VALUES"
+            )
             return [
                 {
                     "label": f"{side} chain",
                     "env": {
                         **common_env,
-                        "PROFILE_VALUES": " ".join(format_number(value) for value in chain_values),
+                        values_key: " ".join(format_number(value) for value in chain_values),
                         "PROFILE_CHAIN": "true",
                         "PROFILE_CHAIN_SIDE": side,
                         "PROFILE_CENTER": center,
@@ -486,6 +548,11 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
             ]
         if mode in {"scalar", "scalars", "point", "points"}:
             center = float(common_env["PROFILE_CENTER"])
+            values_key = (
+                "PROFILE_TARGET_VALUES"
+                if common_env["PROFILE_VALUE_MODE"] == "absolute"
+                else "PROFILE_VALUES"
+            )
             scalar_values = sorted({
                 value for value in values if abs(value - center) > 1e-10
             })
@@ -502,7 +569,7 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
                     "label": f"{label_name} {scalar}",
                     "env": {
                         **common_env,
-                        "PROFILE_VALUES": scalar,
+                        values_key: scalar,
                         "PROFILE_CHAIN": "false",
                         "PROFILE_CHAIN_SIDE": side,
                         "PROFILE_CENTER": common_env["PROFILE_CENTER"],

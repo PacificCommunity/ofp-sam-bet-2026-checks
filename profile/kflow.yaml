@@ -13,7 +13,7 @@ env:
   MODEL_SOURCE_REF: main
   PROGRAM_PATH: /home/mfcl/mfclo64
   KFLOW_RUNTIME_PACKAGES: none
-  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@037cf8083d0b62bb4dfe3a81b219b2a34bd6dcca,mfclshiny=PacificCommunity/mfclshiny@50af0245bdb9d184729ac411484c7ee20dd6f02c
+  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@8cf322dd3f6ea9ca5f17c4234d9c6e4696742d6b,mfclshiny=PacificCommunity/mfclshiny@50af0245bdb9d184729ac411484c7ee20dd6f02c
   KFLOW_REPO_RUNTIME_UPDATE: always
   KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
   KFLOW_RUNTIME_UPDATE: always
@@ -55,7 +55,12 @@ env:
   # AF172=0 requests total (not adult-only) average biomass.
   PROFILE_NAME: total_average_biomass
   PROFILE_QUANTITY: avg_bio
+  # percent uses PROFILE_VALUES; absolute uses PROFILE_TARGET_VALUES and
+  # requires the exact fitted quantity in PROFILE_TARGET_CENTER.
+  PROFILE_VALUE_MODE: percent
   PROFILE_VALUES: "60 65 70 75 80 85 90 95 105 110 115 120 125 130 135 140"
+  PROFILE_TARGET_VALUES: ""
+  PROFILE_TARGET_CENTER: ""
   PROFILE_AF172: "0"
   PROFILE_AF173: "0"
   PROFILE_AF174: "0"
@@ -76,7 +81,8 @@ env:
   PROFILE_CONTINUATION_REPS: "1000"
   PROFILE_JAGGED_TOLERANCE: "0.1"
   PROFILE_INVALID_RETRY_PASSES: "3"
-  PROFILE_JAGGED_REPAIR_PASSES: "3"
+  PROFILE_JAGGED_REPAIR_PASSES: "2"
+  PROFILE_MAX_JAGGED_REPAIRS: "6"
 output_patterns:
   - outputs/**
 metadata:
@@ -125,6 +131,9 @@ metadata:
       - PROFILE_EXPECTED_VALUES
       - PROFILE_QUANTITY
       - PROFILE_QUANTITY_TYPE
+      - PROFILE_VALUE_MODE
+      - PROFILE_TARGET_VALUES
+      - PROFILE_TARGET_CENTER
       - PROFILE_BASE_QUANTITY
       - PROFILE_AF172
       - PROFILE_AF173
@@ -155,6 +164,7 @@ metadata:
       - PROFILE_JAGGED_TOLERANCE
       - PROFILE_INVALID_RETRY_PASSES
       - PROFILE_JAGGED_REPAIR_PASSES
+      - PROFILE_MAX_JAGGED_REPAIRS
       - PROFILE_EXTRA_SWITCH
       - PROFILE_PARAMETER
       - PROFILE_APPLY_SCRIPT
