@@ -195,8 +195,9 @@ make kflow CHECK_TYPE=model-bundle \
 - `JITTER_SEEDS`: comma/space list of seeds, default `1`.
 - `JITTER_CV`: jitter CV, default `0.1`.
 - `JITTER_CONVERGENCE`: convergence exponent applied by replacing the last
-  model-defined mgc/pf50 line in the staged `doitall.sh`, default `-3`
-  (`1e-3`). Use `-4` for `1e-4`; unset/NA leaves the model script unchanged.
+  model-defined mgc/pf50 line in the staged `doitall.sh`, default `-2`
+  (`1e-2`). Use `-3` for `1e-3` or `-4` for `1e-4`; unset/NA leaves the
+  model script unchanged.
 - `JITTER_METHOD`: `phase1_doitall` by default. This reads the first MFCL
   phase from the staged model-specific `doitall.sh`, stages or generates that
   phase's declared input PAR, jitters its declared output PAR, then resumes
@@ -276,7 +277,7 @@ make kflow CHECK_TYPE=model-bundle \
   doitall profile, default `1e7`. `PROFILE_DOITALL_SCRIPT` names the staged
   model-specific script and defaults to `doitall.sh`.
 - `PROFILE_DOITALL_CONVERGENCE`: convergence exponent for full-doitall
-  profile jobs, default `-3` (`1e-3`). This updates only the last
+  profile jobs, default `-2` (`1e-2`). This updates only the last
   model-defined mgc/pf50 line in the staged `doitall.sh`; use `-4` for
   `1e-4`.
 - `PROFILE_CENTER`: profile anchor scalar, default `100`. The center is the
@@ -317,8 +318,8 @@ make kflow CHECK_TYPE=model-bundle \
 - `SELFTEST_REFIT_MODE`: refit each simulated data set through the complete
   staged model-specific `doitall.sh`. Default is `doitall`.
 - `SELFTEST_REFIT_CONVERGENCE`: convergence exponent for self-test doitall
-  refits. The default `-3` updates only the last model-defined mgc/pf50 control
-  in the copied `doitall.sh`; set `-4` for a stricter 1e-4 refit.
+  refits. The default `-2` updates only the last model-defined mgc/pf50 control
+  in the copied `doitall.sh`; set `-3` for 1e-3 or `-4` for 1e-4 refit.
 - `selftest_update_tags` / `SELFTEST_UPDATE_TAGS`: `auto` by default. Tag
   pseudo-data are generated only when the staged MFCL case has a `.tag` file.
 - `selftest_require_native_tags` / `SELFTEST_REQUIRE_NATIVE_TAGS`: `auto` by

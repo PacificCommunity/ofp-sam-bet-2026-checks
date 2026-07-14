@@ -39,7 +39,7 @@ DEFAULT_PROFILE_CENTER = "100"
 DEFAULT_JITTER_SEEDS = ["1", "2"]
 DEFAULT_RETRO_PEELS = ["1", "2", "3", "4", "5"]
 DEFAULT_SELFTEST_REPS = ["1", "2"]
-DEFAULT_SELFTEST_REFIT_CONVERGENCE = "-3"
+DEFAULT_SELFTEST_REFIT_CONVERGENCE = "-2"
 MAX_R_INTEGER = 2_147_483_647
 DIAGNOSTIC_OVERLAY_REPLACE_NAMES = [
     "jitter",
@@ -292,7 +292,7 @@ def resolved_profile_env(values: list[float] | None = None) -> dict[str, str]:
         ) or "doitall.sh",
         "PROFILE_DOITALL_CONVERGENCE": env_first(
             "MFK_PROFILE_DOITALL_CONVERGENCE", "PROFILE_DOITALL_CONVERGENCE",
-        ) or "-3",
+        ) or "-2",
         "PROFILE_CHAIN": env_first("MFK_PROFILE_CHAIN", "PROFILE_CHAIN") or "true",
         "PROFILE_INCLUDE_BASE_ANCHOR": "true" if include_anchor else "false",
         "PROFILE_AF172": env_first("MFK_PROFILE_AF172", "PROFILE_AF172") or "0",

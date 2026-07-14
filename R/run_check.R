@@ -1448,8 +1448,8 @@ if (identical(check_type, "jitter")) {
   )
   cv <- split_numbers(env("JITTER_CV", "0.1"), default = 0.1)[[1L]]
   jitter_convergence <- split_numbers(
-    env("JITTER_CONVERGENCE", env("JITTER_CONVERGENCE_EXPONENT", "-3")),
-    default = -3
+    env("JITTER_CONVERGENCE", env("JITTER_CONVERGENCE_EXPONENT", "-2")),
+    default = -2
   )[[1L]]
   slots <- check_jitter_slots()
   jitter_method <- tolower(trimws(env("JITTER_METHOD", env("JITTER_STYLE", "phase1_doitall"))))
@@ -1804,8 +1804,8 @@ if (identical(check_type, "jitter")) {
     if (!nzchar(profile_doitall_script)) profile_doitall_script <- "doitall.sh"
     profile_doitall_convergence <- split_numbers(env(
       "MFK_PROFILE_DOITALL_CONVERGENCE",
-      env("PROFILE_DOITALL_CONVERGENCE", "-3")
-    ), default = -3)[[1L]]
+      env("PROFILE_DOITALL_CONVERGENCE", "-2")
+    ), default = -2)[[1L]]
 
     profile_penalties <- split_numbers(env(
       "MFK_PROFILE_PENALTIES",
@@ -2104,7 +2104,7 @@ if (identical(check_type, "jitter")) {
   }
   selftest_env_defaults <- c(
     selftest_refit_fevals = env("SELFTEST_REFIT_FEVALS", ""),
-    selftest_refit_convergence = env("SELFTEST_REFIT_CONVERGENCE", "-3"),
+    selftest_refit_convergence = env("SELFTEST_REFIT_CONVERGENCE", "-2"),
     selftest_require_native_tags = env("SELFTEST_REQUIRE_NATIVE_TAGS", "auto"),
     selftest_update_tags = env("SELFTEST_UPDATE_TAGS", "auto"),
     selftest_update_catch = env("SELFTEST_UPDATE_CATCH", "auto"),

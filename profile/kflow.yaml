@@ -42,7 +42,7 @@ env:
   # Used when PROFILE_EXECUTION_MODE=doitall. This replaces only the last
   # model-defined mgc/parest flag 50 control in the staged doitall, leaving
   # earlier phase tuning intact. Use "-4" for 1e-4 if needed.
-  PROFILE_DOITALL_CONVERGENCE: "-3"
+  PROFILE_DOITALL_CONVERGENCE: "-2"
   PROFILE_CHAIN: "true"
   PROFILE_CHAIN_SIDE: ""
   PROFILE_CENTER: "100"
