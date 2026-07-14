@@ -30,8 +30,8 @@ CHECK_ALIASES = {
 }
 
 DEFAULT_RUNTIME_PACKAGES = (
-    "mfclkit=PacificCommunity/ofp-sam-mfclkit@ac9a2c26f51ec6e6ad95593e3372e4928ca117a8,"
-    "mfclshiny=PacificCommunity/mfclshiny@1d7cced723190967ebd33cff6f1b7126aff56780"
+    "mfclkit=PacificCommunity/ofp-sam-mfclkit@194914fbcf9a4b9cb431443b48c152ec7f7d243c,"
+    "mfclshiny=PacificCommunity/mfclshiny@8615a8aeea881cbf1113c18eb5a97c17bc012c7f"
 )
 
 DEFAULT_PROFILE_VALUES = [float(value) for value in range(60, 145, 5)]
