@@ -6,7 +6,20 @@ source("R/model_output_adapter.R")
 suppressPackageStartupMessages(library(mfclkit))
 
 message("[checks] preparing model input")
-prepared <- prepare_model_for_check()
+profile_hbase_role_initial <- tolower(trimws(env("PROFILE_HBASE_ROLE", "")))
+prepared_input_root <- default_input_root()
+if (identical(profile_hbase_role_initial, "prep")) {
+  base_job_id <- trimws(env("PROFILE_HBASE_BASE_JOB_ID", ""))
+  if (!nzchar(base_job_id)) {
+    stop("h-base prep requires PROFILE_HBASE_BASE_JOB_ID.", call. = FALSE)
+  }
+  base_job_root <- file.path(prepared_input_root, base_job_id)
+  if (!dir.exists(base_job_root)) {
+    stop("h-base base-job input directory was not mounted: ", base_job_root, call. = FALSE)
+  }
+  prepared_input_root <- base_job_root
+}
+prepared <- prepare_model_for_check(input_root = prepared_input_root)
 
 program_path <- env("PROGRAM_PATH", prepared$program_path)
 if (!nzchar(program_path)) program_path <- prepared$program_path
@@ -1426,7 +1439,7 @@ if (truthy(env("CHECK_DRY_RUN", env("CHECK_SMOKE_ONLY", "false")), FALSE)) {
 
 message("[checks] running ", check_type, " for ", model_key)
 
-profile_hbase_role <- tolower(trimws(env("PROFILE_HBASE_ROLE", "")))
+profile_hbase_role <- profile_hbase_role_initial
 profile_hbase_enabled <- truthy(env("PROFILE_HBASE_ENABLED", "false"), FALSE)
 
 if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {

@@ -975,6 +975,15 @@ def main() -> int:
                         "h-base requires Hessian part/merge jobs after the base job or in "
                         "PROFILE_HBASE_HESSIAN_JOBS."
                     )
+                if args.dry_run:
+                    base_internal_job_id = f"DRY-base-{base_input_job}"
+                else:
+                    base_job_record = api_job(base_url, token, base_input_job)
+                    base_internal_job_id = str(base_job_record.get("id") or "").strip()
+                    if not base_internal_job_id:
+                        raise RuntimeError(
+                            f"Kflow base job {base_input_job} did not expose its internal job ID."
+                        )
                 prep_task = f"{args.task_prefix}-profile-h-base-prep"
                 prep_title = args.job_title or f"h-base prep: {model}"
                 prep_description = args.job_description or (
@@ -994,6 +1003,7 @@ def main() -> int:
                     **profile_submit_env,
                     "PROFILE_HBASE_ENABLED": "true",
                     "PROFILE_HBASE_ROLE": "prep",
+                    "PROFILE_HBASE_BASE_JOB_ID": base_internal_job_id,
                     "PROFILE_HBASE_HESSIAN_JOBS": " ".join(hessian_jobs),
                     "CHECK_COMPACT_OUTPUTS": "true",
                     "CHECK_FAIL_ON_FAILED_UNITS": "false",
@@ -1019,6 +1029,7 @@ def main() -> int:
                         "check_type": "profile-h-base-prep",
                         "model_selector": model,
                         "base_job": base_input_job,
+                        "base_internal_job_id": base_internal_job_id,
                         "hessian_jobs": hessian_jobs,
                         "input_jobs": prep_inputs,
                         "profile_parallel_mode": "h-base",
