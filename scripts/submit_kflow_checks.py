@@ -30,7 +30,7 @@ CHECK_ALIASES = {
 }
 
 DEFAULT_RUNTIME_PACKAGES = (
-    "mfclkit=PacificCommunity/ofp-sam-mfclkit@963e6f18e70b54fafb3c072ce454f14d6b076821,"
+    "mfclkit=PacificCommunity/ofp-sam-mfclkit@037cf8083d0b62bb4dfe3a81b219b2a34bd6dcca,"
     "mfclshiny=PacificCommunity/mfclshiny@558ca51f50d8afb02f537cc6eac9021b232567ce"
 )
 
@@ -293,6 +293,9 @@ def resolved_profile_env(values: list[float] | None = None) -> dict[str, str]:
         "PROFILE_DOITALL_CONVERGENCE": env_first(
             "MFK_PROFILE_DOITALL_CONVERGENCE", "PROFILE_DOITALL_CONVERGENCE",
         ) or "-3",
+        "PROFILE_CONVERGENCE_EXPONENT": env_first(
+            "MFK_PROFILE_CONVERGENCE_EXPONENT", "PROFILE_CONVERGENCE_EXPONENT",
+        ) or "-3",
         "PROFILE_CHAIN": env_first("MFK_PROFILE_CHAIN", "PROFILE_CHAIN") or "true",
         "PROFILE_INCLUDE_BASE_ANCHOR": "true" if include_anchor else "false",
         "PROFILE_AF172": env_first("MFK_PROFILE_AF172", "PROFILE_AF172") or "0",
@@ -342,6 +345,12 @@ def resolved_profile_env(values: list[float] | None = None) -> dict[str, str]:
         "PROFILE_CONTINUATION_REPS": env_first(
             "MFK_PROFILE_CONTINUATION_REPS", "PROFILE_CONTINUATION_REPS",
         ) or "1000",
+        "PROFILE_INVALID_RETRY_PASSES": env_first(
+            "MFK_PROFILE_INVALID_RETRY_PASSES", "PROFILE_INVALID_RETRY_PASSES",
+        ) or "3",
+        "PROFILE_JAGGED_REPAIR_PASSES": env_first(
+            "MFK_PROFILE_JAGGED_REPAIR_PASSES", "PROFILE_JAGGED_REPAIR_PASSES",
+        ) or "3",
         "PROFILE_JAGGED_TOLERANCE": env_first(
             "MFK_PROFILE_JAGGED_TOLERANCE", "PROFILE_JAGGED_TOLERANCE",
         ) or "0.1",

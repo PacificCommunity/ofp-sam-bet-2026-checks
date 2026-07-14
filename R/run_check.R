@@ -1806,6 +1806,16 @@ if (identical(check_type, "jitter")) {
       "MFK_PROFILE_DOITALL_CONVERGENCE",
       env("PROFILE_DOITALL_CONVERGENCE", "-3")
     ), default = -3)[[1L]]
+    profile_convergence_exponent <- split_numbers(env(
+      "MFK_PROFILE_CONVERGENCE_EXPONENT",
+      env("PROFILE_CONVERGENCE_EXPONENT", "-3")
+    ), default = -3)[[1L]]
+    if (!is.finite(profile_convergence_exponent) ||
+        abs(profile_convergence_exponent - round(profile_convergence_exponent)) > 1e-8) {
+      stop("PROFILE_CONVERGENCE_EXPONENT must be one integer such as -3 or -4.",
+           call. = FALSE)
+    }
+    profile_convergence_exponent <- as.integer(round(profile_convergence_exponent))
 
     profile_penalties <- split_numbers(env(
       "MFK_PROFILE_PENALTIES",
@@ -1862,6 +1872,28 @@ if (identical(check_type, "jitter")) {
     profile_jagged_tolerance <- split_numbers(env(
       "MFK_PROFILE_JAGGED_TOLERANCE", env("PROFILE_JAGGED_TOLERANCE", "0.1")
     ), default = 0.1)[[1L]]
+    profile_invalid_retry_passes <- split_numbers(env(
+      "MFK_PROFILE_INVALID_RETRY_PASSES",
+      env("PROFILE_INVALID_RETRY_PASSES", "3")
+    ), default = 3)[[1L]]
+    profile_jagged_repair_passes <- split_numbers(env(
+      "MFK_PROFILE_JAGGED_REPAIR_PASSES",
+      env("PROFILE_JAGGED_REPAIR_PASSES", "3")
+    ), default = 3)[[1L]]
+    for (control_name in c(
+      "profile_invalid_retry_passes", "profile_jagged_repair_passes"
+    )) {
+      control_value <- get(control_name, inherits = FALSE)
+      if (!is.finite(control_value) || control_value < 0 ||
+          abs(control_value - round(control_value)) > 1e-8) {
+        stop(
+          toupper(sub("^profile_", "PROFILE_", control_name)),
+          " must be one non-negative integer.",
+          call. = FALSE
+        )
+      }
+      assign(control_name, as.integer(round(control_value)), inherits = FALSE)
+    }
     chain_side_raw <- tolower(trimws(env(
       "MFK_PROFILE_CHAIN_SIDE", env("PROFILE_CHAIN_SIDE", "")
     )))
@@ -1900,6 +1932,7 @@ if (identical(check_type, "jitter")) {
       ), default = 0)[[1L]]),
       penalty = if (length(profile_penalties)) tail(profile_penalties, 1L) else 1e7,
       reps = if (length(profile_ramp_reps)) tail(profile_ramp_reps, 1L) else 2000L,
+      convergence_exponent = profile_convergence_exponent,
       extra_switch = env("MFK_PROFILE_EXTRA_SWITCH", env("PROFILE_EXTRA_SWITCH", ""))
     )
     write_run_manifest(list(
@@ -1912,6 +1945,8 @@ if (identical(check_type, "jitter")) {
       profile_doitall_penalty = profile_doitall_penalty,
       profile_doitall_script = profile_doitall_script,
       profile_doitall_convergence = profile_doitall_convergence,
+      profile_convergence_exponent = profile_convergence_exponent,
+      profile_max_grad_threshold = profile_max_grad %||% 10^profile_convergence_exponent,
       profile_side = profile_side,
       profile_center = profile_center,
       profile_expected_values = env("PROFILE_EXPECTED_VALUES", ""),
@@ -1952,6 +1987,7 @@ if (identical(check_type, "jitter")) {
       reps_scales = profile_reps_scales,
       extra_far_refine = profile_extra_far_refine,
       include_flag55 = profile_include_flag55,
+      convergence_exponent = profile_convergence_exponent,
       max_grad_threshold = profile_max_grad,
       target_rel_tolerance = profile_target_tolerance,
       retry_invalid = truthy(env(
@@ -1962,6 +1998,8 @@ if (identical(check_type, "jitter")) {
       ), TRUE),
       continuation_reps = profile_continuation_reps,
       jagged_tolerance = profile_jagged_tolerance,
+      invalid_retry_passes = profile_invalid_retry_passes,
+      jagged_repair_passes = profile_jagged_repair_passes,
       run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
     )
     # Keep older mfclkit continuation runs working unchanged while making the

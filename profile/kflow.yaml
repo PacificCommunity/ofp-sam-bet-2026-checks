@@ -13,7 +13,7 @@ env:
   MODEL_SOURCE_REF: main
   PROGRAM_PATH: /home/mfcl/mfclo64
   KFLOW_RUNTIME_PACKAGES: none
-  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@963e6f18e70b54fafb3c072ce454f14d6b076821,mfclshiny=PacificCommunity/mfclshiny@50af0245bdb9d184729ac411484c7ee20dd6f02c
+  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@037cf8083d0b62bb4dfe3a81b219b2a34bd6dcca,mfclshiny=PacificCommunity/mfclshiny@50af0245bdb9d184729ac411484c7ee20dd6f02c
   KFLOW_REPO_RUNTIME_UPDATE: always
   KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
   KFLOW_RUNTIME_UPDATE: always
@@ -43,6 +43,9 @@ env:
   # model-defined mgc/parest flag 50 control in the staged doitall, leaving
   # earlier phase tuning intact. Use "-4" for 1e-4 if needed.
   PROFILE_DOITALL_CONVERGENCE: "-3"
+  # PAREST flag 50 exponent for continuation-chain fits. -3 is John's usual
+  # fast/moderate criterion; use -4 for a deliberately stricter final run.
+  PROFILE_CONVERGENCE_EXPONENT: "-3"
   PROFILE_CHAIN: "true"
   PROFILE_CHAIN_SIDE: ""
   PROFILE_CENTER: "100"
@@ -64,12 +67,16 @@ env:
   PROFILE_EXTRA_FAR_REFINE: "true"
   PROFILE_INCLUDE_FLAG55: "true"
   # A profile target is not valid until the constrained fit also converges.
-  PROFILE_MAX_GRAD_THRESHOLD: "0.001"
+  # Empty means derive the PAR acceptance threshold from the exponent above
+  # (for example, -3 -> 0.001). It can still be overridden independently.
+  PROFILE_MAX_GRAD_THRESHOLD: ""
   PROFILE_TARGET_REL_TOLERANCE: "0.001"
   PROFILE_RETRY_INVALID: "true"
   PROFILE_RETRY_JAGGED: "true"
   PROFILE_CONTINUATION_REPS: "1000"
   PROFILE_JAGGED_TOLERANCE: "0.1"
+  PROFILE_INVALID_RETRY_PASSES: "3"
+  PROFILE_JAGGED_REPAIR_PASSES: "3"
 output_patterns:
   - outputs/**
 metadata:
@@ -139,12 +146,15 @@ metadata:
       - PROFILE_INCLUDE_FLAG55
       - PROFILE_INCLUDE_LEGACY_FLAG55
       - PROFILE_DOITALL_CONVERGENCE
+      - PROFILE_CONVERGENCE_EXPONENT
       - PROFILE_MAX_GRAD_THRESHOLD
       - PROFILE_TARGET_REL_TOLERANCE
       - PROFILE_RETRY_INVALID
       - PROFILE_RETRY_JAGGED
       - PROFILE_CONTINUATION_REPS
       - PROFILE_JAGGED_TOLERANCE
+      - PROFILE_INVALID_RETRY_PASSES
+      - PROFILE_JAGGED_REPAIR_PASSES
       - PROFILE_EXTRA_SWITCH
       - PROFILE_PARAMETER
       - PROFILE_APPLY_SCRIPT

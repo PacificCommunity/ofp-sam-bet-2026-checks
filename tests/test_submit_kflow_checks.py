@@ -590,11 +590,12 @@ class AttachedOutputDiscoveryTests(unittest.TestCase):
 
 
 class AttachedTaskDefaultsTests(unittest.TestCase):
-    def test_profile_tasks_accept_the_explicit_gradient_threshold(self):
+    def test_profile_tasks_accept_explicit_convergence_controls(self):
         for folder in ("profile", "profile-merge"):
             with self.subTest(folder=folder):
                 task = (ROOT / folder / "kflow.yaml").read_text(encoding="utf-8")
-                self.assertIn('PROFILE_MAX_GRAD_THRESHOLD: "0.001"', task)
+                self.assertIn('PROFILE_CONVERGENCE_EXPONENT: "-3"', task)
+                self.assertIn('PROFILE_MAX_GRAD_THRESHOLD: ""', task)
                 self.assertEqual(task.count("PROFILE_MAX_GRAD_THRESHOLD"), 2)
 
     def test_profile_task_keeps_chain_continuation_defaults(self):
@@ -602,12 +603,17 @@ class AttachedTaskDefaultsTests(unittest.TestCase):
         self.assertIn("PROFILE_PARALLEL_MODE: chains", task)
         self.assertIn("PROFILE_EXECUTION_MODE: continuation", task)
         self.assertIn('PROFILE_CHAIN: "true"', task)
+        self.assertIn('PROFILE_INVALID_RETRY_PASSES: "3"', task)
+        self.assertIn('PROFILE_JAGGED_REPAIR_PASSES: "3"', task)
 
     def test_total_average_biomass_default_matches_af172_zero(self):
         with mock.patch.dict(os.environ, {}, clear=True):
             env = submit.resolved_profile_env([90.0, 110.0])
         self.assertEqual(env["PROFILE_NAME"], "total_average_biomass")
         self.assertEqual(env["PROFILE_AF172"], "0")
+        self.assertEqual(env["PROFILE_CONVERGENCE_EXPONENT"], "-3")
+        self.assertEqual(env["PROFILE_INVALID_RETRY_PASSES"], "3")
+        self.assertEqual(env["PROFILE_JAGGED_REPAIR_PASSES"], "3")
 
         task = (ROOT / "profile" / "kflow.yaml").read_text(encoding="utf-8")
         self.assertIn("PROFILE_NAME: total_average_biomass", task)
