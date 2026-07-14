@@ -246,8 +246,6 @@ def resolved_profile_env(values: list[float] | None = None) -> dict[str, str]:
         }.get(style_key, style_key)
     preset_key = preset.strip().lower().replace("-", "_")
     preset = {
-        "john": "three_stage",
-        "john_3stage": "three_stage",
         "native_3stage": "three_stage",
         "standard_3stage": "three_stage",
         "3stage": "three_stage",

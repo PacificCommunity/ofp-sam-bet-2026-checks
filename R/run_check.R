@@ -1808,8 +1808,8 @@ if (identical(check_type, "jitter")) {
       profile_preset <- switch(
         gsub("-", "_", profile_style, fixed = TRUE),
         bet =, ramp =, quantity_ramp =, adaptive = "adaptive",
-        three_stage =, `three-stage` =, native_3stage =, standard_3stage =,
-          john =, john_3stage = "three_stage",
+        three_stage =, `three-stage` =, native_3stage =, standard_3stage =
+          "three_stage",
         manual =, manual_7stage = "manual_7stage",
         simple = "three_stage",
         profile_style
