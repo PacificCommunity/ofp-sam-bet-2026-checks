@@ -19,7 +19,7 @@ env:
   ATTACH_CHECK_TYPES: profile
   PROGRAM_PATH: /home/mfcl/mfclo64
   KFLOW_RUNTIME_PACKAGES: none
-  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@8cf322dd3f6ea9ca5f17c4234d9c6e4696742d6b,mfclshiny=PacificCommunity/mfclshiny@558ca51f50d8afb02f537cc6eac9021b232567ce
+  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@8cf322dd3f6ea9ca5f17c4234d9c6e4696742d6b,mfclshiny=PacificCommunity/mfclshiny@50af0245bdb9d184729ac411484c7ee20dd6f02c
   KFLOW_REPO_RUNTIME_UPDATE: always
   KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
   KFLOW_RUNTIME_UPDATE: always
