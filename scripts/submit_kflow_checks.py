@@ -958,9 +958,24 @@ def main() -> int:
             is_hbase = check == "profile" and is_hbase_profile_mode(
                 profile_submit_env.get("PROFILE_PARALLEL_MODE", "")
             )
+            requested_prep_job = env_first("PROFILE_HBASE_PREP_JOB").lstrip("#")
             prep_job_id = ""
             unit_input_jobs = list(input_jobs)
-            if is_hbase:
+            if is_hbase and requested_prep_job:
+                if not base_input_job:
+                    raise SystemExit("h-base profile submission requires the fitted base job first.")
+                if not args.dry_run:
+                    prep_record = api_job(base_url, token, requested_prep_job)
+                    prep_report = str(
+                        prep_record.get("report_code") or prep_record.get("task_name") or ""
+                    )
+                    if "profile-h-base-prep" not in prep_report:
+                        raise SystemExit(
+                            f"PROFILE_HBASE_PREP_JOB={requested_prep_job} is not an h-base prep job."
+                        )
+                prep_job_id = requested_prep_job
+                unit_input_jobs = [base_input_job, prep_job_id]
+            elif is_hbase:
                 if not base_input_job:
                     raise SystemExit("h-base profile submission requires the fitted base job first.")
                 hessian_jobs = [
