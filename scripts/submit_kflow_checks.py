@@ -30,15 +30,15 @@ CHECK_ALIASES = {
 }
 
 DEFAULT_RUNTIME_PACKAGES = (
-    "mfclkit=PacificCommunity/ofp-sam-mfclkit@81bb9ce1f456cf6ab278e99b814740265cf16265,"
+    "mfclkit=PacificCommunity/ofp-sam-mfclkit@6b441b20da9e62c7d3ce58132e11d104940461ed,"
     "mfclshiny=PacificCommunity/mfclshiny@50af0245bdb9d184729ac411484c7ee20dd6f02c"
 )
 
 DEFAULT_PROFILE_VALUES = [float(value) for value in range(60, 145, 5)]
 DEFAULT_PROFILE_CENTER = "100"
-DEFAULT_JITTER_SEEDS = ["1", "2"]
-DEFAULT_RETRO_PEELS = ["1", "2", "3", "4", "5"]
-DEFAULT_SELFTEST_REPS = ["1", "2"]
+DEFAULT_JITTER_SEEDS = [str(value) for value in range(1, 31)]
+DEFAULT_RETRO_PEELS = [str(value) for value in range(1, 7)]
+DEFAULT_SELFTEST_REPS = [str(value) for value in range(1, 31)]
 DEFAULT_SELFTEST_REFIT_CONVERGENCE = "-3"
 MAX_R_INTEGER = 2_147_483_647
 DIAGNOSTIC_OVERLAY_REPLACE_NAMES = [
@@ -596,7 +596,7 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
 
     if check_key == "hessian":
         parts = split_values(env_first("HESSIAN_PARTS", "HESSIAN_PART"))
-        nsplit = env_first("HESSIAN_NSPLIT", "NSPLIT") or "30"
+        nsplit = env_first("HESSIAN_NSPLIT", "NSPLIT") or "5"
         if not parts and nsplit:
             try:
                 n = int(nsplit)

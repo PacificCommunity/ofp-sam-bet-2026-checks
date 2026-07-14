@@ -1617,6 +1617,14 @@ if (identical(check_type, "jitter")) {
   } else {
     retro_start_strategy_raw
   }
+  retro_convergence <- split_numbers(
+    env("RETRO_CONVERGENCE", env("RETRO_CONVERGENCE_EXPONENT", "-3")),
+    default = -3
+  )[[1L]]
+  if (!is.finite(retro_convergence) ||
+      retro_convergence != floor(retro_convergence)) {
+    stop("RETRO_CONVERGENCE must be one finite whole-number exponent.")
+  }
   write_run_manifest(list(
     retro_peels = paste(peels, collapse = " "),
     n_mixing_periods = n_mixing_periods,
@@ -1626,7 +1634,8 @@ if (identical(check_type, "jitter")) {
     retro_remove_par_files = if (is.na(retro_remove_par_files)) "auto" else retro_remove_par_files,
     retro_start_par_name = if (nzchar(retro_start_par_name)) retro_start_par_name else "auto",
     retro_rewrite_par = if (is.na(retro_rewrite_par)) "auto" else retro_rewrite_par,
-    retro_start_strategy = retro_start_strategy
+    retro_start_strategy = retro_start_strategy,
+    retro_convergence_exponent = as.integer(retro_convergence)
   ))
   retro_args <- list(
     backend = backend,
@@ -1635,6 +1644,7 @@ if (identical(check_type, "jitter")) {
     peel = peels,
     par = check_start_par,
     n_mixing_periods = n_mixing_periods,
+    convergence_exponent = as.integer(retro_convergence),
     allow_new_ini_version_write = truthy(env("RETRO_ALLOW_NEW_INI_VERSION_WRITE", "false"), FALSE),
     start_strategy = retro_start_strategy,
     run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
@@ -1661,7 +1671,7 @@ if (identical(check_type, "jitter")) {
   saveRDS(result, file.path(model_dir, "retro_runs.rds"), compress = "xz")
 
 } else if (identical(check_type, "hessian")) {
-  nsplit <- as.integer(split_numbers(env("HESSIAN_NSPLIT", env("NSPLIT", "1")), default = 1)[[1L]])
+  nsplit <- as.integer(split_numbers(env("HESSIAN_NSPLIT", env("NSPLIT", "5")), default = 5)[[1L]])
   part_values <- split_numbers(env("HESSIAN_PARTS", env("HESSIAN_PART", "")), default = seq_len(nsplit))
   parts <- as.integer(part_values)
   stitch_inputs <- stage_hessian_stitch_inputs()
