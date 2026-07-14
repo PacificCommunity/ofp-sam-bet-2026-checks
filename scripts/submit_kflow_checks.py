@@ -289,6 +289,9 @@ def resolved_profile_env(values: list[float] | None = None) -> dict[str, str]:
         "PROFILE_DOITALL_SCRIPT": env_first(
             "MFK_PROFILE_DOITALL_SCRIPT", "PROFILE_DOITALL_SCRIPT",
         ) or "doitall.sh",
+        "PROFILE_DOITALL_CONVERGENCE": env_first(
+            "MFK_PROFILE_DOITALL_CONVERGENCE", "PROFILE_DOITALL_CONVERGENCE",
+        ) or "-3",
         "PROFILE_CHAIN": env_first("MFK_PROFILE_CHAIN", "PROFILE_CHAIN") or "true",
         "PROFILE_INCLUDE_BASE_ANCHOR": "true" if include_anchor else "false",
         "PROFILE_AF172": env_first("MFK_PROFILE_AF172", "PROFILE_AF172") or "0",

@@ -1794,6 +1794,10 @@ if (identical(check_type, "jitter")) {
       "MFK_PROFILE_DOITALL_SCRIPT", env("PROFILE_DOITALL_SCRIPT", "doitall.sh")
     ))
     if (!nzchar(profile_doitall_script)) profile_doitall_script <- "doitall.sh"
+    profile_doitall_convergence <- split_numbers(env(
+      "MFK_PROFILE_DOITALL_CONVERGENCE",
+      env("PROFILE_DOITALL_CONVERGENCE", "-3")
+    ), default = -3)[[1L]]
 
     profile_penalties <- split_numbers(env(
       "MFK_PROFILE_PENALTIES",
@@ -1899,6 +1903,7 @@ if (identical(check_type, "jitter")) {
       profile_execution_mode = profile_execution_mode,
       profile_doitall_penalty = profile_doitall_penalty,
       profile_doitall_script = profile_doitall_script,
+      profile_doitall_convergence = profile_doitall_convergence,
       profile_side = profile_side,
       profile_center = profile_center,
       profile_expected_values = env("PROFILE_EXPECTED_VALUES", ""),
@@ -1959,6 +1964,9 @@ if (identical(check_type, "jitter")) {
       profile_args$doitall <- profile_doitall_script
       profile_args$doitall_penalty <- profile_doitall_penalty
       profile_args$parallel_points <- FALSE
+      if ("doitall_convergence_exponent" %in% runner_formals) {
+        profile_args$doitall_convergence_exponent <- profile_doitall_convergence
+      }
     }
     result <- do.call(profile_runner, profile_args)
   } else if (identical(profile_type, "fixed_parameter")) {
