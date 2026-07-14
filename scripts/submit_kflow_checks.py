@@ -30,7 +30,7 @@ CHECK_ALIASES = {
 }
 
 DEFAULT_RUNTIME_PACKAGES = (
-    "mfclkit=PacificCommunity/ofp-sam-mfclkit@fa20546fabca1bd87d2864b597cdac5a03e2cba8,"
+    "mfclkit=PacificCommunity/ofp-sam-mfclkit@963e6f18e70b54fafb3c072ce454f14d6b076821,"
     "mfclshiny=PacificCommunity/mfclshiny@8615a8aeea881cbf1113c18eb5a97c17bc012c7f"
 )
 
@@ -39,6 +39,7 @@ DEFAULT_PROFILE_CENTER = "100"
 DEFAULT_JITTER_SEEDS = ["1", "2"]
 DEFAULT_RETRO_PEELS = ["1", "2", "3", "4", "5"]
 DEFAULT_SELFTEST_REPS = ["1", "2"]
+DEFAULT_SELFTEST_REFIT_CONVERGENCE = "-3"
 MAX_R_INTEGER = 2_147_483_647
 DIAGNOSTIC_OVERLAY_REPLACE_NAMES = [
     "jitter",
@@ -907,6 +908,10 @@ def main() -> int:
                     env.setdefault(
                         "SELFTEST_RUN_REFIT",
                         os.environ.get("SELFTEST_RUN_REFIT", os.environ.get("CHECK_SELFTEST_RUN_REFIT", "true")),
+                    )
+                    env.setdefault(
+                        "SELFTEST_REFIT_CONVERGENCE",
+                        os.environ.get("SELFTEST_REFIT_CONVERGENCE", DEFAULT_SELFTEST_REFIT_CONVERGENCE),
                     )
                     # A split self-test unit must surface an incomplete native
                     # replicate as a failed Kflow job. A completed PAR remains

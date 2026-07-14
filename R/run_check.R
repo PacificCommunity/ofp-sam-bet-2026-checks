@@ -2104,6 +2104,7 @@ if (identical(check_type, "jitter")) {
   }
   selftest_env_defaults <- c(
     selftest_refit_fevals = env("SELFTEST_REFIT_FEVALS", ""),
+    selftest_refit_convergence = env("SELFTEST_REFIT_CONVERGENCE", "-3"),
     selftest_require_native_tags = env("SELFTEST_REQUIRE_NATIVE_TAGS", "auto"),
     selftest_update_tags = env("SELFTEST_UPDATE_TAGS", "auto"),
     selftest_update_catch = env("SELFTEST_UPDATE_CATCH", "auto"),

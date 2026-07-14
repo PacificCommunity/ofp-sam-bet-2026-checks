@@ -275,6 +275,10 @@ make kflow CHECK_TYPE=model-bundle \
 - `PROFILE_DOITALL_PENALTY`: constraint weight carried through each full
   doitall profile, default `1e7`. `PROFILE_DOITALL_SCRIPT` names the staged
   model-specific script and defaults to `doitall.sh`.
+- `PROFILE_DOITALL_CONVERGENCE`: convergence exponent for full-doitall
+  profile jobs, default `-3` (`1e-3`). This updates only the last
+  model-defined mgc/pf50 line in the staged `doitall.sh`; use `-4` for
+  `1e-4`.
 - `PROFILE_CENTER`: profile anchor scalar, default `100`. The center is the
   fitted base model and is not re-run as a profile unit; merge writes it once as
   the base-anchor point.
@@ -312,6 +316,9 @@ make kflow CHECK_TYPE=model-bundle \
   Default is `last_par`.
 - `SELFTEST_REFIT_MODE`: refit each simulated data set through the complete
   staged model-specific `doitall.sh`. Default is `doitall`.
+- `SELFTEST_REFIT_CONVERGENCE`: convergence exponent for self-test doitall
+  refits. The default `-3` updates only the last model-defined mgc/pf50 control
+  in the copied `doitall.sh`; set `-4` for a stricter 1e-4 refit.
 - `selftest_update_tags` / `SELFTEST_UPDATE_TAGS`: `auto` by default. Tag
   pseudo-data are generated only when the staged MFCL case has a `.tag` file.
 - `selftest_require_native_tags` / `SELFTEST_REQUIRE_NATIVE_TAGS`: `auto` by

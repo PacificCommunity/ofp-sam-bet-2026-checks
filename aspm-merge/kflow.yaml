@@ -2,7 +2,7 @@ name: ofp-sam-bet-2026-check-aspm-merge
 description: Merge mfclkit ASPM outputs and optionally publish an independent attached diagnostic delta.
 command: bash run.sh
 target_folder: aspm-merge
-docker_image: ghcr.io/pacificcommunity/tuna-flow:v2.2
+docker_image: ghcr.io/pacificcommunity/tuna-flow:v2.4
 resources:
   cpus: 1
   memory: 4GB
@@ -21,7 +21,7 @@ env:
   ATTACH_CHECK_TYPES: aspm
   PROGRAM_PATH: /home/mfcl/mfclo64
   KFLOW_RUNTIME_PACKAGES: none
-  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@fa20546fabca1bd87d2864b597cdac5a03e2cba8,mfclshiny=PacificCommunity/mfclshiny@8615a8aeea881cbf1113c18eb5a97c17bc012c7f
+  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@963e6f18e70b54fafb3c072ce454f14d6b076821,mfclshiny=PacificCommunity/mfclshiny@8615a8aeea881cbf1113c18eb5a97c17bc012c7f
   KFLOW_REPO_RUNTIME_UPDATE: always
   KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
   KFLOW_RUNTIME_UPDATE: always
