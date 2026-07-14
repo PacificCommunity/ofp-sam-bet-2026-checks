@@ -1447,6 +1447,10 @@ if (identical(check_type, "jitter")) {
     option = "JITTER_SEEDS/JITTER_SEED"
   )
   cv <- split_numbers(env("JITTER_CV", "0.1"), default = 0.1)[[1L]]
+  jitter_convergence <- split_numbers(
+    env("JITTER_CONVERGENCE", env("JITTER_CONVERGENCE_EXPONENT", "-3")),
+    default = -3
+  )[[1L]]
   slots <- check_jitter_slots()
   jitter_method <- tolower(trimws(env("JITTER_METHOD", env("JITTER_STYLE", "phase1_doitall"))))
   if (!nzchar(jitter_method)) jitter_method <- "phase1_doitall"
@@ -1466,6 +1470,7 @@ if (identical(check_type, "jitter")) {
   write_run_manifest(list(
     jitter_seeds = paste(seeds, collapse = " "),
     jitter_cv = cv,
+    jitter_convergence = jitter_convergence,
     jitter_slots = paste(slots, collapse = " "),
     jitter_method = jitter_method,
     jitter_require_indepvar = jitter_require_indepvar,
@@ -1531,6 +1536,9 @@ if (identical(check_type, "jitter")) {
         "JITTER_STRICT_ACTIVE_MASK=true requires an updated mfclkit with strict active-mask support.",
         call. = FALSE
       )
+    }
+    if ("convergence_exponent" %in% phase1_formals) {
+      jitter_args$convergence_exponent <- jitter_convergence
     }
     result <- do.call(phase1_runner, jitter_args)
   } else {

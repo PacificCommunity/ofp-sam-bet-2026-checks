@@ -194,6 +194,9 @@ make kflow CHECK_TYPE=model-bundle \
   standalone base-model bundle. Direct diagnostic merges use `delta`.
 - `JITTER_SEEDS`: comma/space list of seeds, default `1`.
 - `JITTER_CV`: jitter CV, default `0.1`.
+- `JITTER_CONVERGENCE`: convergence exponent applied by replacing the last
+  model-defined mgc/pf50 line in the staged `doitall.sh`, default `-3`
+  (`1e-3`). Use `-4` for `1e-4`; unset/NA leaves the model script unchanged.
 - `JITTER_METHOD`: `phase1_doitall` by default. This reads the first MFCL
   phase from the staged model-specific `doitall.sh`, stages or generates that
   phase's declared input PAR, jitters its declared output PAR, then resumes
