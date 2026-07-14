@@ -2,7 +2,7 @@ name: ofp-sam-bet-2026-check-selftest
 description: Run mfclkit self-test checks on a fitted MFCL model output.
 command: bash run.sh
 target_folder: selftest
-docker_image: ghcr.io/pacificcommunity/tuna-flow:v2.4
+docker_image: ghcr.io/pacificcommunity/tuna-flow:v2.3
 resources:
   cpus: 2
   memory: 8GB
@@ -13,7 +13,7 @@ env:
   MODEL_SOURCE_REF: main
   PROGRAM_PATH: /home/mfcl/mfclo64
   KFLOW_RUNTIME_PACKAGES: none
-  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@963e6f18e70b54fafb3c072ce454f14d6b076821,mfclshiny=PacificCommunity/mfclshiny@8681533e0727c6223eda7d3de5465f7514e86249
+  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@963e6f18e70b54fafb3c072ce454f14d6b076821,mfclshiny=PacificCommunity/mfclshiny@50af0245bdb9d184729ac411484c7ee20dd6f02c
   KFLOW_REPO_RUNTIME_UPDATE: always
   KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
   KFLOW_RUNTIME_UPDATE: always
