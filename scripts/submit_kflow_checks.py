@@ -42,6 +42,9 @@ DEFAULT_JITTER_SEEDS = [str(value) for value in range(1, 31)]
 DEFAULT_RETRO_PEELS = [str(value) for value in range(1, 7)]
 DEFAULT_SELFTEST_REPS = [str(value) for value in range(1, 31)]
 DEFAULT_SELFTEST_REFIT_CONVERGENCE = "-3"
+DEFAULT_CHECK_CPUS = "2"
+DEFAULT_CHECK_MEMORY = "8GB"
+DEFAULT_CHECK_DISK = "10GB"
 MAX_R_INTEGER = 2_147_483_647
 HBASE_PROFILE_MODES = {"h-base", "h_base", "hbase", "hessian-base", "hessian_base"}
 DIAGNOSTIC_OVERLAY_REPLACE_NAMES = [
@@ -992,9 +995,9 @@ def parse_args() -> argparse.Namespace:
             "ghcr.io/pacificcommunity/tuna-flow:v2.4",
         ),
     )
-    parser.add_argument("--cpus", default=os.environ.get("KFLOW_CPUS", "1"))
-    parser.add_argument("--memory", default=os.environ.get("KFLOW_MEMORY", "4GB"))
-    parser.add_argument("--disk", default=os.environ.get("KFLOW_DISK", "10GB"))
+    parser.add_argument("--cpus", default=os.environ.get("KFLOW_CPUS", DEFAULT_CHECK_CPUS))
+    parser.add_argument("--memory", default=os.environ.get("KFLOW_MEMORY", DEFAULT_CHECK_MEMORY))
+    parser.add_argument("--disk", default=os.environ.get("KFLOW_DISK", DEFAULT_CHECK_DISK))
     parser.add_argument("--model-source-repo", default=os.environ.get("MODEL_SOURCE_REPO", "PacificCommunity/ofp-sam-bet-2026-stepwise"))
     parser.add_argument("--model-source-ref", default=os.environ.get("MODEL_SOURCE_REF", "main"))
     parser.add_argument("--model-source-path", default=os.environ.get("MODEL_SOURCE_PATH", ""))
