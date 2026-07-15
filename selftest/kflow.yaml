@@ -14,7 +14,7 @@ env:
   PROGRAM_PATH: /home/mfcl/mfclo64
   SELFTEST_PROGRAM_PATH: mfclkit-bundled-strict-tag-nb
   KFLOW_RUNTIME_PACKAGES: none
-  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@55b54e9323bfcf19e7d9be05977e164ec91891e5,mfclshiny=PacificCommunity/mfclshiny@fec6d8d0fc52050b6123f7adbe285c31ec406826
+  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@2c931ebd20fd04286fb4ff476c774ec036c49bb9,mfclshiny=PacificCommunity/mfclshiny@169a4eb5ad4d32149ff072dc352864dad1eb4192
   KFLOW_REPO_RUNTIME_UPDATE: always
   KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
   KFLOW_RUNTIME_UPDATE: always
