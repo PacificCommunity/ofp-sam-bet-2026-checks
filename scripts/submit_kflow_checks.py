@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import os
 import re
@@ -53,6 +54,7 @@ DIAGNOSTIC_OVERLAY_REPLACE_NAMES = [
     "projection",
 ]
 DIRECT_MERGE_CHECKS = tuple(MERGE_CHECKS)
+PARALLEL_SUBMISSION_CHECKS = {"jitter", "selftest", "retro", "hessian"}
 
 
 def split_values(raw: str) -> list[str]:
@@ -688,6 +690,17 @@ def merge_check_for(check: str) -> str:
     return MERGE_CHECKS.get(normalize_check_name(check), "")
 
 
+def api_timeout_seconds() -> float:
+    raw = str(os.environ.get("KFLOW_API_TIMEOUT_SECONDS", "300")).strip()
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise SystemExit("KFLOW_API_TIMEOUT_SECONDS must be numeric.") from exc
+    if value <= 0:
+        raise SystemExit("KFLOW_API_TIMEOUT_SECONDS must be greater than zero.")
+    return value
+
+
 def api_json(method: str, url: str, token: str, payload: dict[str, Any]) -> dict[str, Any]:
     body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
@@ -697,7 +710,7 @@ def api_json(method: str, url: str, token: str, payload: dict[str, Any]) -> dict
         method=method,
     )
     try:
-        with urllib.request.urlopen(request, timeout=60) as response:
+        with urllib.request.urlopen(request, timeout=api_timeout_seconds()) as response:
             raw = response.read()
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
@@ -712,7 +725,7 @@ def api_get_json(url: str, token: str) -> dict[str, Any]:
         method="GET",
     )
     try:
-        with urllib.request.urlopen(request, timeout=60) as response:
+        with urllib.request.urlopen(request, timeout=api_timeout_seconds()) as response:
             raw = response.read()
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
@@ -920,6 +933,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--parallel-units", default=os.environ.get("KFLOW_PARALLEL_UNITS", "true"))
     parser.add_argument("--auto-merge", default=os.environ.get("KFLOW_AUTO_MERGE", "true"))
     parser.add_argument("--auto-attach", default=os.environ.get("KFLOW_AUTO_ATTACH", "true"))
+    parser.add_argument("--submit-workers", default=os.environ.get("KFLOW_SUBMIT_WORKERS", "8"))
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
@@ -953,6 +967,12 @@ def main() -> int:
             "Set MODEL_SELECTOR or MODEL_SELECTORS."
         )
     parallel_units = truthy(args.parallel_units, default=True)
+    try:
+        submit_workers = int(str(args.submit_workers).strip())
+    except ValueError as exc:
+        raise SystemExit("--submit-workers/KFLOW_SUBMIT_WORKERS must be an integer.") from exc
+    if submit_workers < 1 or submit_workers > 32:
+        raise SystemExit("--submit-workers/KFLOW_SUBMIT_WORKERS must be between 1 and 32.")
     auto_merge = truthy(args.auto_merge, default=True)
     auto_attach = truthy(args.auto_attach, default=True)
     attach_merge_with_latest = truthy(os.environ.get("KFLOW_ATTACH_MERGE_WITH_LATEST", "true"), default=True)
@@ -1139,6 +1159,7 @@ def main() -> int:
                         raise RuntimeError("Kflow did not return an h-base prep job ID.")
                     print(f"submitted {prep_task} {model}: job {prep_job_id}")
                 unit_input_jobs = [base_input_job, prep_job_id]
+            unit_submissions: list[tuple[int, str, dict[str, Any]]] = []
             for unit in unit_specs:
                 task = (
                     f"{args.task_prefix}-profile-h-base"
@@ -1261,12 +1282,49 @@ def main() -> int:
                     print(json.dumps({"task": task, "payload": payload}, indent=2, sort_keys=True))
                     unit_job_ids.append(f"DRY-{check}-{model}-{check_unit or 'unit'}")
                     continue
-                response = api_json("POST", f"{base_url}/api/job/{task}", token, payload)
+                unit_submissions.append((len(unit_submissions), task, payload))
+
+            def submit_unit(spec: tuple[int, str, dict[str, Any]]) -> tuple[int, str, str]:
+                index, task_name, unit_payload = spec
+                response = api_json(
+                    "POST",
+                    f"{base_url}/api/job/{task_name}",
+                    token,
+                    unit_payload,
+                )
                 job = response.get("job", response)
-                code = job.get("job_number") or job.get("number") or job.get("code") or job.get("id") or "?"
-                if code and code != "?":
-                    unit_job_ids.append(str(code))
-                print(f"submitted {task} {model}: job {code}")
+                code = str(
+                    job.get("job_number")
+                    or job.get("number")
+                    or job.get("code")
+                    or job.get("id")
+                    or "?"
+                )
+                return index, task_name, code
+
+            use_parallel_submission = (
+                parallel_units
+                and check in PARALLEL_SUBMISSION_CHECKS
+                and submit_workers > 1
+                and len(unit_submissions) > 1
+            )
+            submitted_units: list[tuple[int, str, str]] = []
+            if use_parallel_submission:
+                workers = min(submit_workers, len(unit_submissions))
+                with ThreadPoolExecutor(max_workers=workers) as executor:
+                    futures = {
+                        executor.submit(submit_unit, spec): spec[0]
+                        for spec in unit_submissions
+                    }
+                    for future in as_completed(futures):
+                        submitted_units.append(future.result())
+            else:
+                submitted_units = [submit_unit(spec) for spec in unit_submissions]
+
+            for _, task_name, code in sorted(submitted_units):
+                if code != "?":
+                    unit_job_ids.append(code)
+                print(f"submitted {task_name} {model}: job {code}")
             submitted_groups.append(
                 {
                     "check": check,
