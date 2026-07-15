@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import re
+import sys
 import urllib.error
 import urllib.request
 from typing import Any
@@ -823,6 +824,65 @@ def metadata_refs(value: Any) -> list[str]:
     return split_values(str(value or ""))
 
 
+def job_model_selectors(job: dict[str, Any]) -> list[str]:
+    """Return canonical model selectors advertised by one input job."""
+    metadata = job.get("metadata") if isinstance(job.get("metadata"), dict) else {}
+    tags = job.get("tags") if isinstance(job.get("tags"), dict) else {}
+    values = [
+        job.get("model_selector"),
+        metadata.get("model_selector"),
+        metadata.get("model_selectors"),
+        metadata.get("model_key"),
+        metadata.get("model_keys"),
+        tags.get("model"),
+    ]
+    selectors: list[str] = []
+    for value in values:
+        for selector in metadata_refs(value):
+            if selector and selector not in selectors:
+                selectors.append(selector)
+    return selectors
+
+
+def resolve_input_models(
+    base_url: str,
+    token: str,
+    base_input_job: str,
+    requested: list[str],
+) -> list[str]:
+    """Resolve requested aliases against canonical selectors on the base job."""
+    if not base_input_job or not token:
+        return requested
+    canonical = job_model_selectors(api_job(base_url, token, base_input_job))
+    if not canonical:
+        return requested
+    if not requested:
+        return canonical
+
+    by_key = {value.casefold(): value for value in canonical}
+    if len(canonical) == 1:
+        if len(requested) != 1:
+            raise SystemExit(
+                f"Input job {base_input_job} contains one model ({canonical[0]}); "
+                f"got {len(requested)} requested selectors."
+            )
+        if requested[0].casefold() != canonical[0].casefold():
+            print(
+                f"Resolved model selector {requested[0]!r} to {canonical[0]!r} "
+                f"from input job {base_input_job}.",
+                file=sys.stderr,
+            )
+        return [canonical[0]]
+
+    unknown = [value for value in requested if value.casefold() not in by_key]
+    if unknown:
+        raise SystemExit(
+            f"Requested model selectors are not present in input job {base_input_job}: "
+            f"{', '.join(unknown)}. Available: {', '.join(canonical)}."
+        )
+    return [by_key[value.casefold()] for value in requested]
+
+
 def previous_check_merge_jobs(base_url: str, token: str, attached_job_ref: str, check: str) -> list[str]:
     attached = api_job(base_url, token, attached_job_ref)
     metadata = attached.get("metadata") if isinstance(attached.get("metadata"), dict) else {}
@@ -875,20 +935,29 @@ def main() -> int:
         check = normalize_check_name(raw_check)
         if check and check not in checks:
             checks.append(check)
-    models = split_values(args.models)
+    requested_models = split_values(args.models)
     if not checks:
         raise SystemExit("No checks selected.")
-    if not models:
-        raise SystemExit("No models selected. Set MODEL_SELECTOR or MODEL_SELECTORS.")
     input_jobs = [job.lstrip("#") for job in split_values(args.input_jobs)]
     base_url = args.kflow_url.rstrip("/")
+    base_input_job = input_jobs[0] if input_jobs else ""
+    models = resolve_input_models(
+        base_url,
+        token,
+        base_input_job,
+        requested_models,
+    )
+    if not models:
+        raise SystemExit(
+            "No models selected and none could be inferred from the base input job. "
+            "Set MODEL_SELECTOR or MODEL_SELECTORS."
+        )
     parallel_units = truthy(args.parallel_units, default=True)
     auto_merge = truthy(args.auto_merge, default=True)
     auto_attach = truthy(args.auto_attach, default=True)
     attach_merge_with_latest = truthy(os.environ.get("KFLOW_ATTACH_MERGE_WITH_LATEST", "true"), default=True)
     requested_attach_mode = str(os.environ.get("ATTACH_OUTPUT_MODE", "delta")).strip().lower()
     requested_delta_attach = requested_attach_mode in {"delta", "overlay", "delta_overlay"}
-    base_input_job = input_jobs[0] if input_jobs else ""
     previous_attached_job_for_base = "" if requested_delta_attach else env_first(
         "KFLOW_PREVIOUS_ATTACHED_OUTPUT_JOB",
         "KFLOW_LATEST_ATTACHED_OUTPUT_JOB",
