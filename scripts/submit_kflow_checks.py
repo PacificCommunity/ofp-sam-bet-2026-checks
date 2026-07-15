@@ -110,6 +110,62 @@ def truthy(raw: str, default: bool = False) -> bool:
     return text in {"1", "true", "yes", "y", "on", "always"}
 
 
+def resolve_submit_workers(raw: str) -> tuple[int, str]:
+    """Resolve API submission concurrency from current local capacity."""
+    text = str(raw or "auto").strip().lower()
+    if text not in {"", "auto"}:
+        try:
+            workers = int(text)
+        except ValueError as exc:
+            raise SystemExit(
+                "--submit-workers/KFLOW_SUBMIT_WORKERS must be auto or an integer."
+            ) from exc
+        if workers < 1 or workers > 32:
+            raise SystemExit(
+                "--submit-workers/KFLOW_SUBMIT_WORKERS must be between 1 and 32."
+            )
+        return workers, "explicit"
+
+    try:
+        cpu_count = len(os.sched_getaffinity(0))
+    except (AttributeError, OSError):
+        cpu_count = os.cpu_count() or 1
+    cpu_count = max(1, int(cpu_count))
+
+    try:
+        load_one = max(0.0, float(os.getloadavg()[0]))
+    except (AttributeError, OSError):
+        load_one = 0.0
+
+    # Leave one logical CPU for the desktop and existing work. Submission is
+    # network-bound, but this conservative cap prevents bursts when the local
+    # machine is already busy.
+    cpu_workers = max(1, int(cpu_count - load_one - 1.0))
+
+    available_memory_mib = 0.0
+    try:
+        with open("/proc/meminfo", encoding="ascii") as handle:
+            for line in handle:
+                if line.startswith("MemAvailable:"):
+                    available_memory_mib = float(line.split()[1]) / 1024.0
+                    break
+    except (OSError, ValueError, IndexError):
+        pass
+    memory_workers = (
+        max(1, int(available_memory_mib // 256.0))
+        if available_memory_mib > 0.0
+        else 32
+    )
+    workers = max(1, min(32, cpu_workers, memory_workers))
+    detail = (
+        f"auto: cpus={cpu_count}, load1={load_one:.2f}, "
+        f"available_memory={available_memory_mib / 1024.0:.1f}GiB"
+        if available_memory_mib > 0.0
+        else f"auto: cpus={cpu_count}, load1={load_one:.2f}"
+    )
+    return workers, detail
+
+
 def env_first(*names: str) -> str:
     for name in names:
         value = os.environ.get(name, "")
@@ -920,6 +976,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--models", default=os.environ.get("MODEL_SELECTORS", os.environ.get("MODEL_SELECTOR", "")))
     parser.add_argument("--input-jobs", default=os.environ.get("KFLOW_INPUT_JOBS", ""))
     parser.add_argument("--flow-group", default=os.environ.get("FLOW_GROUP", "bet-2026-checks"))
+    parser.add_argument(
+        "--repo-full-name",
+        default=os.environ.get(
+            "KFLOW_REPO_FULL_NAME",
+            "PacificCommunity/ofp-sam-bet-2026-checks",
+        ),
+    )
+    parser.add_argument("--branch", default=os.environ.get("KFLOW_BRANCH", "main"))
+    parser.add_argument("--make-target", default=os.environ.get("KFLOW_MAKE_TARGET", "all"))
+    parser.add_argument(
+        "--docker-image",
+        default=os.environ.get(
+            "KFLOW_DOCKER_IMAGE",
+            "ghcr.io/pacificcommunity/tuna-flow:v2.4",
+        ),
+    )
+    parser.add_argument("--cpus", default=os.environ.get("KFLOW_CPUS", "1"))
+    parser.add_argument("--memory", default=os.environ.get("KFLOW_MEMORY", "4GB"))
+    parser.add_argument("--disk", default=os.environ.get("KFLOW_DISK", "10GB"))
     parser.add_argument("--model-source-repo", default=os.environ.get("MODEL_SOURCE_REPO", "PacificCommunity/ofp-sam-bet-2026-stepwise"))
     parser.add_argument("--model-source-ref", default=os.environ.get("MODEL_SOURCE_REF", "main"))
     parser.add_argument("--model-source-path", default=os.environ.get("MODEL_SOURCE_PATH", ""))
@@ -933,7 +1008,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--parallel-units", default=os.environ.get("KFLOW_PARALLEL_UNITS", "true"))
     parser.add_argument("--auto-merge", default=os.environ.get("KFLOW_AUTO_MERGE", "true"))
     parser.add_argument("--auto-attach", default=os.environ.get("KFLOW_AUTO_ATTACH", "true"))
-    parser.add_argument("--submit-workers", default=os.environ.get("KFLOW_SUBMIT_WORKERS", "8"))
+    parser.add_argument("--submit-workers", default=os.environ.get("KFLOW_SUBMIT_WORKERS", "auto"))
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
@@ -967,12 +1042,8 @@ def main() -> int:
             "Set MODEL_SELECTOR or MODEL_SELECTORS."
         )
     parallel_units = truthy(args.parallel_units, default=True)
-    try:
-        submit_workers = int(str(args.submit_workers).strip())
-    except ValueError as exc:
-        raise SystemExit("--submit-workers/KFLOW_SUBMIT_WORKERS must be an integer.") from exc
-    if submit_workers < 1 or submit_workers > 32:
-        raise SystemExit("--submit-workers/KFLOW_SUBMIT_WORKERS must be between 1 and 32.")
+    submit_workers, submit_worker_source = resolve_submit_workers(args.submit_workers)
+    print(f"submission workers: {submit_workers} ({submit_worker_source})")
     auto_merge = truthy(args.auto_merge, default=True)
     auto_attach = truthy(args.auto_attach, default=True)
     attach_merge_with_latest = truthy(os.environ.get("KFLOW_ATTACH_MERGE_WITH_LATEST", "true"), default=True)
@@ -1023,6 +1094,13 @@ def main() -> int:
             base_input_job,
         )
     submitter_fields = {
+        "repo": args.repo_full_name,
+        "branch": args.branch,
+        "make_target": args.make_target,
+        "docker_image": args.docker_image,
+        "cpus": int(args.cpus),
+        "memory": args.memory,
+        "disk": args.disk,
         "remote_host": args.submitter or args.remote_host,
         "remote_user": args.remote_user,
         "remote_base_dir": remote_base_dir_value(
