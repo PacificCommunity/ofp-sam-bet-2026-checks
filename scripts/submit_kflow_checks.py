@@ -760,12 +760,20 @@ def api_timeout_seconds() -> float:
     return value
 
 
-def api_json(method: str, url: str, token: str, payload: dict[str, Any]) -> dict[str, Any]:
-    body = json.dumps(payload).encode("utf-8")
+def api_json(
+    method: str,
+    url: str,
+    token: str,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    body = json.dumps(payload).encode("utf-8") if payload is not None else None
+    headers = {"Authorization": f"Bearer {token}"}
+    if payload is not None:
+        headers["Content-Type"] = "application/json"
     request = urllib.request.Request(
         url,
         data=body,
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        headers=headers,
         method=method,
     )
     try:
@@ -775,6 +783,61 @@ def api_json(method: str, url: str, token: str, payload: dict[str, Any]) -> dict
         detail = exc.read().decode("utf-8", errors="replace")
         raise RuntimeError(f"{method} {url} failed: HTTP {exc.code}: {detail}") from exc
     return json.loads(raw.decode("utf-8")) if raw else {}
+
+
+def ensure_check_task_registered(
+    base_url: str,
+    token: str,
+    task: str,
+    check_type: str,
+    submitter_fields: dict[str, Any],
+    registered_tasks: set[str],
+) -> None:
+    """Register an internal check task before creating jobs beneath it."""
+
+    if task in registered_tasks:
+        return
+    endpoint = f"{base_url}/api/report/{task}"
+    try:
+        response = api_json("GET", endpoint, token)
+        if isinstance(response.get("report"), dict):
+            registered_tasks.add(task)
+            return
+    except RuntimeError as exc:
+        if "HTTP 404" not in str(exc):
+            raise
+
+    repo = str(submitter_fields.get("repo") or "").strip()
+    if not repo:
+        raise RuntimeError(f"Cannot register {task}: repository is missing.")
+    payload = {
+        "name": task,
+        "description": (
+            f"Internal {check_type.replace('-', ' ')} jobs shown under their parent model."
+        ),
+        "repo_full_name": repo,
+        "branch": submitter_fields.get("branch") or "main",
+        "make_target": submitter_fields.get("make_target") or "all",
+        "command": "bash run.sh",
+        "checkout": {"mode": "full", "paths": []},
+        "remote_user": submitter_fields.get("remote_user"),
+        "remote_host": submitter_fields.get("remote_host"),
+        "remote_base_dir": submitter_fields.get("remote_base_dir"),
+        "docker_image": submitter_fields.get("docker_image"),
+        "cpus": int(submitter_fields.get("cpus") or DEFAULT_CHECK_CPUS),
+        "memory": submitter_fields.get("memory") or DEFAULT_CHECK_MEMORY,
+        "disk": submitter_fields.get("disk") or DEFAULT_CHECK_DISK,
+        "metadata": {
+            "internal_task": True,
+            "task_visibility": "internal",
+            "task_role": "diagnostic-support",
+            "check_type": check_type,
+        },
+        "tags": {"stage": "checks", "check_type": check_type},
+        "output_patterns": ["outputs/**"],
+    }
+    api_json("POST", endpoint, token, payload)
+    registered_tasks.add(task)
 
 
 def api_get_json(url: str, token: str) -> dict[str, Any]:
@@ -1115,6 +1178,7 @@ def main() -> int:
     submitter_fields = {key: value for key, value in submitter_fields.items() if str(value or "").strip()}
 
     submitted_groups: list[dict[str, Any]] = []
+    registered_tasks: set[str] = set()
 
     for check in checks:
         for model in models:
@@ -1246,6 +1310,15 @@ def main() -> int:
                     f"{args.task_prefix}-profile-h-base"
                     if is_hbase else f"{args.task_prefix}-{check}"
                 )
+                if not args.dry_run:
+                    ensure_check_task_registered(
+                        base_url,
+                        token,
+                        task,
+                        check,
+                        submitter_fields,
+                        registered_tasks,
+                    )
                 unit_label = str(unit.get("label") or "").strip()
                 if check == "model-bundle":
                     title = args.job_title or f"MFCL bundle: {model}"
@@ -1433,6 +1506,15 @@ def main() -> int:
             f"{args.task_prefix}-profile-h-base-merge"
             if is_hbase else f"{args.task_prefix}-{merge_check}"
         )
+        if not args.dry_run:
+            ensure_check_task_registered(
+                base_url,
+                token,
+                task,
+                merge_check,
+                submitter_fields,
+                registered_tasks,
+            )
         title = args.job_title or f"{merge_check}: {model}"
         description = args.job_description or f"Merge split {check} check outputs for {model}."
         env = {
