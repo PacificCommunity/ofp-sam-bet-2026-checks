@@ -32,7 +32,7 @@ CHECK_ALIASES = {
 }
 
 DEFAULT_RUNTIME_PACKAGES = (
-    "mfclkit=PacificCommunity/ofp-sam-mfclkit@f8766874c87beef840a5a7072e4604753a971643,"
+    "mfclkit=PacificCommunity/ofp-sam-mfclkit,"
     "mfclshiny=PacificCommunity/mfclshiny@236a9cf96e1148446b2a650db0991d9661f7d9a7"
 )
 
@@ -549,7 +549,7 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
         return [
             {
                 "label": f"{label} {value}",
-                "env": {singular_env: value},
+                "env": {plural_env: value, singular_env: value},
                 "metadata": {"check_unit_type": unit_type, "check_unit": value},
             }
             for value in values
@@ -1387,6 +1387,13 @@ def main() -> int:
                         os.environ.get(
                             "SELFTEST_TAG_SIMULATION",
                             os.environ.get("CHECK_SELFTEST_TAG_SIMULATION", "mechanistic"),
+                        ),
+                    )
+                    env.setdefault(
+                        "SELFTEST_PROGRAM_PATH",
+                        os.environ.get(
+                            "SELFTEST_PROGRAM_PATH",
+                            os.environ.get("PROGRAM_PATH", "/home/mfcl/mfclo64"),
                         ),
                     )
                     env.setdefault(
