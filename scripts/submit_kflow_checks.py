@@ -1051,7 +1051,7 @@ def parse_args() -> argparse.Namespace:
         "--docker-image",
         default=os.environ.get(
             "KFLOW_DOCKER_IMAGE",
-            "ghcr.io/pacificcommunity/tuna-flow:v2.4",
+            "ghcr.io/pacificcommunity/tuna-flow:v2.5@sha256:c87f1f6d9d4f62dc447844b58afe35f96af175bf933cb6cffbbbe39a59172360",
         ),
     )
     parser.add_argument("--cpus", default=os.environ.get("KFLOW_CPUS", DEFAULT_CHECK_CPUS))

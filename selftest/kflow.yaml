@@ -2,7 +2,7 @@ name: ofp-sam-bet-2026-check-selftest
 description: Run mfclkit self-test checks on a fitted MFCL model output.
 command: bash run.sh
 target_folder: selftest
-docker_image: ghcr.io/pacificcommunity/tuna-flow:v2.4@sha256:71b97b4bdefa091a55284e45bbddfa330171a0674e8e4a32895424d6c8a100de
+docker_image: ghcr.io/pacificcommunity/tuna-flow:v2.5@sha256:c87f1f6d9d4f62dc447844b58afe35f96af175bf933cb6cffbbbe39a59172360
 resources:
   cpus: 2
   memory: 8GB
