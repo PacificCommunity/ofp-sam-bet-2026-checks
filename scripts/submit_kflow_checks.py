@@ -793,20 +793,16 @@ def ensure_check_task_registered(
     submitter_fields: dict[str, Any],
     registered_tasks: set[str],
 ) -> None:
-    """Register an internal check task before creating jobs beneath it."""
+    """Upsert an internal check task before creating jobs beneath it.
+
+    Diagnostic task records are shared across submissions. Always refreshing
+    the record prevents a previously registered, later-deleted temporary Git
+    branch from poisoning every unit in a new diagnostic fan-out.
+    """
 
     if task in registered_tasks:
         return
     endpoint = f"{base_url}/api/report/{task}"
-    try:
-        response = api_json("GET", endpoint, token)
-        if isinstance(response.get("report"), dict):
-            registered_tasks.add(task)
-            return
-    except RuntimeError as exc:
-        if "HTTP 404" not in str(exc):
-            raise
-
     repo = str(submitter_fields.get("repo") or "").strip()
     if not repo:
         raise RuntimeError(f"Cannot register {task}: repository is missing.")
