@@ -2393,6 +2393,7 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
     Sys.setenv(selftest_refit_mode = env("SELFTEST_REFIT_MODE", "doitall"))
   }
   selftest_env_defaults <- c(
+    selftest_tag_simulation = env("SELFTEST_TAG_SIMULATION", "mechanistic"),
     selftest_refit_fevals = env("SELFTEST_REFIT_FEVALS", ""),
     selftest_refit_convergence = env("SELFTEST_REFIT_CONVERGENCE", "-3"),
     selftest_require_native_tags = env("SELFTEST_REQUIRE_NATIVE_TAGS", "auto"),

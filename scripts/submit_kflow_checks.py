@@ -32,7 +32,7 @@ CHECK_ALIASES = {
 }
 
 DEFAULT_RUNTIME_PACKAGES = (
-    "mfclkit=PacificCommunity/ofp-sam-mfclkit@c622bcf69d7ef7fa81857115d2281aacb756c2b1,"
+    "mfclkit=PacificCommunity/ofp-sam-mfclkit@f8766874c87beef840a5a7072e4604753a971643,"
     "mfclshiny=PacificCommunity/mfclshiny@236a9cf96e1148446b2a650db0991d9661f7d9a7"
 )
 
@@ -549,7 +549,7 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
         return [
             {
                 "label": f"{label} {value}",
-                "env": {plural_env: value, singular_env: value},
+                "env": {singular_env: value},
                 "metadata": {"check_unit_type": unit_type, "check_unit": value},
             }
             for value in values
@@ -1381,6 +1381,13 @@ def main() -> int:
                     env.setdefault(
                         "SELFTEST_RUN_REFIT",
                         os.environ.get("SELFTEST_RUN_REFIT", os.environ.get("CHECK_SELFTEST_RUN_REFIT", "true")),
+                    )
+                    env.setdefault(
+                        "SELFTEST_TAG_SIMULATION",
+                        os.environ.get(
+                            "SELFTEST_TAG_SIMULATION",
+                            os.environ.get("CHECK_SELFTEST_TAG_SIMULATION", "mechanistic"),
+                        ),
                     )
                     env.setdefault(
                         "SELFTEST_REFIT_CONVERGENCE",
