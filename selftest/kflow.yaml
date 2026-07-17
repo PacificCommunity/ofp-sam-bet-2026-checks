@@ -12,7 +12,7 @@ env:
   MODEL_SOURCE_REPO: PacificCommunity/ofp-sam-bet-2026-stepwise
   MODEL_SOURCE_REF: main
   PROGRAM_PATH: /home/mfcl/mfclo64
-  SELFTEST_PROGRAM_PATH: /home/mfcl/mfclo64
+  SELFTEST_PROGRAM_PATH: mfclkit-bundled-strict-tag-nb
   KFLOW_RUNTIME_PACKAGES: none
   KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit,mfclshiny=PacificCommunity/mfclshiny@236a9cf96e1148446b2a650db0991d9661f7d9a7
   KFLOW_REPO_RUNTIME_UPDATE: always
@@ -33,7 +33,7 @@ env:
   SELFTEST_REFIT_MODE: doitall
   SELFTEST_REFIT_FEVALS: "5000"
   SELFTEST_REFIT_CONVERGENCE: "-3"
-  SELFTEST_TAG_SIMULATION: mechanistic
+  SELFTEST_TAG_SIMULATION: conditional_postmixing
   SELFTEST_REQUIRE_NATIVE_TAGS: "auto"
   SELFTEST_UPDATE_TAGS: "auto"
   SELFTEST_UPDATE_CATCH: "auto"

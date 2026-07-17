@@ -1386,7 +1386,7 @@ def main() -> int:
                         "SELFTEST_TAG_SIMULATION",
                         os.environ.get(
                             "SELFTEST_TAG_SIMULATION",
-                            os.environ.get("CHECK_SELFTEST_TAG_SIMULATION", "mechanistic"),
+                            os.environ.get("CHECK_SELFTEST_TAG_SIMULATION", "conditional_postmixing"),
                         ),
                     )
                     env.setdefault(
