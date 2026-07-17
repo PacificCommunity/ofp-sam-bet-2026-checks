@@ -2245,6 +2245,10 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
 
 } else if (identical(check_type, "aspm")) {
   max_evals <- as.integer(split_numbers(env("ASPM_MAX_EVALS", "10000"), default = 10000)[[1L]])
+  restart_passes <- as.integer(split_numbers(env("ASPM_RESTART_PASSES", "2"), default = 2)[[1L]])
+  if (!is.finite(restart_passes) || restart_passes < 0L) {
+    stop("ASPM_RESTART_PASSES must be a non-negative integer.", call. = FALSE)
+  }
   min_lf_sample_size <- split_numbers(env("ASPM_MIN_LF_SAMPLE_SIZE", "1000000"), default = 1000000)[[1L]]
   min_wf_sample_size <- split_numbers(env("ASPM_MIN_WF_SAMPLE_SIZE", "1000000"), default = 1000000)[[1L]]
   lf_flag_311 <- as.integer(split_numbers(env("ASPM_LF_FLAG_311", "11"), default = 11)[[1L]])
@@ -2253,8 +2257,10 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
   recruitment_mode <- tolower(env("ASPM_RECRUITMENT_MODE", "constant"))
   diagnostic_definition <- tolower(env("ASPM_DIAGNOSTIC_DEFINITION", "strict"))
   output_par <- env("ASPM_OUTPUT_PAR", "aspm.par")
+  aspm_dir <- file.path(model_dir, "aspm")
   write_run_manifest(list(
     aspm_max_evals = max_evals,
+    aspm_restart_passes = restart_passes,
     aspm_min_lf_sample_size = min_lf_sample_size,
     aspm_min_wf_sample_size = min_wf_sample_size,
     aspm_lf_flag_311 = lf_flag_311,
@@ -2262,13 +2268,25 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
     aspm_fix_selectivity = fix_selectivity,
     aspm_output_par = output_par
   ))
-  result <- mfk_run_aspm(
+  restart_output_par <- function(pass) {
+    name <- basename(output_par)
+    if (grepl("[.]par[0-9]*$", name, ignore.case = TRUE)) {
+      extension <- sub("^.*([.]par[0-9]*)$", "\\1", name, ignore.case = TRUE)
+      stem <- substr(name, 1L, nchar(name) - nchar(extension))
+    } else {
+      stem <- name
+      extension <- ".par"
+    }
+    sprintf("%s-restart-%d%s", stem, pass, extension)
+  }
+
+  run_aspm <- function(input_par, output_par_name = output_par, copy_case = TRUE) mfk_run_aspm(
     backend,
     input_dir = prepared$case_dir,
-    output_dir = file.path(model_dir, "aspm"),
+    output_dir = aspm_dir,
     frq = prepared$frq,
-    input_par = check_start_par,
-    output_par = output_par,
+    input_par = input_par,
+    output_par = output_par_name,
     max_evals = max_evals,
     fix_selectivity = fix_selectivity,
     lf_flag_311 = lf_flag_311,
@@ -2278,8 +2296,52 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
     extra_switch_lines = aspm_extra_switch_lines(),
     recruitment_mode = recruitment_mode,
     diagnostic_definition = diagnostic_definition,
+    copy_case = copy_case,
     run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
   )
+
+  attempts <- list(run_aspm(check_start_par))
+  attempts[[1L]]$restart_pass <- 0L
+  result <- attempts[[1L]]
+  if (restart_passes > 0L) {
+    for (pass in seq_len(restart_passes)) {
+      if (isTRUE(result$converged)) break
+      restart_par <- file.path(aspm_dir, as.character(result$output_par %||% output_par))
+      if (!file.exists(restart_par)) {
+        message("[checks] ASPM restart skipped because output PAR is missing: ", restart_par)
+        break
+      }
+      message("[checks] ASPM restart pass ", pass, "/", restart_passes,
+              " from ", basename(restart_par))
+      result <- run_aspm(
+        normalizePath(restart_par, winslash = "/", mustWork = TRUE),
+        output_par_name = restart_output_par(pass),
+        copy_case = FALSE
+      )
+      result$restart_pass <- as.integer(pass)
+      attempts[[length(attempts) + 1L]] <- result
+    }
+  }
+
+  attempt_rows <- bind_rows_fill(lapply(seq_along(attempts), function(i) {
+    one <- attempts[[i]]
+    data.frame(
+      attempt = as.integer(i),
+      restart_pass = as.integer(one$restart_pass %||% (i - 1L)),
+      run_status = as.character(one$run_status %||% ""),
+      run_completed = isTRUE(one$run_completed),
+      convergence_status = as.character(one$convergence_status %||% ""),
+      converged = isTRUE(one$converged),
+      obj_fun = suppressWarnings(as.numeric(one$obj_fun %||% NA_real_)),
+      max_grad = suppressWarnings(as.numeric(one$max_grad %||% NA_real_)),
+      input_par = as.character(one$input_par %||% ""),
+      output_par = as.character(one$output_par %||% ""),
+      failure_reason = as.character(one$failure_reason %||% ""),
+      stringsAsFactors = FALSE
+    )
+  }))
+  write.csv(attempt_rows, file.path(model_dir, "aspm-attempts.csv"), row.names = FALSE)
+  saveRDS(attempts, file.path(model_dir, "aspm_attempts.rds"), compress = "xz")
   saveRDS(result, file.path(model_dir, "aspm_runs.rds"), compress = "xz")
   try(write.csv(mfk_collect_aspm(model_dir), file.path(model_dir, "aspm-index.csv"), row.names = FALSE), silent = TRUE)
 
