@@ -7,7 +7,9 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import os
+from pathlib import Path
 import re
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -56,6 +58,56 @@ DIAGNOSTIC_OVERLAY_REPLACE_NAMES = [
     "aspm",
     "projection",
 ]
+
+_RUNTIME_GITHUB_TOKEN: str | None = None
+
+
+def runtime_github_token() -> str:
+    """Return a cached local GitHub token for one-request Kflow forwarding."""
+
+    global _RUNTIME_GITHUB_TOKEN
+    if _RUNTIME_GITHUB_TOKEN is not None:
+        return _RUNTIME_GITHUB_TOKEN
+    for name in ("KFLOW_GITHUB_TOKEN", "GITHUB_PAT", "GIT_PAT", "GH_TOKEN", "GITHUB_TOKEN"):
+        value = str(os.environ.get(name) or "").strip()
+        if value:
+            _RUNTIME_GITHUB_TOKEN = value
+            return value
+    try:
+        result = subprocess.run(
+            ["gh", "auth", "token"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        value = result.stdout.strip()
+        if result.returncode == 0 and re.fullmatch(r"(?:gh[pousr]_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+)", value):
+            _RUNTIME_GITHUB_TOKEN = value
+            return value
+    except (FileNotFoundError, subprocess.SubprocessError):
+        pass
+    config_roots = [
+        Path(os.environ.get("GH_CONFIG_DIR", "")),
+        Path(os.environ.get("XDG_CONFIG_HOME", "")) / "gh",
+        Path.home() / ".config" / "gh",
+        Path(os.environ.get("APPDATA", "")) / "GitHub CLI",
+        Path.home() / "Library" / "Application Support" / "gh",
+    ]
+    for root in config_roots:
+        if not str(root).strip() or str(root) == ".":
+            continue
+        path = root / "hosts.yml"
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        match = re.search(r"^\s*oauth_token:\s*['\"]?([^'\"#\s]+)", text, re.MULTILINE)
+        if match:
+            _RUNTIME_GITHUB_TOKEN = match.group(1)
+            return _RUNTIME_GITHUB_TOKEN
+    _RUNTIME_GITHUB_TOKEN = ""
+    return ""
 DIRECT_MERGE_CHECKS = tuple(MERGE_CHECKS)
 PARALLEL_SUBMISSION_CHECKS = {"jitter", "selftest", "retro", "hessian"}
 
@@ -768,6 +820,9 @@ def api_json(
 ) -> dict[str, Any]:
     body = json.dumps(payload).encode("utf-8") if payload is not None else None
     headers = {"Authorization": f"Bearer {token}"}
+    github_token = runtime_github_token()
+    if github_token:
+        headers["X-GitHub-Token"] = github_token
     if payload is not None:
         headers["Content-Type"] = "application/json"
     request = urllib.request.Request(
@@ -837,9 +892,13 @@ def ensure_check_task_registered(
 
 
 def api_get_json(url: str, token: str) -> dict[str, Any]:
+    headers = {"Authorization": f"Bearer {token}"}
+    github_token = runtime_github_token()
+    if github_token:
+        headers["X-GitHub-Token"] = github_token
     request = urllib.request.Request(
         url,
-        headers={"Authorization": f"Bearer {token}"},
+        headers=headers,
         method="GET",
     )
     try:
@@ -1080,6 +1139,11 @@ def main() -> int:
     token = os.environ.get("KFLOW_API_TOKEN", "")
     if not token and not args.dry_run:
         raise SystemExit("Set KFLOW_API_TOKEN before submitting Kflow jobs.")
+    if not args.dry_run and not runtime_github_token():
+        raise SystemExit(
+            "GitHub authentication is required for private runtime packages. "
+            "Run `gh auth login` or set KFLOW_GITHUB_TOKEN/GITHUB_PAT."
+        )
 
     checks = []
     for raw_check in split_values(args.checks):
