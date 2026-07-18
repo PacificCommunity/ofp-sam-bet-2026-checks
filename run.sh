@@ -33,6 +33,92 @@ runtime_updates_disabled() {
   esac
 }
 
+runtime_retry_attempts() {
+  local value="${KFLOW_RUNTIME_RETRY_ATTEMPTS:-3}"
+  [[ "$value" =~ ^[0-9]+$ ]] || value=3
+  (( value < 1 )) && value=1
+  (( value > 6 )) && value=6
+  printf '%s' "$value"
+}
+
+runtime_retry_delay() {
+  local value="${KFLOW_RUNTIME_RETRY_DELAY_SECONDS:-3}"
+  [[ "$value" =~ ^[0-9]+$ ]] || value=3
+  (( value > 30 )) && value=30
+  printf '%s' "$value"
+}
+
+runtime_git() {
+  local askpass="$1" token="$2"
+  shift 2
+  if [[ -n "$token" ]]; then
+    GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 KFLOW_GIT_ASKPASS_TOKEN="$token" git "$@"
+  else
+    GIT_TERMINAL_PROMPT=0 git "$@"
+  fi
+}
+
+clone_runtime_repo() {
+  local repo="$1" src="$2" askpass="$3" token="$4"
+  local attempts delay attempt status=1
+  attempts="$(runtime_retry_attempts)"
+  delay="$(runtime_retry_delay)"
+  for ((attempt=1; attempt<=attempts; attempt++)); do
+    rm -rf "$src"
+    if runtime_git "$askpass" "$token" clone --quiet --depth 50 "https://github.com/${repo}.git" "$src"; then
+      return 0
+    else
+      status=$?
+    fi
+    if (( attempt < attempts )); then
+      echo "[kflow-runtime-update] Clone failed for ${repo}; retrying (${attempt}/${attempts})." >&2
+      sleep "$delay"
+    fi
+  done
+  return "$status"
+}
+
+checkout_runtime_ref() {
+  local src="$1" ref="$2" askpass="$3" token="$4"
+  local attempts delay attempt status=1
+  if runtime_git "$askpass" "$token" -C "$src" checkout --quiet "$ref"; then
+    return 0
+  fi
+  attempts="$(runtime_retry_attempts)"
+  delay="$(runtime_retry_delay)"
+  for ((attempt=1; attempt<=attempts; attempt++)); do
+    if runtime_git "$askpass" "$token" -C "$src" fetch --quiet --depth 1 origin "$ref" &&
+       runtime_git "$askpass" "$token" -C "$src" checkout --quiet FETCH_HEAD; then
+      return 0
+    else
+      status=$?
+    fi
+    if (( attempt < attempts )); then
+      echo "[kflow-runtime-update] Fetch failed for ${ref}; retrying (${attempt}/${attempts})." >&2
+      sleep "$delay"
+    fi
+  done
+  return "$status"
+}
+
+use_installed_runtime_package() {
+  local package="$1" requested="$2" details
+  if details="$(KFLOW_RUNTIME_PACKAGE_NAME="$package" Rscript -e '
+    p <- Sys.getenv("KFLOW_RUNTIME_PACKAGE_NAME")
+    if (!requireNamespace(p, quietly = TRUE)) quit(save = "no", status = 1L)
+    d <- packageDescription(p)
+    sha <- d[["RemoteSha"]]
+    label <- paste0(p, " ", as.character(packageVersion(p)))
+    if (!is.null(sha) && nzchar(sha)) label <- paste0(label, " @", substr(sha, 1L, 12L))
+    cat(label)
+  ' 2>/dev/null)"; then
+    echo "[kflow-runtime-update] WARNING: Could not fetch ${requested}; using image-installed ${details}." >&2
+    return 0
+  fi
+  echo "[kflow-runtime-update] ERROR: Could not fetch ${requested}, and ${package} is not installed in the image." >&2
+  return 1
+}
+
 first_token() {
   local name
   for name in GITHUB_PAT GIT_PAT GH_TOKEN GITHUB_TOKEN KFLOW_GITHUB_TOKEN KFLOW_PERSONAL_TOKEN; do
@@ -94,27 +180,33 @@ case "$1" in
 esac
 ASKPASS
       chmod 700 "$askpass"
-      GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 KFLOW_GIT_ASKPASS_TOKEN="$token" \
-        git clone --quiet --depth 50 "https://github.com/${repo}.git" "$src" || {
-          status=$?
-          rm -f "$askpass"
-          return "$status"
-        }
-      GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 KFLOW_GIT_ASKPASS_TOKEN="$token" \
-        git -C "$src" checkout --quiet "$ref" || {
-          GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 KFLOW_GIT_ASKPASS_TOKEN="$token" \
-            git -C "$src" fetch --quiet --depth 1 origin "$ref"
-          GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 KFLOW_GIT_ASKPASS_TOKEN="$token" \
-            git -C "$src" checkout --quiet FETCH_HEAD
-        }
-      rm -f "$askpass"
-    else
-      git clone --quiet --depth 50 "https://github.com/${repo}.git" "$src"
-      git -C "$src" checkout --quiet "$ref" || {
-        git -C "$src" fetch --quiet --depth 1 origin "$ref"
-        git -C "$src" checkout --quiet FETCH_HEAD
-      }
     fi
+
+    if clone_runtime_repo "$repo" "$src" "$askpass" "$token"; then
+      :
+    else
+      status=$?
+      rm -f "$askpass"
+      rm -rf "$src"
+      if use_installed_runtime_package "$package" "${repo}@${ref}"; then
+        continue
+      fi
+      drop_runtime_tokens
+      return "$status"
+    fi
+    if checkout_runtime_ref "$src" "$ref" "$askpass" "$token"; then
+      :
+    else
+      status=$?
+      rm -f "$askpass"
+      rm -rf "$src"
+      if use_installed_runtime_package "$package" "${repo}@${ref}"; then
+        continue
+      fi
+      drop_runtime_tokens
+      return "$status"
+    fi
+    rm -f "$askpass"
 
     resolved_sha="$(git -C "$src" rev-parse HEAD 2>/dev/null || true)"
     if [[ -n "$resolved_sha" ]]; then
