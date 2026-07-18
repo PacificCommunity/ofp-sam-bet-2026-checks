@@ -34,7 +34,7 @@ CHECK_ALIASES = {
 }
 
 DEFAULT_RUNTIME_PACKAGES = (
-    "mfclkit=PacificCommunity/ofp-sam-mfclkit@7faef1bdda694d91bd1c1b35f2ea7bc8bab41e43,"
+    "mfclkit=PacificCommunity/ofp-sam-mfclkit@d2c33d86ecb25aaa578f7c4b3f461d71f0ebba07,"
     "mfclshiny=PacificCommunity/mfclshiny@236a9cf96e1148446b2a650db0991d9661f7d9a7"
 )
 
@@ -1327,6 +1327,7 @@ def main() -> int:
                     "CHECK_COMPACT_OUTPUTS": "true",
                     "CHECK_FAIL_ON_FAILED_UNITS": "false",
                     "KFLOW_RUNTIME_UPDATE": os.environ.get("KFLOW_RUNTIME_UPDATE", "always"),
+                    "MFCL_LIVE_LOG": os.environ.get("MFCL_LIVE_LOG", "true"),
                     "TUNA_FLOW_RUNTIME_UPDATE": os.environ.get("TUNA_FLOW_RUNTIME_UPDATE", "always"),
                     "KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS": os.environ.get("KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS", "0"),
                     "KFLOW_RUNTIME_PACKAGES": os.environ.get("KFLOW_RUNTIME_PACKAGES", DEFAULT_RUNTIME_PACKAGES),
@@ -1420,6 +1421,7 @@ def main() -> int:
                     "FLOW_GROUP": args.flow_group,
                     **flow_metadata_env(),
                     "KFLOW_RUNTIME_UPDATE": os.environ.get("KFLOW_RUNTIME_UPDATE", "always"),
+                    "MFCL_LIVE_LOG": os.environ.get("MFCL_LIVE_LOG", "true"),
                     "TUNA_FLOW_RUNTIME_UPDATE": os.environ.get("TUNA_FLOW_RUNTIME_UPDATE", "always"),
                     "KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS": os.environ.get("KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS", "0"),
                     "KFLOW_RUNTIME_PACKAGES": os.environ.get("KFLOW_RUNTIME_PACKAGES", runtime_packages_default),
@@ -1614,6 +1616,7 @@ def main() -> int:
             "FLOW_GROUP": args.flow_group,
             **flow_metadata_env(),
             "KFLOW_RUNTIME_UPDATE": os.environ.get("KFLOW_RUNTIME_UPDATE", "always"),
+            "MFCL_LIVE_LOG": os.environ.get("MFCL_LIVE_LOG", "true"),
             "TUNA_FLOW_RUNTIME_UPDATE": os.environ.get("TUNA_FLOW_RUNTIME_UPDATE", "always"),
             "KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS": os.environ.get("KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS", "0"),
             "KFLOW_RUNTIME_PACKAGES": os.environ.get("KFLOW_RUNTIME_PACKAGES", DEFAULT_RUNTIME_PACKAGES),
@@ -1843,6 +1846,7 @@ def main() -> int:
                 "FLOW_GROUP": args.flow_group,
                 **flow_metadata_env(),
                 "KFLOW_RUNTIME_UPDATE": os.environ.get("KFLOW_RUNTIME_UPDATE", "always"),
+                "MFCL_LIVE_LOG": os.environ.get("MFCL_LIVE_LOG", "true"),
                 "TUNA_FLOW_RUNTIME_UPDATE": os.environ.get("TUNA_FLOW_RUNTIME_UPDATE", "always"),
                 "KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS": os.environ.get("KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS", "0"),
                 "KFLOW_RUNTIME_PACKAGES": os.environ.get("KFLOW_RUNTIME_PACKAGES", DEFAULT_RUNTIME_PACKAGES),
