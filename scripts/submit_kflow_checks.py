@@ -638,7 +638,7 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
                 "metadata": {
                     "profile_name": common_env["PROFILE_NAME"],
                     "profile_preset": common_env["PROFILE_PRESET"],
-                    "profile_repair_strictness": common_env["PROFILE_REPAIR_STRICTNESS"],
+                    "profile_repair_strictness": common_env.get("PROFILE_REPAIR_STRICTNESS", ""),
                     "profile_expected_values": common_env["PROFILE_EXPECTED_VALUES"],
                 },
             }]
@@ -682,7 +682,7 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
                         "profile_center": center,
                         "profile_name": profile_name,
                         "profile_preset": common_env["PROFILE_PRESET"],
-                        "profile_repair_strictness": common_env["PROFILE_REPAIR_STRICTNESS"],
+                        "profile_repair_strictness": common_env.get("PROFILE_REPAIR_STRICTNESS", ""),
                         "profile_execution_mode": common_env["PROFILE_EXECUTION_MODE"],
                         "profile_doitall_penalty": common_env["PROFILE_DOITALL_PENALTY"],
                         "profile_doitall_script": common_env["PROFILE_DOITALL_SCRIPT"],
@@ -737,7 +737,7 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
                         "profile_center": common_env["PROFILE_CENTER"],
                         "profile_name": profile_name,
                         "profile_preset": common_env["PROFILE_PRESET"],
-                        "profile_repair_strictness": common_env["PROFILE_REPAIR_STRICTNESS"],
+                        "profile_repair_strictness": common_env.get("PROFILE_REPAIR_STRICTNESS", ""),
                         "profile_execution_mode": common_env["PROFILE_EXECUTION_MODE"],
                         "profile_doitall_penalty": common_env["PROFILE_DOITALL_PENALTY"],
                         "profile_doitall_script": common_env["PROFILE_DOITALL_SCRIPT"],
