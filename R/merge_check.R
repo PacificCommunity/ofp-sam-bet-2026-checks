@@ -68,7 +68,6 @@ expected_unit_check <- switch(
   peel = "retro",
   replicate = "selftest",
   aspm = "aspm",
-  profile_chain = "profile",
   ""
 )
 if (nzchar(expected_unit_type) && !nzchar(expected_unit_check)) {
