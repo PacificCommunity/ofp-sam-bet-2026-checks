@@ -34,7 +34,7 @@ CHECK_ALIASES = {
 }
 
 DEFAULT_RUNTIME_PACKAGES = (
-    "mfclkit=PacificCommunity/ofp-sam-mfclkit,"
+    "mfclkit=PacificCommunity/ofp-sam-mfclkit@7faef1bdda694d91bd1c1b35f2ea7bc8bab41e43,"
     "mfclshiny=PacificCommunity/mfclshiny@236a9cf96e1148446b2a650db0991d9661f7d9a7"
 )
 
@@ -345,9 +345,8 @@ def resolved_profile_env(values: list[float] | None = None) -> dict[str, str]:
     quantity = env_first("MFK_PROFILE_QUANTITY", "PROFILE_QUANTITY") or "avg_bio"
     quantity_type = env_first("MFK_PROFILE_QUANTITY_TYPE", "PROFILE_QUANTITY_TYPE") or "2"
 
-    # Match profile/kflow.yaml: the generic staged native profile is the
-    # ordinary default.  The older BET schedule remains selectable explicitly
-    # with PROFILE_STYLE=bet or PROFILE_PRESET=adaptive.
+    # Match profile/kflow.yaml: the historical three-stage profile remains the
+    # default. New mfclkit presets are selected explicitly with PROFILE_PRESET.
     legacy_style = env_first("PROFILE_STYLE", "PROFILE_RUNNER") or "three_stage"
     preset = env_first("MFK_PROFILE_PRESET", "PROFILE_PRESET")
     if not preset:
@@ -357,6 +356,7 @@ def resolved_profile_env(values: list[float] | None = None) -> dict[str, str]:
             "ramp": "adaptive",
             "quantity_ramp": "adaptive",
             "adaptive": "adaptive",
+            "robust_fast": "robust_fast",
             "three_stage": "three_stage",
             "manual": "manual_7stage",
             "manual_7stage": "manual_7stage",
@@ -373,12 +373,15 @@ def resolved_profile_env(values: list[float] | None = None) -> dict[str, str]:
         "ramp": "adaptive",
         "quantity_ramp": "adaptive",
     }.get(preset_key, preset_key)
-    if preset not in {"three_stage", "manual_7stage", "adaptive"}:
+    if preset not in {"robust_fast", "three_stage", "manual_7stage", "adaptive"}:
         raise SystemExit(
-            f"Unsupported profile preset {preset!r}; use three_stage, manual_7stage, or adaptive."
+            f"Unsupported profile preset {preset!r}; use robust_fast, three_stage, "
+            "manual_7stage, or adaptive."
         )
 
     preset_defaults = {
+        # Empty values defer both vectors to mfclkit's preset definition.
+        "robust_fast": ("", ""),
         "three_stage": ("100000 1000000 10000000", "50 50 2000"),
         "manual_7stage": (
             "100000 1000000 10000000 10000000 10000000 10000000 10000000",
@@ -452,6 +455,10 @@ def resolved_profile_env(values: list[float] | None = None) -> dict[str, str]:
         "PROFILE_EXPECTED_VALUES": " ".join(format_number(value) for value in expected),
         "PROFILE_CENTER": format_number(center),
         "PROFILE_PRESET": preset,
+        "PROFILE_REPAIR_STRICTNESS": env_first(
+            "MFK_PROFILE_REPAIR_STRICTNESS", "PROFILE_REPAIR_STRICTNESS",
+            "PROFILE_REPAIR_STRICT",
+        ) or "",
         "PROFILE_STYLE": legacy_style,
         "PROFILE_PARALLEL_MODE": (
             "h-base"
@@ -631,6 +638,7 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
                 "metadata": {
                     "profile_name": common_env["PROFILE_NAME"],
                     "profile_preset": common_env["PROFILE_PRESET"],
+                    "profile_repair_strictness": common_env["PROFILE_REPAIR_STRICTNESS"],
                     "profile_expected_values": common_env["PROFILE_EXPECTED_VALUES"],
                 },
             }]
@@ -674,6 +682,7 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
                         "profile_center": center,
                         "profile_name": profile_name,
                         "profile_preset": common_env["PROFILE_PRESET"],
+                        "profile_repair_strictness": common_env["PROFILE_REPAIR_STRICTNESS"],
                         "profile_execution_mode": common_env["PROFILE_EXECUTION_MODE"],
                         "profile_doitall_penalty": common_env["PROFILE_DOITALL_PENALTY"],
                         "profile_doitall_script": common_env["PROFILE_DOITALL_SCRIPT"],
@@ -728,6 +737,7 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
                         "profile_center": common_env["PROFILE_CENTER"],
                         "profile_name": profile_name,
                         "profile_preset": common_env["PROFILE_PRESET"],
+                        "profile_repair_strictness": common_env["PROFILE_REPAIR_STRICTNESS"],
                         "profile_execution_mode": common_env["PROFILE_EXECUTION_MODE"],
                         "profile_doitall_penalty": common_env["PROFILE_DOITALL_PENALTY"],
                         "profile_doitall_script": common_env["PROFILE_DOITALL_SCRIPT"],
@@ -1748,6 +1758,7 @@ def main() -> int:
                 **({
                     "profile_name": profile_merge_env.get("PROFILE_NAME", ""),
                     "profile_preset": profile_merge_env.get("PROFILE_PRESET", ""),
+                    "profile_repair_strictness": profile_merge_env.get("PROFILE_REPAIR_STRICTNESS", ""),
                     "profile_execution_mode": profile_merge_env.get("PROFILE_EXECUTION_MODE", ""),
                     "profile_parallel_mode": profile_merge_env.get("PROFILE_PARALLEL_MODE", ""),
                     "profile_doitall_penalty": profile_merge_env.get("PROFILE_DOITALL_PENALTY", ""),

@@ -165,6 +165,257 @@ copy_profile_point_checked <- function(from, to) {
   copy_dir_contents_checked(from, to)
 }
 
+# Gate duplicate NLL tie-breaking on objective/configuration comparability.
+copy_profile_point_checked_unfiltered <- copy_profile_point_checked
+
+merge_profile_missing <- function(x) {
+  is.null(x) || !length(x) || all(is.na(x)) ||
+    (is.character(x) && !any(nzchar(trimws(x))))
+}
+
+merge_profile_value <- function(info, payload, fields, default = NA) {
+  containers <- list(
+    info,
+    payload,
+    tryCatch(info$objective_provenance, error = function(e) NULL),
+    tryCatch(payload$objective_provenance, error = function(e) NULL)
+  )
+  for (field in fields) {
+    for (container in containers) {
+      out <- tryCatch(container[[field]], error = function(e) NULL)
+      if (!merge_profile_missing(out)) return(out[[1L]])
+    }
+  }
+  default
+}
+
+merge_profile_text <- function(x) {
+  if (merge_profile_missing(x)) return(NA_character_)
+  out <- trimws(as.character(x[[1L]]))
+  if (nzchar(out)) out else NA_character_
+}
+
+merge_profile_number <- function(x) {
+  if (merge_profile_missing(x)) return(NA_real_)
+  suppressWarnings(as.numeric(x[[1L]]))
+}
+
+merge_profile_logical <- function(x) {
+  if (merge_profile_missing(x)) return(NA)
+  if (is.logical(x)) return(x[[1L]])
+  out <- tolower(trimws(as.character(x[[1L]])))
+  if (out %in% c("true", "t", "1", "yes", "y")) return(TRUE)
+  if (out %in% c("false", "f", "0", "no", "n")) return(FALSE)
+  NA
+}
+
+merge_profile_equal <- function(x, y, tolerance = 1e-10) {
+  if (merge_profile_missing(x) || merge_profile_missing(y)) return(NA)
+  xn <- suppressWarnings(as.numeric(x[[1L]]))
+  yn <- suppressWarnings(as.numeric(y[[1L]]))
+  if (is.finite(xn) && is.finite(yn)) {
+    return(abs(xn - yn) <= tolerance * max(1, abs(xn), abs(yn)))
+  }
+  identical(trimws(as.character(x[[1L]])), trimws(as.character(y[[1L]])))
+}
+
+merge_profile_point_metadata <- function(dir) {
+  read_list <- function(path) {
+    out <- tryCatch(readRDS(path), error = function(e) list())
+    if (is.list(out)) out else list()
+  }
+  info <- read_list(file.path(dir, "profile_point_info.rds"))
+  payload <- read_list(file.path(dir, "profile_payload.rds"))
+  value <- function(fields, default = NA) {
+    merge_profile_value(info, payload, fields, default)
+  }
+  scalar <- merge_profile_number(value(c("scalar", "profile_scalar")))
+  if (!is.finite(scalar)) scalar <- suppressWarnings(as.numeric(basename(dir)))
+  target_value <- value(c(
+    "effective_target", "target_quantity", "quantity_target",
+    "requested_target", "native_target", "target"
+  ))
+  target <- merge_profile_number(target_value)
+  target_explicit <- is.finite(target)
+  if (!target_explicit && is.finite(scalar)) target <- scalar
+  source <- merge_profile_text(value("objective_source"))
+  run_status <- merge_profile_text(value(c("run_status", "status")))
+  completed <- merge_profile_logical(value(c("run_completed", "completed")))
+  if (is.na(completed)) {
+    completed <- !is.na(run_status) && run_status %in% c(
+      "completed", "complete", "success", "base_anchor"
+    )
+  }
+  list(
+    dir = dir,
+    scalar = scalar,
+    target = target,
+    target_explicit = target_explicit,
+    valid = isTRUE(merge_profile_logical(value(c("point_valid", "valid")))),
+    completed = isTRUE(completed),
+    converged = isTRUE(merge_profile_logical(value("converged"))),
+    nll = merge_profile_number(value(c("profile_nll", "total_nll", "objective"))),
+    anchor = isTRUE(merge_profile_logical(value("base_anchor"))) ||
+      identical(source, "fitted_model_par") || identical(run_status, "base_anchor"),
+    objective_source = source,
+    objective_evaluation = merge_profile_text(value("objective_evaluation")),
+    objective_comparison_key = merge_profile_text(value("objective_comparison_key")),
+    objective_comparable = merge_profile_logical(value("objective_comparable")),
+    profile_cache_signature = merge_profile_text(value("profile_cache_signature")),
+    configuration = list(
+      profile = merge_profile_text(value(c("profile", "profile_name"))),
+      quantity_type = merge_profile_text(value("quantity_type")),
+      quantity_name = merge_profile_text(value(c("quantity_name", "quantity_label"))),
+      af172 = merge_profile_text(value(c("Af172", "af172", "af_172"))),
+      af173 = merge_profile_text(value(c("Af173", "af173", "af_173"))),
+      af174 = merge_profile_text(value(c("Af174", "af174", "af_174")))
+    )
+  )
+}
+
+merge_profile_source_class <- function(source) {
+  source <- tolower(if (merge_profile_missing(source)) "" else as.character(source[[1L]]))
+  if (grepl("zero[_ -]?penalty.*harvest[_ -]?par", source)) {
+    return("zero_penalty_harvest_par")
+  }
+  if (grepl("penali[sz]ed|fallback", source)) return("penalized_fallback")
+  if (nzchar(source)) "other" else "missing"
+}
+
+merge_profile_candidate_comparability <- function(incoming, existing) {
+  reasons <- character()
+  legacy <- FALSE
+  if (isTRUE(xor(isTRUE(incoming$anchor), isTRUE(existing$anchor)))) {
+    reasons <- c(reasons, "fitted_anchor_vs_profile_candidate")
+  }
+  target_equal <- merge_profile_equal(incoming$target, existing$target)
+  if (isFALSE(target_equal)) reasons <- c(reasons, "effective_target")
+  if (is.na(target_equal) || !isTRUE(incoming$target_explicit) ||
+      !isTRUE(existing$target_explicit)) legacy <- TRUE
+  config_fields <- union(names(incoming$configuration), names(existing$configuration))
+  for (field in config_fields) {
+    equal <- merge_profile_equal(
+      incoming$configuration[[field]], existing$configuration[[field]]
+    )
+    if (isFALSE(equal)) reasons <- c(reasons, paste0("configuration:", field))
+    if (is.na(equal)) legacy <- TRUE
+  }
+  source_classes <- c(
+    merge_profile_source_class(incoming$objective_source),
+    merge_profile_source_class(existing$objective_source)
+  )
+  if (all(c("zero_penalty_harvest_par", "penalized_fallback") %in% source_classes)) {
+    reasons <- c(reasons, "zero_penalty_harvest_par_vs_penalized_fallback")
+  }
+  for (field in c(
+    "objective_comparison_key", "objective_evaluation", "objective_source"
+  )) {
+    equal <- merge_profile_equal(incoming[[field]], existing[[field]])
+    if (isFALSE(equal)) reasons <- c(reasons, field)
+    if (is.na(equal)) legacy <- TRUE
+  }
+  flags <- c(incoming$objective_comparable, existing$objective_comparable)
+  if (any(flags %in% FALSE)) reasons <- c(reasons, "objective_not_comparable")
+  if (any(is.na(flags))) legacy <- TRUE
+  reasons <- unique(reasons)
+  comparable <- !length(reasons)
+  list(
+    comparable = comparable,
+    legacy = legacy,
+    marker = if (!comparable) {
+      paste(c("incomparable", reasons), collapse = ":")
+    } else if (legacy) {
+      "legacy_comparable_assumed"
+    } else {
+      "modern_comparable"
+    },
+    reasons = reasons
+  )
+}
+
+merge_profile_execution_score <- function(metadata) {
+  c(
+    anchor = as.integer(isTRUE(metadata$anchor)),
+    valid = as.integer(isTRUE(metadata$valid)),
+    completed = as.integer(isTRUE(metadata$completed)),
+    converged = as.integer(isTRUE(metadata$converged))
+  )
+}
+
+merge_profile_better_execution <- function(incoming, existing) {
+  for (index in seq_along(incoming)) {
+    if (incoming[[index]] > existing[[index]]) return(TRUE)
+    if (incoming[[index]] < existing[[index]]) return(FALSE)
+  }
+  FALSE
+}
+
+merge_profile_add_provenance <- function(index, comparison, incoming, existing, selected) {
+  record <- profile_duplicate_records[[index]]
+  values <- list(
+    objective_comparable_for_selection = comparison$comparable,
+    profile_comparability = comparison$marker,
+    legacy_comparability = comparison$legacy,
+    incoming_effective_target = incoming$target,
+    existing_effective_target = existing$target,
+    incoming_objective_comparison_key = incoming$objective_comparison_key,
+    existing_objective_comparison_key = existing$objective_comparison_key,
+    incoming_objective_evaluation = incoming$objective_evaluation,
+    existing_objective_evaluation = existing$objective_evaluation,
+    incoming_objective_source = incoming$objective_source,
+    existing_objective_source = existing$objective_source,
+    incoming_profile_cache_signature = incoming$profile_cache_signature,
+    existing_profile_cache_signature = existing$profile_cache_signature,
+    selected_objective_comparison_key = selected$objective_comparison_key,
+    selected_objective_evaluation = selected$objective_evaluation,
+    selected_objective_source = selected$objective_source,
+    selected_profile_cache_signature = selected$profile_cache_signature
+  )
+  for (field in names(values)) record[[field]] <- values[[field]]
+  profile_duplicate_records[[index]] <<- record
+  invisible(NULL)
+}
+
+copy_profile_point_checked <- function(from, to) {
+  if (!dir.exists(to)) return(copy_profile_point_checked_unfiltered(from, to))
+  incoming <- merge_profile_point_metadata(from)
+  existing <- merge_profile_point_metadata(to)
+  comparison <- merge_profile_candidate_comparability(incoming, existing)
+  before <- length(profile_duplicate_records)
+  if (comparison$comparable) {
+    copy_profile_point_checked_unfiltered(from, to)
+  } else if (merge_profile_better_execution(
+    merge_profile_execution_score(incoming), merge_profile_execution_score(existing)
+  )) {
+    copy_profile_point_checked_unfiltered(from, to)
+  } else {
+    profile_duplicate_records[[before + 1L]] <<- data.frame(
+      source_dir = normalize_loose(from),
+      target_dir = normalize_loose(to),
+      action = "kept_existing_incomparable",
+      incoming_valid = incoming$valid,
+      existing_valid = existing$valid,
+      incoming_nll_rank = if (is.finite(incoming$nll)) -incoming$nll else -Inf,
+      existing_nll_rank = if (is.finite(existing$nll)) -existing$nll else -Inf,
+      stringsAsFactors = FALSE
+    )
+  }
+  index <- length(profile_duplicate_records)
+  if (index == before) {
+    profile_duplicate_records[[before + 1L]] <<- data.frame(
+      source_dir = normalize_loose(from),
+      target_dir = normalize_loose(to),
+      action = "duplicate_selection_unrecorded",
+      stringsAsFactors = FALSE
+    )
+    index <- before + 1L
+  }
+  merge_profile_add_provenance(
+    index, comparison, incoming, existing, merge_profile_point_metadata(to)
+  )
+  normalize_loose(to)
+}
+
 bind_rows_fill_local <- function(rows) {
   rows <- rows[vapply(rows, function(x) is.data.frame(x) && nrow(x), logical(1))]
   if (!length(rows)) return(data.frame(stringsAsFactors = FALSE))
@@ -1273,6 +1524,344 @@ write_check_status_summary <- function(model_dir, check_type, source_dirs = char
   invisible(summary)
 }
 
+merge_profile_row_metadata <- function(row) {
+  value <- function(fields, default = NA) {
+    for (field in fields) {
+      if (!field %in% names(row)) next
+      out <- row[[field]][[1L]]
+      if (!merge_profile_missing(out)) return(out)
+    }
+    default
+  }
+  scalar <- merge_profile_number(value(c("scalar", "profile_scalar")))
+  target_value <- value(c(
+    "effective_target", "target_quantity", "quantity_target",
+    "requested_target", "native_target", "target"
+  ))
+  target <- merge_profile_number(target_value)
+  target_explicit <- is.finite(target)
+  if (!target_explicit) target <- scalar
+  source <- merge_profile_text(value("objective_source"))
+  status <- merge_profile_text(value(c("run_status", "status")))
+  list(
+    dir = merge_profile_text(value(c("folder", "point_dir", "profile_dir"))),
+    scalar = scalar,
+    target = target,
+    target_explicit = target_explicit,
+    valid = isTRUE(merge_profile_logical(value(c("point_valid", "valid")))),
+    completed = isTRUE(merge_profile_logical(value(c("run_completed", "completed")))) ||
+      (!is.na(status) && status %in% c("completed", "complete", "success", "base_anchor")),
+    converged = isTRUE(merge_profile_logical(value("converged"))),
+    nll = merge_profile_number(value(c("profile_nll", "total_nll", "objective"))),
+    anchor = isTRUE(merge_profile_logical(value("base_anchor"))) ||
+      identical(source, "fitted_model_par") || identical(status, "base_anchor"),
+    objective_source = source,
+    objective_evaluation = merge_profile_text(value("objective_evaluation")),
+    objective_comparison_key = merge_profile_text(value("objective_comparison_key")),
+    objective_comparable = merge_profile_logical(value("objective_comparable")),
+    profile_cache_signature = merge_profile_text(value("profile_cache_signature")),
+    configuration = list(
+      profile = merge_profile_text(value(c("profile", "profile_name"))),
+      quantity_type = merge_profile_text(value("quantity_type")),
+      quantity_name = merge_profile_text(value(c("quantity_name", "quantity_label"))),
+      af172 = merge_profile_text(value(c("Af172", "af172", "af_172"))),
+      af173 = merge_profile_text(value(c("Af173", "af173", "af_173"))),
+      af174 = merge_profile_text(value(c("Af174", "af174", "af_174")))
+    )
+  )
+}
+
+dedupe_profile_points_unfiltered <- dedupe_profile_points
+dedupe_profile_points <- function(points) {
+  if (!is.data.frame(points) || nrow(points) < 2L || !"scalar" %in% names(points)) {
+    return(dedupe_profile_points_unfiltered(points))
+  }
+  profile <- if ("profile" %in% names(points)) as.character(points$profile) else "profile"
+  scalar <- suppressWarnings(as.numeric(points$scalar))
+  key <- paste(profile, format(scalar, digits = 17L, scientific = FALSE), sep = "\r")
+  key[!is.finite(scalar)] <- paste0("missing\r", which(!is.finite(scalar)))
+  groups <- split(seq_len(nrow(points)), factor(key, levels = unique(key)))
+  if (all(lengths(groups) == 1L)) return(dedupe_profile_points_unfiltered(points))
+  selected_rows <- lapply(groups, function(indices) {
+    selected <- points[indices[[1L]], , drop = FALSE]
+    if (length(indices) == 1L) return(selected)
+    for (index in indices[-1L]) {
+      candidate <- points[index, , drop = FALSE]
+      existing_meta <- merge_profile_row_metadata(selected)
+      candidate_meta <- merge_profile_row_metadata(candidate)
+      comparison <- merge_profile_candidate_comparability(candidate_meta, existing_meta)
+      if (comparison$comparable) {
+        selected <- dedupe_profile_points_unfiltered(rbind(selected, candidate))
+        selected <- selected[seq_len(1L), , drop = FALSE]
+        action <- "row_duplicate_comparable_selection"
+      } else if (merge_profile_better_execution(
+        merge_profile_execution_score(candidate_meta),
+        merge_profile_execution_score(existing_meta)
+      )) {
+        selected <- candidate
+        action <- "row_duplicate_better_execution"
+      } else {
+        action <- "row_duplicate_kept_existing_incomparable"
+      }
+      record_index <- length(profile_duplicate_records) + 1L
+      profile_duplicate_records[[record_index]] <<- data.frame(
+        source_dir = candidate_meta$dir,
+        target_dir = existing_meta$dir,
+        action = action,
+        incoming_valid = candidate_meta$valid,
+        existing_valid = existing_meta$valid,
+        incoming_nll_rank = if (is.finite(candidate_meta$nll)) -candidate_meta$nll else -Inf,
+        existing_nll_rank = if (is.finite(existing_meta$nll)) -existing_meta$nll else -Inf,
+        stringsAsFactors = FALSE
+      )
+      merge_profile_add_provenance(
+        record_index, comparison, candidate_meta, existing_meta,
+        merge_profile_row_metadata(selected)
+      )
+    }
+    selected
+  })
+  out <- bind_rows_fill_local(selected_rows)
+  rownames(out) <- NULL
+  out
+}
+
+merge_profile_vector_logical <- function(x) {
+  vapply(as.list(x), function(value) isTRUE(merge_profile_logical(value)), logical(1L))
+}
+
+merge_profile_annotate_points <- function(points) {
+  if (!is.data.frame(points) || !nrow(points)) return(points)
+  required <- c(
+    "objective_comparison_key", "objective_evaluation", "objective_source",
+    "objective_comparable", "profile_cache_signature"
+  )
+  for (field in setdiff(required, names(points))) points[[field]] <- NA
+  source <- trimws(as.character(points$objective_source))
+  anchor <- !is.na(source) & source == "fitted_model_par"
+  modern <- !is.na(points$objective_comparison_key) &
+    nzchar(trimws(as.character(points$objective_comparison_key))) &
+    !is.na(points$objective_evaluation) &
+    nzchar(trimws(as.character(points$objective_evaluation))) &
+    !is.na(source) & nzchar(source) &
+    merge_profile_vector_logical(points$objective_comparable)
+  points$profile_comparability <- ifelse(
+    anchor, "fitted_anchor",
+    ifelse(modern, "modern_metadata", "legacy_comparability_assumed")
+  )
+  points
+}
+
+merge_profile_diagnostics <- function(model_dir, points, profile_qc = data.frame()) {
+  findings <- list()
+  add <- function(code, level = "warning", scalar = NA_real_, detail = "") {
+    findings[[length(findings) + 1L]] <<- data.frame(
+      code = code, level = level, scalar = scalar, detail = detail,
+      blocking = FALSE, stringsAsFactors = FALSE
+    )
+  }
+  duplicate_rows <- bind_rows_fill_local(profile_duplicate_records)
+  if (nrow(duplicate_rows) && "profile_comparability" %in% names(duplicate_rows)) {
+    markers <- as.character(duplicate_rows$profile_comparability)
+    legacy <- !is.na(markers) & grepl("^legacy_", markers)
+    if (any(legacy)) {
+      add(
+        "legacy_duplicate_comparability", "info", NA_real_,
+        sprintf("%d duplicate comparison(s) used legacy assumptions", sum(legacy))
+      )
+    }
+    for (index in which(!is.na(markers) & grepl("^incomparable", markers))) {
+      code <- if (grepl("objective_source|zero_penalty", markers[[index]])) {
+        "mixed_objective_source"
+      } else {
+        "mixed_objective_configuration"
+      }
+      add(code, "warning", NA_real_, markers[[index]])
+    }
+  }
+  if (!is.data.frame(points) || !nrow(points)) {
+    add("no_profile_points", "warning", NA_real_, "no merged profile points")
+    return(bind_rows_fill_local(findings))
+  }
+  legacy <- points$profile_comparability == "legacy_comparability_assumed"
+  legacy[is.na(legacy)] <- FALSE
+  if (any(legacy)) {
+    add(
+      "legacy_payload_comparability", "info", NA_real_,
+      sprintf("%d selected point(s) lack complete modern objective provenance", sum(legacy))
+    )
+  }
+  valid <- if ("point_valid" %in% names(points)) {
+    merge_profile_vector_logical(points$point_valid)
+  } else {
+    rep(FALSE, nrow(points))
+  }
+  for (index in which(!valid)) {
+    add("invalid_profile_point", "warning", suppressWarnings(as.numeric(points$scalar[[index]])),
+        "point_valid is not true; existing completion rules remain authoritative")
+  }
+  source <- trimws(as.character(points$objective_source))
+  anchor <- !is.na(source) & source == "fitted_model_par"
+  selected <- !anchor & valid
+  sources <- unique(source[selected & !is.na(source) & nzchar(source)])
+  if (length(sources) > 1L) {
+    add("mixed_objective_source", "warning", NA_real_, paste(sources, collapse = ", "))
+  }
+  source_classes <- unique(vapply(sources, merge_profile_source_class, character(1L)))
+  if (all(c("zero_penalty_harvest_par", "penalized_fallback") %in% source_classes)) {
+    add(
+      "zero_penalty_harvest_par_mixed_with_penalized_fallback", "warning",
+      NA_real_, paste(sources, collapse = ", ")
+    )
+  }
+  evaluations <- trimws(as.character(points$objective_evaluation[selected]))
+  evaluations <- unique(evaluations[!is.na(evaluations) & nzchar(evaluations)])
+  if (length(evaluations) > 1L) {
+    add(
+      "mixed_objective_configuration", "warning", NA_real_,
+      paste("objective evaluation:", paste(evaluations, collapse = ", "))
+    )
+  }
+  config_fields <- intersect(
+    c("profile", "profile_name", "quantity_type", "quantity_name", "quantity_label",
+      "Af172", "Af173", "Af174", "af172", "af173", "af174"),
+    names(points)
+  )
+  for (field in config_fields) {
+    values <- trimws(as.character(points[[field]][selected]))
+    values <- unique(values[!is.na(values) & nzchar(values)])
+    if (length(values) > 1L) {
+      add(
+        "mixed_profile_configuration", "warning", NA_real_,
+        paste0(field, ": ", paste(values, collapse = ", "))
+      )
+    }
+  }
+  scalar <- suppressWarnings(as.numeric(points$scalar))
+  nll_field <- intersect(c("profile_nll", "total_nll", "objective"), names(points))
+  nll <- if (length(nll_field)) {
+    suppressWarnings(as.numeric(points[[nll_field[[1L]]]]))
+  } else {
+    rep(NA_real_, nrow(points))
+  }
+  center <- tryCatch(profile_scalar_center(model_dir), error = function(e) NA_real_)
+  tolerance <- suppressWarnings(as.numeric(Sys.getenv(
+    "PROFILE_NLL_MATERIAL_TOLERANCE", "0.1"
+  )))
+  if (!is.finite(tolerance) || tolerance < 0) tolerance <- 0.1
+  anchor_rows <- which(anchor & valid & is.finite(nll))
+  if (length(anchor_rows)) {
+    anchor_row <- anchor_rows[[which.min(abs(scalar[anchor_rows] - center))]]
+    below <- which(
+      valid & !anchor & is.finite(scalar) & is.finite(nll) &
+        abs(scalar - center) > 1e-10 & nll < nll[[anchor_row]] - tolerance
+    )
+    for (index in below) {
+      add(
+        "off_center_nll_below_fitted_anchor", "warning", scalar[[index]],
+        sprintf("off-center NLL %.10g; fitted anchor %.10g", nll[[index]], nll[[anchor_row]])
+      )
+    }
+  } else {
+    add("missing_fitted_profile_anchor", "warning", center,
+        "no valid fitted-model objective anchor was retained")
+  }
+  profile_group <- if ("profile" %in% names(points)) {
+    as.character(points$profile)
+  } else {
+    rep("profile", nrow(points))
+  }
+  rows_by_profile <- split(which(valid & is.finite(scalar) & is.finite(nll)), profile_group)
+  for (rows in rows_by_profile) {
+    rows <- rows[order(scalar[rows])]
+    if (length(rows) < 3L) next
+    for (offset in seq.int(2L, length(rows) - 1L)) {
+      index <- rows[[offset]]
+      neighbours <- nll[rows[c(offset - 1L, offset + 1L)]]
+      high <- nll[[index]] > max(neighbours) + tolerance
+      low <- is.finite(center) && abs(scalar[[index]] - center) > 1e-10 &&
+        nll[[index]] < min(neighbours) - tolerance
+      if (high || low) {
+        add(
+          "remaining_profile_spike", "warning", scalar[[index]],
+          sprintf("NLL %.10g; adjacent %.10g and %.10g", nll[[index]], neighbours[[1L]], neighbours[[2L]])
+        )
+      }
+    }
+  }
+  if (is.data.frame(profile_qc) && nrow(profile_qc)) {
+    status_field <- intersect(c("qc", "status", "result"), names(profile_qc))
+    if (length(status_field)) {
+      status <- tolower(trimws(as.character(profile_qc[[status_field[[1L]]]])))
+      for (index in which(status %in% c("bad", "fail", "failed", "error", "invalid"))) {
+        detail_fields <- intersect(c("reason", "metric", "profile", "detail"), names(profile_qc))
+        detail <- paste(
+          unlist(profile_qc[index, detail_fields, drop = FALSE], use.names = FALSE),
+          collapse = "; "
+        )
+        add("profile_shape_qc", "warning", NA_real_, detail)
+      }
+    }
+  }
+  out <- bind_rows_fill_local(findings)
+  if (!nrow(out)) {
+    out <- data.frame(
+      code = character(), level = character(), scalar = numeric(),
+      detail = character(), blocking = logical(), stringsAsFactors = FALSE
+    )
+  }
+  unique(out)
+}
+
+merge_profile_finalize_diagnostics <- function(model_dir, points, profile_qc) {
+  diagnostics <- merge_profile_diagnostics(model_dir, points, profile_qc)
+  provenance <- bind_rows_fill_local(profile_duplicate_records)
+  saveRDS(diagnostics, file.path(model_dir, "profile-merge-diagnostics.rds"))
+  write.csv(diagnostics, file.path(model_dir, "profile-merge-diagnostics.csv"), row.names = FALSE)
+  saveRDS(profile_duplicate_records, file.path(model_dir, "profile-merge-provenance.rds"))
+  write.csv(provenance, file.path(model_dir, "profile-merge-provenance.csv"), row.names = FALSE)
+  invisible(diagnostics)
+}
+
+merge_profile_add_summary_diagnostics <- function(model_dir) {
+  path <- file.path(model_dir, "profile-merge-diagnostics.rds")
+  if (!file.exists(path)) return(invisible(NULL))
+  diagnostics <- tryCatch(readRDS(path), error = function(e) data.frame())
+  if (!is.data.frame(diagnostics)) return(invisible(NULL))
+  warning_count <- sum(diagnostics$level == "warning", na.rm = TRUE)
+  fields <- list(
+    profile_diagnostic_status = if (warning_count) "warning" else "clear",
+    profile_diagnostic_count = warning_count,
+    profile_diagnostics = paste(unique(diagnostics$code), collapse = ";"),
+    profile_legacy_comparability = any(grepl("^legacy_", diagnostics$code), na.rm = TRUE),
+    profile_diagnostics_blocking = FALSE
+  )
+  rds_path <- file.path(model_dir, "check-summary.rds")
+  if (file.exists(rds_path)) {
+    summary <- tryCatch(readRDS(rds_path), error = function(e) NULL)
+    if (is.list(summary)) {
+      for (field in names(fields)) summary[[field]] <- fields[[field]]
+      saveRDS(summary, rds_path, compress = "xz")
+    }
+  }
+  csv_path <- file.path(model_dir, "check-summary.csv")
+  if (file.exists(csv_path)) {
+    summary <- tryCatch(read.csv(csv_path, stringsAsFactors = FALSE), error = function(e) NULL)
+    if (is.data.frame(summary)) {
+      for (field in names(fields)) summary[[field]] <- fields[[field]]
+      write.csv(summary, csv_path, row.names = FALSE)
+    }
+  }
+  invisible(fields)
+}
+
+write_check_status_summary_without_profile_diagnostics <- write_check_status_summary
+write_check_status_summary <- function(model_dir, ...) {
+  result <- write_check_status_summary_without_profile_diagnostics(model_dir, ...)
+  merge_profile_add_summary_diagnostics(model_dir)
+  invisible(result)
+}
+
 check_report_figure_keys <- function(check_type) {
   override <- split_values(env("CHECK_REPORT_FIGURE_KEYS", ""))
   if (length(override)) return(override)
@@ -1682,8 +2271,10 @@ if (isTRUE(smoke_only)) {
   points <- dedupe_profile_points(points)
   points <- profile_add_missing_expected(points)
   points <- dedupe_profile_points(points)
+  points <- merge_profile_annotate_points(points)
   write.csv(points, file.path(model_dir, "profile-points.csv"), row.names = FALSE)
   write_merged_profile_spec(model_dir, points)
+  profile_qc <- data.frame(stringsAsFactors = FALSE)
   if (nrow(points)) {
     profile_qc <- mfclkit::mfk_profile_conflict_metrics(points)
     missing_values <- points$scalar[tolower(as.character(points$run_status)) == "missing_profile_point"]
@@ -1707,6 +2298,7 @@ if (isTRUE(smoke_only)) {
     }
     write.csv(profile_qc, file.path(model_dir, "profile-qc.csv"), row.names = FALSE)
   }
+  merge_profile_finalize_diagnostics(model_dir, points, profile_qc)
 }
 write_check_status_summary(model_dir, check_type, source_model_dirs)
 

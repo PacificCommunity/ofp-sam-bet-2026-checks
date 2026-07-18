@@ -1889,6 +1889,7 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
       profile_preset <- switch(
         gsub("-", "_", profile_style, fixed = TRUE),
         bet =, ramp =, quantity_ramp =, adaptive = "adaptive",
+        robust_fast = "robust_fast",
         three_stage =, `three-stage` =, native_3stage =, standard_3stage =
           "three_stage",
         manual =, manual_7stage = "manual_7stage",
@@ -1896,10 +1897,12 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
         profile_style
       )
     }
-    if (!profile_preset %in% c("three_stage", "manual_7stage", "adaptive")) {
+    if (!profile_preset %in% c(
+      "robust_fast", "three_stage", "manual_7stage", "adaptive"
+    )) {
       stop(
         "Unsupported PROFILE_PRESET/PROFILE_STYLE: ", profile_preset,
-        ". Use three_stage, manual_7stage, or adaptive.",
+        ". Use robust_fast, three_stage, manual_7stage, or adaptive.",
         call. = FALSE
       )
     }
@@ -1967,6 +1970,10 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
     }
     profile_penalties_arg <- if (length(profile_penalties)) profile_penalties else NULL
     profile_reps_arg <- if (length(profile_ramp_reps)) profile_ramp_reps else NULL
+    if (identical(profile_preset, "robust_fast")) {
+      profile_penalties_arg <- NULL
+      profile_reps_arg <- NULL
+    }
     profile_distance_breaks <- split_numbers(env(
       "MFK_PROFILE_DISTANCE_BREAKS",
       env("PROFILE_DISTANCE_BREAKS", env("PROFILE_RAMP_DISTANCE_BREAKS", "20 35"))
@@ -2012,6 +2019,22 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
       "MFK_PROFILE_MAX_JAGGED_REPAIRS",
       env("PROFILE_MAX_JAGGED_REPAIRS", "6")
     ), default = 6)[[1L]]
+    profile_repair_strictness_raw <- trimws(env(
+      "MFK_PROFILE_REPAIR_STRICTNESS",
+      env("PROFILE_REPAIR_STRICTNESS", env("PROFILE_REPAIR_STRICT", ""))
+    ))
+    profile_repair_strictness <- NULL
+    if (nzchar(profile_repair_strictness_raw)) {
+      strictness_key <- tolower(profile_repair_strictness_raw)
+      profile_repair_strictness <- if (strictness_key %in% c("true", "t", "yes", "y")) {
+        TRUE
+      } else if (strictness_key %in% c("false", "f", "no", "n")) {
+        FALSE
+      } else {
+        numeric_strictness <- suppressWarnings(as.numeric(profile_repair_strictness_raw))
+        if (is.finite(numeric_strictness)) numeric_strictness else profile_repair_strictness_raw
+      }
+    }
     for (control_name in c(
       "profile_invalid_retry_passes", "profile_jagged_repair_passes",
       "profile_max_jagged_repairs"
@@ -2091,6 +2114,7 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
       },
       profile_style = profile_style,
       profile_preset = profile_preset,
+      profile_repair_strictness = profile_repair_strictness_raw,
       profile_execution_mode = profile_execution_mode,
       profile_doitall_penalty = profile_doitall_penalty,
       profile_doitall_script = profile_doitall_script,
@@ -2188,6 +2212,14 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
       max_jagged_repairs = profile_max_jagged_repairs,
       run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
     )
+    if (!is.null(profile_repair_strictness)) {
+      repair_formal <- intersect(
+        c("repair_strictness", "repair_strict", "strict_repair"), runner_formals
+      )
+      if (length(repair_formal)) {
+        profile_args[[repair_formal[[1L]]]] <- profile_repair_strictness
+      }
+    }
     if (!is.null(hbase_start)) {
       profile_args$initial_x_vector <- hbase_start$x
       profile_args$initial_restart_id <- hbase_start$restart_id

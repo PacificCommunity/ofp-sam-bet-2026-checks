@@ -13,7 +13,7 @@ env:
   MODEL_SOURCE_REF: main
   PROGRAM_PATH: /home/mfcl/mfclo64
   KFLOW_RUNTIME_PACKAGES: none
-  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit,mfclshiny=PacificCommunity/mfclshiny@236a9cf96e1148446b2a650db0991d9661f7d9a7
+  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@7faef1bdda694d91bd1c1b35f2ea7bc8bab41e43,mfclshiny=PacificCommunity/mfclshiny@236a9cf96e1148446b2a650db0991d9661f7d9a7
   KFLOW_REPO_RUNTIME_UPDATE: always
   KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
   KFLOW_RUNTIME_UPDATE: always
@@ -27,8 +27,8 @@ env:
   CHECK_FAIL_ON_FAILED_UNITS: "false"
   PROFILE_TYPE: quantity
   # Generic three-stage native-MFCL profile: constrained fits followed by
-  # one same-target, zero-penalty likelihood harvest.  Use `adaptive` only
-  # when deliberately testing the older BET distance-scaled continuation.
+  # one same-target, zero-penalty likelihood harvest. Use `robust_fast`
+  # explicitly to select the mfclkit robust-fast plan.
   PROFILE_PRESET: three_stage
   PROFILE_STYLE: three_stage
   # The established continuation chains remain the conservative default.
@@ -165,6 +165,7 @@ metadata:
       - PROFILE_INVALID_RETRY_PASSES
       - PROFILE_JAGGED_REPAIR_PASSES
       - PROFILE_MAX_JAGGED_REPAIRS
+      - PROFILE_REPAIR_STRICTNESS
       - PROFILE_EXTRA_SWITCH
       - PROFILE_PARAMETER
       - PROFILE_APPLY_SCRIPT
