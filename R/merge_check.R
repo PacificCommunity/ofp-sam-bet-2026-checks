@@ -1751,7 +1751,12 @@ merge_profile_diagnostics <- function(model_dir, points, profile_qc = data.frame
   if (!is.finite(tolerance) || tolerance < 0) tolerance <- 0.1
   anchor_rows <- which(anchor & valid & is.finite(nll))
   if (length(anchor_rows)) {
-    anchor_row <- anchor_rows[[which.min(abs(scalar[anchor_rows] - center))]]
+    anchor_distance <- abs(scalar[anchor_rows] - center)
+    anchor_row <- if (any(is.finite(anchor_distance))) {
+      anchor_rows[[which.min(replace(anchor_distance, !is.finite(anchor_distance), Inf))]]
+    } else {
+      anchor_rows[[1L]]
+    }
     below <- which(
       valid & !anchor & is.finite(scalar) & is.finite(nll) &
         abs(scalar - center) > 1e-10 & nll < nll[[anchor_row]] - tolerance
