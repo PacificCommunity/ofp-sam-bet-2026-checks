@@ -345,9 +345,9 @@ def resolved_profile_env(values: list[float] | None = None) -> dict[str, str]:
     quantity = env_first("MFK_PROFILE_QUANTITY", "PROFILE_QUANTITY") or "avg_bio"
     quantity_type = env_first("MFK_PROFILE_QUANTITY_TYPE", "PROFILE_QUANTITY_TYPE") or "2"
 
-    # Match profile/kflow.yaml: the historical three-stage profile remains the
-    # default. New mfclkit presets are selected explicitly with PROFILE_PRESET.
-    legacy_style = env_first("PROFILE_STYLE", "PROFILE_RUNNER") or "three_stage"
+    # Robust-fast is the default. Explicit PROFILE_PRESET or legacy
+    # PROFILE_STYLE/PROFILE_RUNNER values continue to select another preset.
+    legacy_style = env_first("PROFILE_STYLE", "PROFILE_RUNNER") or "robust_fast"
     preset = env_first("MFK_PROFILE_PRESET", "PROFILE_PRESET")
     if not preset:
         style_key = legacy_style.strip().lower().replace("-", "_")
