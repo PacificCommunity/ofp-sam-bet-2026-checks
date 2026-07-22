@@ -725,15 +725,18 @@ embed_diagnostic_status_in_payload <- function(model_dir) {
     for (name in names(incoming)) existing[[name]] <- incoming[[name]]
     existing
   }
+  attached_types <- paste(names(status_tables), collapse = " ")
   if (is.list(payload$data)) {
     payload$data$Diagnostics <- merge_into_payload(payload$data$Diagnostics, diagnostics)
     if (!is.list(payload$data$info)) payload$data$info <- list()
     if (!is.list(payload$data$info$attached_checks)) payload$data$info$attached_checks <- list()
+    payload$data$info$attached_checks$check_types <- attached_types
     payload$data$info$attached_checks$status <- status_tables
   } else {
     payload$Diagnostics <- merge_into_payload(payload$Diagnostics, diagnostics)
     if (!is.list(payload$info)) payload$info <- list()
     if (!is.list(payload$info$attached_checks)) payload$info$attached_checks <- list()
+    payload$info$attached_checks$check_types <- attached_types
     payload$info$attached_checks$status <- status_tables
   }
   saved <- FALSE

@@ -16,7 +16,7 @@ export PROGRAM_PATH="${PROGRAM_PATH:-/home/mfcl/mfclo64}"
 export KFLOW_RUNTIME_UPDATE="${KFLOW_RUNTIME_UPDATE:-always}"
 export TUNA_FLOW_RUNTIME_UPDATE="${TUNA_FLOW_RUNTIME_UPDATE:-always}"
 export KFLOW_RUNTIME_PACKAGES="${KFLOW_RUNTIME_PACKAGES:-none}"
-export KFLOW_REPO_RUNTIME_PACKAGES="${KFLOW_REPO_RUNTIME_PACKAGES:-mfclkit=PacificCommunity/ofp-sam-mfclkit,mfclshiny=PacificCommunity/mfclshiny@169a4eb5ad4d32149ff072dc352864dad1eb4192}"
+export KFLOW_REPO_RUNTIME_PACKAGES="${KFLOW_REPO_RUNTIME_PACKAGES:-mfclkit=PacificCommunity/ofp-sam-mfclkit@d8df08e2b7891cdb93b395aa84e0dcf770e3b09f,mfclshiny=PacificCommunity/mfclshiny@236a9cf96e1148446b2a650db0991d9661f7d9a7}"
 export KFLOW_REPO_RUNTIME_UPDATE="${KFLOW_REPO_RUNTIME_UPDATE:-always}"
 
 truthy() {
@@ -119,6 +119,10 @@ use_installed_runtime_package() {
   return 1
 }
 
+runtime_ref_is_commit() {
+  [[ "${1:-}" =~ ^[0-9a-fA-F]{40}$ ]]
+}
+
 first_token() {
   local name
   for name in GITHUB_PAT GIT_PAT GH_TOKEN GITHUB_TOKEN KFLOW_GITHUB_TOKEN KFLOW_PERSONAL_TOKEN; do
@@ -142,6 +146,7 @@ install_runtime_repos() {
 
   export R_LIBS_USER="${R_LIBS_USER:-${SCRIPT_DIR}/.R-library}"
   mkdir -p "$R_LIBS_USER" "${SCRIPT_DIR}/.kflow-runtime-cache"
+  export R_LIBS="${R_LIBS_USER}${R_LIBS:+:${R_LIBS}}"
 
   IFS=',' read -r -a parts <<< "$specs"
   local spec package repo_ref repo ref src token askpass status resolved_sha
@@ -188,7 +193,7 @@ ASKPASS
       status=$?
       rm -f "$askpass"
       rm -rf "$src"
-      if use_installed_runtime_package "$package" "${repo}@${ref}"; then
+      if ! runtime_ref_is_commit "$ref" && use_installed_runtime_package "$package" "${repo}@${ref}"; then
         continue
       fi
       drop_runtime_tokens
@@ -200,7 +205,7 @@ ASKPASS
       status=$?
       rm -f "$askpass"
       rm -rf "$src"
-      if use_installed_runtime_package "$package" "${repo}@${ref}"; then
+      if ! runtime_ref_is_commit "$ref" && use_installed_runtime_package "$package" "${repo}@${ref}"; then
         continue
       fi
       drop_runtime_tokens
@@ -209,6 +214,12 @@ ASKPASS
     rm -f "$askpass"
 
     resolved_sha="$(git -C "$src" rev-parse HEAD 2>/dev/null || true)"
+    if runtime_ref_is_commit "$ref" && [[ "${resolved_sha,,}" != "${ref,,}" ]]; then
+      echo "[kflow-runtime-update] ERROR: ${repo}@${ref} resolved to ${resolved_sha:-unknown}." >&2
+      rm -rf "$src"
+      drop_runtime_tokens
+      return 1
+    fi
     if [[ -n "$resolved_sha" ]]; then
       echo "[kflow-runtime-update] Resolved ${repo}@${ref} to ${resolved_sha:0:12}."
     fi

@@ -100,7 +100,7 @@ stage_selected_model(row, work_dir = args[[4L]], output_dir = args[[5L]])
 
     def test_phase1_jitter_uses_the_staged_fitted_par_not_a_latest_rescan(self) -> None:
         runner = RUN_CHECK.read_text(encoding="utf-8")
-        start = runner.index('if (identical(check_type, "jitter"))')
+        start = runner.rindex('} else if (identical(check_type, "jitter")) {')
         end = runner.index('\n} else if (identical(check_type, "retro"))', start)
         jitter = runner[start:end]
 

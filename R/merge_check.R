@@ -608,12 +608,51 @@ profile_anchor_scalar <- function() {
   100
 }
 
+profile_payload_containers <- function(payload) {
+  if (!is.list(payload)) return(list())
+  out <- list(payload)
+  frontier <- list(payload)
+  for (depth in seq_len(3L)) {
+    next_frontier <- list()
+    for (container in frontier) {
+      for (field in c(
+        "data", "info", "fit", "model", "summary", "metadata",
+        "diagnostics", "Diagnostics"
+      )) {
+        value <- tryCatch(container[[field]], error = function(e) NULL)
+        if (is.list(value)) {
+          out[[length(out) + 1L]] <- value
+          next_frontier[[length(next_frontier) + 1L]] <- value
+        }
+      }
+    }
+    if (!length(next_frontier)) break
+    frontier <- next_frontier
+  }
+  out
+}
+
 profile_payload_number <- function(payload, fields, default = NA_real_) {
-  if (!is.list(payload)) return(default)
-  for (field in fields) {
-    value <- suppressWarnings(as.numeric(tryCatch(payload[[field]], error = function(e) NA_real_)))
-    value <- value[is.finite(value)]
-    if (length(value)) return(value[[1L]])
+  for (container in profile_payload_containers(payload)) {
+    for (field in fields) {
+      value <- suppressWarnings(as.numeric(
+        tryCatch(container[[field]], error = function(e) NA_real_)
+      ))
+      value <- value[is.finite(value)]
+      if (length(value)) return(value[[1L]])
+    }
+  }
+  default
+}
+
+profile_payload_logical <- function(payload, fields, default = NA) {
+  for (container in profile_payload_containers(payload)) {
+    for (field in fields) {
+      value <- tryCatch(container[[field]], error = function(e) NULL)
+      if (is.null(value) || !length(value)) next
+      parsed <- merge_profile_logical(value)
+      if (!is.na(parsed)) return(parsed)
+    }
   }
   default
 }
@@ -631,6 +670,73 @@ profile_base_par <- function(root) {
   )
   candidates <- unique(candidates[file.exists(candidates)])
   if (length(candidates)) candidates[[1L]] else NA_character_
+}
+
+profile_anchor_has_par <- function(scalar_dir) {
+  candidates <- list.files(
+    scalar_dir, pattern = "[.]par$", full.names = TRUE, recursive = FALSE
+  )
+  info <- tryCatch(
+    readRDS(file.path(scalar_dir, "profile_point_info.rds")),
+    error = function(e) list()
+  )
+  payload <- tryCatch(
+    readRDS(file.path(scalar_dir, "profile_payload.rds")),
+    error = function(e) list()
+  )
+  output_par <- merge_profile_text(merge_profile_value(
+    info, payload, c("output_par", "par", "final_par"), NA_character_
+  ))
+  if (!is.na(output_par)) {
+    candidates <- c(candidates, file.path(scalar_dir, basename(output_par)))
+  }
+  candidates <- unique(candidates[file.exists(candidates)])
+  length(candidates) && any(file.info(candidates)$size > 0, na.rm = TRUE)
+}
+
+profile_valid_fitted_anchor <- function(
+    scalar_dir, scalar, profile_name, base_quantity, obj_fun, base_par,
+    scalar_is_percent) {
+  if (!dir.exists(scalar_dir)) return(FALSE)
+  metadata <- merge_profile_point_metadata(scalar_dir)
+  info <- tryCatch(
+    readRDS(file.path(scalar_dir, "profile_point_info.rds")),
+    error = function(e) list()
+  )
+  payload <- tryCatch(
+    readRDS(file.path(scalar_dir, "profile_payload.rds")),
+    error = function(e) list()
+  )
+  anchor_par <- file.path(scalar_dir, "final.par")
+  same_number <- function(left, right) {
+    is.finite(left) && is.finite(right) &&
+      isTRUE(all.equal(as.numeric(left), as.numeric(right), tolerance = 1e-10))
+  }
+  stored_number <- function(fields) {
+    value <- profile_payload_number(info, fields)
+    if (is.finite(value)) value else profile_payload_number(payload, fields)
+  }
+  stored_scalar <- stored_number("scalar")
+  stored_base <- stored_number(c("reference_quantity", "base_quantity"))
+  stored_obj <- stored_number(c("obj_fun", "total_nll", "objective"))
+  stored_profile <- merge_profile_text(merge_profile_value(
+    info, payload, c("profile", "profile_name"), NA_character_
+  ))
+  stored_percent <- profile_payload_logical(info, "scalar_is_percent", default = NA)
+  if (is.na(stored_percent)) {
+    stored_percent <- profile_payload_logical(
+      payload, "scalar_is_percent", default = NA
+    )
+  }
+  same_par <- file.exists(anchor_par) && file.exists(base_par) &&
+    file.info(anchor_par)$size > 0 && file.info(base_par)$size > 0 &&
+    identical(unname(tools::md5sum(anchor_par)), unname(tools::md5sum(base_par)))
+  isTRUE(metadata$anchor) && isTRUE(metadata$valid) &&
+    isTRUE(metadata$completed) && is.finite(metadata$nll) &&
+    profile_anchor_has_par(scalar_dir) && same_par &&
+    same_number(stored_scalar, scalar) && same_number(stored_base, base_quantity) &&
+    same_number(stored_obj, obj_fun) && identical(stored_profile, profile_name) &&
+    identical(stored_percent, scalar_is_percent)
 }
 
 profile_base_quantity <- function(root, quantity, Af172, Af173, Af174) {
@@ -849,6 +955,8 @@ write_profile_base_anchor <- function(root) {
   )
   scalar <- profile_anchor_scalar()
   scalar_token <- format_profile_scalar(scalar)
+  value_mode <- tolower(trimws(env("PROFILE_VALUE_MODE", "percent")))
+  scalar_is_percent <- !identical(value_mode, "absolute")
   quantity_type <- as.integer(profile_env_or_number(
     "PROFILE_QUANTITY_TYPE", profile_row_number(point_row, "quantity_type", 2L)
   ))
@@ -867,28 +975,70 @@ write_profile_base_anchor <- function(root) {
   if (!is.finite(base_quantity)) {
     base_quantity <- profile_base_quantity(root, quantity, Af172, Af173, Af174)
   }
-  target_quantity <- if (is.finite(base_quantity)) base_quantity * scalar / 100 else NA_real_
-  payload <- profile_base_payload(root)
-  obj_fun <- profile_payload_number(payload, "obj_fun")
-  max_grad <- profile_payload_number(payload, "max_grad")
-  base_par <- profile_base_par(root)
-
   profile_root <- file.path(root, "profile", profile_name)
   scalar_dir <- file.path(profile_root, paste0("scalar_", scalar_token))
-  # A direct, non-split mfclkit run has already written a fully audited anchor.
-  # Never replace it with merge-side metadata.
-  if (dir.exists(scalar_dir)) return(invisible(FALSE))
+
+  payload <- profile_base_payload(root)
+  obj_fun <- profile_payload_number(payload, c("obj_fun", "total_nll", "objective"))
+  max_grad <- profile_payload_number(payload, c("max_grad", "maximum_gradient"))
+  fit_completed <- profile_payload_logical(
+    payload, c("run_completed", "fit_completed", "completed"), default = NA
+  )
+  base_par <- profile_base_par(root)
+  restored_par <- FALSE
+  if (is.na(base_par) || !file.exists(base_par) || file.info(base_par)$size <= 0) {
+    restored_path <- tempfile(
+      pattern = ".profile-anchor-", tmpdir = root, fileext = ".par"
+    )
+    base_par <- tryCatch(
+      restore_payload_artifact(
+        file.path(root, "model_payload.rds"), "par", restored_path,
+        required = FALSE
+      ),
+      error = function(e) {
+        warning(
+          "Could not restore fitted profile anchor PAR: ", conditionMessage(e),
+          call. = FALSE
+        )
+        ""
+      }
+    )
+    restored_par <- nzchar(base_par)
+  }
+  if (isTRUE(restored_par)) on.exit(unlink(base_par, force = TRUE), add = TRUE)
+  completed_fit <- !isFALSE(fit_completed) && is.finite(obj_fun) &&
+    is.finite(max_grad) && abs(max_grad) <= 0.001 &&
+    is.finite(base_quantity) && nzchar(base_par) && file.exists(base_par) &&
+    file.info(base_par)$size > 0
+  if (!isTRUE(completed_fit)) {
+    warning(
+      "Fitted profile anchor was not replaced because the compact base fit or PAR was incomplete.",
+      call. = FALSE
+    )
+    return(invisible(FALSE))
+  }
+  # Reuse only an anchor proven to represent this exact fitted model and
+  # profile contract. A stale or side-job scalar PAR is replaced.
+  if (profile_valid_fitted_anchor(
+    scalar_dir, scalar, profile_name, base_quantity, obj_fun, base_par,
+    scalar_is_percent
+  )) return(invisible(FALSE))
+
+  if (dir.exists(scalar_dir)) unlink(scalar_dir, recursive = TRUE, force = TRUE)
   dir.create(scalar_dir, recursive = TRUE, showWarnings = FALSE)
   for (name in c("model_payload.rds", "model_payload_manifest.json", "model_payload_manifest.csv")) {
     copy_file_if_exists(file.path(root, name), scalar_dir)
   }
-  output_par <- NA_character_
-  if (file.exists(base_par)) {
-    copy_file_if_exists(base_par, scalar_dir)
-    output_par <- basename(base_par)
-  }
+  copy_file_if_exists(base_par, scalar_dir, "final.par")
+  output_par <- "final.par"
 
-  target_quantity <- if (is.finite(base_quantity)) base_quantity * scalar / 100 else NA_real_
+  target_quantity <- if (!is.finite(base_quantity)) {
+    NA_real_
+  } else if (scalar_is_percent) {
+    base_quantity * scalar / 100
+  } else {
+    scalar
+  }
   native_target <- if (is.finite(target_quantity) && identical(quantity_type, 1L)) {
     round(target_quantity * 1000)
   } else if (is.finite(target_quantity)) {
@@ -924,7 +1074,7 @@ write_profile_base_anchor <- function(root) {
     Af172 = Af172,
     Af173 = Af173,
     Af174 = Af174,
-    scalar_is_percent = TRUE,
+    scalar_is_percent = scalar_is_percent,
     use_quantity_penalty = TRUE,
     stringsAsFactors = FALSE
   )
@@ -947,6 +1097,7 @@ write_profile_base_anchor <- function(root) {
     obj_fun = obj_fun,
     max_grad = max_grad,
     output_par = output_par,
+    fitted_par_md5 = unname(tools::md5sum(base_par)),
     actual_quantity = actual_quantity,
     actual_quantity_source = if (is.finite(actual_quantity)) "fitted_model" else NA_character_,
     target_quantity = effective_target,
@@ -973,6 +1124,7 @@ write_profile_base_anchor <- function(root) {
     profile_set_label = profile_label,
     quantity_label = profile_label,
     profile_type = "quantity",
+    quantity = quantity,
     quantity_type = quantity_type,
     requested_target = target_quantity,
     native_target = native_target,
@@ -983,7 +1135,7 @@ write_profile_base_anchor <- function(root) {
     target_rel_err = target_rel_err,
     target_attained = target_attained,
     avg_bio = if (identical(quantity_type, 2L)) actual_quantity else NA_real_,
-    scalar_is_percent = TRUE,
+    scalar_is_percent = scalar_is_percent,
     use_quantity_penalty = TRUE,
     Af172 = Af172,
     Af173 = Af173,
@@ -999,6 +1151,7 @@ write_profile_base_anchor <- function(root) {
     objective_source = "fitted_model_par",
     max_grad = max_grad,
     output_par = output_par,
+    fitted_par_md5 = info$fitted_par_md5,
     harvest_par = NA_character_,
     point_valid = point_valid,
     run_completed = info$run_completed,
@@ -1024,9 +1177,13 @@ write_profile_base_anchor <- function(root) {
   invisible(TRUE)
 }
 
-repair_hbase_profile <- function(root, selected_base) {
-  enabled <- truthy(env("PROFILE_HBASE_ENABLED", "false"), FALSE) ||
+profile_hbase_merge_mode <- function() {
+  truthy(env("PROFILE_HBASE_ENABLED", "false"), FALSE) ||
     identical(tolower(trimws(env("PROFILE_PARALLEL_MODE", ""))), "h-base")
+}
+
+repair_hbase_profile <- function(root, selected_base) {
+  enabled <- profile_hbase_merge_mode()
   role <- tolower(trimws(env("PROFILE_HBASE_ROLE", "")))
   repair_passes <- as.integer(profile_env_or_number(
     "PROFILE_HBASE_REPAIR_PASSES", 2
@@ -1155,6 +1312,209 @@ repair_hbase_profile <- function(root, selected_base) {
   })
   saveRDS(result, file.path(root, "hbase-repair-result.rds"), compress = "xz")
   invisible(result)
+}
+
+close_ordinary_profile <- function(root, selected_base) {
+  if (!truthy(env("PROFILE_POST_MERGE_REPAIR", "true"), TRUE) ||
+      profile_hbase_merge_mode()) {
+    return(invisible(NULL))
+  }
+  result_path <- file.path(root, "profile", "profile-closure-result.rds")
+  save_result <- function(result) {
+    audit_path <- tryCatch(as.character(result$audit_path[[1L]]), error = function(e) "")
+    if (!length(audit_path) || is.na(audit_path)) audit_path <- ""
+    if (nzchar(audit_path) && !file.exists(audit_path)) {
+      dir.create(dirname(audit_path), recursive = TRUE, showWarnings = FALSE)
+      saveRDS(result, audit_path, compress = "xz")
+    }
+    saveRDS(result, result_path, compress = "xz")
+    invisible(result)
+  }
+  if (!"mfk_close_quantity_profile" %in% getNamespaceExports("mfclkit")) {
+    warning(
+      "Post-merge profile closure requires an updated mfclkit; publishing the unclosed profile.",
+      call. = FALSE
+    )
+    return(save_result(list(
+      status = "api_unavailable", created_at = as.character(Sys.time())
+    )))
+  }
+  if (!is.data.frame(selected_base) || !nrow(selected_base)) {
+    warning(
+      "Post-merge profile closure skipped because the fitted base model was unavailable.",
+      call. = FALSE
+    )
+    return(save_result(list(
+      status = "base_model_unavailable", created_at = as.character(Sys.time())
+    )))
+  }
+
+  result <- tryCatch({
+    direct_par <- profile_base_par(root)
+    direct_frq <- list.files(
+      root, pattern = "[.]frq$", full.names = TRUE, recursive = FALSE
+    )
+    # Never seed repair from an arbitrary profile-point PAR. If the root fitted
+    # PAR is compacted, stage it from the selected fitted-model payload.
+    staged <- if (nzchar(direct_par) && file.exists(direct_par) && length(direct_frq)) {
+      list(
+        case_dir = root,
+        start_par = direct_par,
+        frq = direct_frq[[1L]],
+        program_path = env("PROGRAM_PATH", "/home/mfcl/mfclo64")
+      )
+    } else {
+      stage_selected_model(
+        selected_base[seq_len(1L), , drop = FALSE],
+        work_dir = file.path(output_dir, ".profile-closure-work"),
+        output_dir = file.path(output_dir, ".profile-closure-stage")
+      )
+    }
+    profile_roots <- list.dirs(
+      file.path(root, "profile"), recursive = FALSE, full.names = TRUE
+    )
+    points <- bind_rows_fill_local(lapply(
+      profile_roots, mfclkit::mfk_read_profile_points
+    ))
+    points <- dedupe_profile_points(profile_add_missing_expected(points))
+    row <- profile_first_point_row(root)
+    values <- profile_expected_values()
+    if (!length(values) && is.data.frame(points) && "scalar" %in% names(points)) {
+      values <- sort(unique(suppressWarnings(as.numeric(points$scalar))))
+      values <- values[is.finite(values)]
+    }
+    profile_name <- profile_env_or_text(
+      "PROFILE_NAME", profile_row_text(row, "profile", "total_average_biomass")
+    )
+    quantity <- profile_env_or_text(
+      "PROFILE_QUANTITY", profile_row_text(row, "quantity", "avg_bio")
+    )
+    quantity_type <- as.integer(profile_env_or_number(
+      "PROFILE_QUANTITY_TYPE", profile_row_number(row, "quantity_type", 2L)
+    ))
+    base_quantity <- profile_env_or_number(
+      "PROFILE_BASE_QUANTITY", profile_row_number(row, "base_quantity", NA_real_)
+    )
+    if (!is.finite(base_quantity)) base_quantity <- NULL
+    value_mode <- tolower(trimws(env("PROFILE_VALUE_MODE", "percent")))
+    profile <- mfclkit::mfk_quantity_profile_from_model(
+      model_dir = staged$case_dir,
+      name = profile_name,
+      values = values,
+      quantity = quantity,
+      quantity_type = quantity_type,
+      base_quantity = base_quantity,
+      target = if (identical(value_mode, "absolute")) values else NA_real_,
+      scalar_is_percent = !identical(value_mode, "absolute"),
+      Af172 = as.integer(profile_env_or_number(
+        "PROFILE_AF172", profile_row_number(row, "Af172", 0L)
+      )),
+      Af173 = as.integer(profile_env_or_number(
+        "PROFILE_AF173", profile_row_number(row, "Af173", 0L)
+      )),
+      Af174 = as.integer(profile_env_or_number(
+        "PROFILE_AF174", profile_row_number(row, "Af174", 0L)
+      )),
+      penalty = 1e7,
+      reps = 2000L,
+      convergence_exponent = as.integer(profile_env_or_number(
+        "PROFILE_CONVERGENCE_EXPONENT", -3
+      ))
+    )
+    convergence_exponent <- as.integer(profile_env_or_number(
+      "PROFILE_CONVERGENCE_EXPONENT", -3
+    ))
+    if (!is.finite(convergence_exponent) || convergence_exponent >= 0L) {
+      convergence_exponent <- -3L
+    }
+    repair_passes <- as.integer(profile_env_or_number(
+      "PROFILE_JAGGED_REPAIR_PASSES",
+      profile_env_or_number("PROFILE_HBASE_REPAIR_PASSES", 2)
+    ))
+    if (!is.finite(repair_passes) || repair_passes < 1L) repair_passes <- 2L
+    max_scalars <- as.integer(profile_env_or_number(
+      "PROFILE_MAX_JAGGED_REPAIRS", 8
+    ))
+    if (!is.finite(max_scalars) || max_scalars < 1L) max_scalars <- 6L
+    max_runs <- as.integer(min(
+      .Machine$integer.max,
+      as.double(max_scalars) * (as.double(repair_passes) + 2)
+    ))
+    cpus <- as.integer(profile_env_or_number(
+      "PROFILE_REPAIR_CPUS", profile_env_or_number("PROFILE_HBASE_REPAIR_CPUS", 4)
+    ))
+    if (!is.finite(cpus) || cpus < 1L) cpus <- 1L
+    cpus_per_worker <- as.integer(profile_env_or_number(
+      "PROFILE_REPAIR_CPUS_PER_WORKER",
+      profile_env_or_number("PROFILE_HBASE_REPAIR_CPUS_PER_WORKER", 1)
+    ))
+    if (!is.finite(cpus_per_worker) || cpus_per_worker < 1L) cpus_per_worker <- 1L
+    memory_gb <- profile_env_or_number(
+      "PROFILE_REPAIR_MEMORY_GB",
+      profile_env_or_number("PROFILE_HBASE_REPAIR_MEMORY_GB", 32)
+    )
+    memory_gb_per_worker <- profile_env_or_number(
+      "PROFILE_REPAIR_MEMORY_PER_WORKER_GB",
+      profile_env_or_number("PROFILE_HBASE_REPAIR_MEMORY_PER_WORKER_GB", 8)
+    )
+    backend <- mfclkit::mfk_native_backend(
+      program_path = env("PROGRAM_PATH", staged$program_path %||% "/home/mfcl/mfclo64")
+    )
+    penalties <- split_numbers(env("PROFILE_PENALTIES", ""), default = numeric())
+    reps <- split_numbers(env("PROFILE_RAMP_REPS", ""), default = numeric())
+    closed <- mfclkit::mfk_close_quantity_profile(
+      backend = backend,
+      input_dir = staged$case_dir,
+      model_dir = root,
+      profile = profile,
+      par = staged$start_par,
+      frq = staged$frq,
+      preset = env("PROFILE_PRESET", "robust_fast"),
+      center = profile_anchor_scalar(),
+      penalties = if (length(penalties)) penalties else NULL,
+      reps = if (length(reps)) reps else NULL,
+      search_threshold = 10^convergence_exponent,
+      target_rel_tolerance = profile_env_or_number(
+        "PROFILE_TARGET_REL_TOLERANCE", 0.001
+      ),
+      continuation_reps = as.integer(profile_env_or_number(
+        "PROFILE_CONTINUATION_REPS", 1000
+      )),
+      jagged_tolerance = profile_env_or_number(
+        "PROFILE_JAGGED_TOLERANCE", 0.1
+      ),
+      repair_passes = repair_passes,
+      max_runs = max_runs,
+      max_scalars = max_scalars,
+      final_polish = TRUE,
+      polish_threshold = 1e-4,
+      parallel = truthy(
+        env("PROFILE_REPAIR_PARALLEL", if (cpus > 1L) "true" else "false"),
+        cpus > 1L
+      ),
+      cpus = cpus,
+      cpus_per_worker = cpus_per_worker,
+      memory_gb = memory_gb,
+      memory_gb_per_worker = memory_gb_per_worker,
+      run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
+    )
+    suspects <- tryCatch(closed$after_qc$suspect_scalars, error = function(e) NA_real_)
+    budget_exhausted <- isTRUE(closed$budget$run_budget_exhausted) ||
+      isTRUE(closed$budget$scalar_budget_exhausted)
+    unresolved <- any(is.finite(suppressWarnings(as.numeric(suspects)))) ||
+      budget_exhausted
+    closed$status <- if (unresolved) "incomplete" else "completed"
+    closed$completed <- !unresolved
+    closed$unresolved_suspect_scalars <- suppressWarnings(as.numeric(suspects))
+    closed
+  }, error = function(e) {
+    warning("Post-merge profile closure failed: ", conditionMessage(e), call. = FALSE)
+    list(
+      status = "failed", error = conditionMessage(e),
+      created_at = as.character(Sys.time())
+    )
+  })
+  save_result(result)
 }
 
 copy_check_units <- function(source_dirs, target_dir, check_type) {
@@ -1396,13 +1756,12 @@ collect_check_unit_status <- function(model_dir, check_type, source_dirs = chara
       data.frame(stringsAsFactors = FALSE)
     }
   }, error = function(e) {
-    data.frame(
-      run_status = "status_collect_failed",
-      run_completed = FALSE,
-      converged = FALSE,
-      failure_reason = conditionMessage(e),
-      stringsAsFactors = FALSE
+    warning(
+      "Could not collect ", check_type, " unit status; using the source summary ",
+      "or expected-unit ledger: ", conditionMessage(e),
+      call. = FALSE
     )
+    data.frame(stringsAsFactors = FALSE)
   })
   if ((!is.data.frame(out) || !nrow(out)) && !isTRUE(expected_unit_ledger$present)) {
     summaries <- lapply(source_dirs, function(src) {
@@ -1654,10 +2013,16 @@ merge_profile_annotate_points <- function(points) {
 
 merge_profile_diagnostics <- function(model_dir, points, profile_qc = data.frame()) {
   findings <- list()
-  add <- function(code, level = "warning", scalar = NA_real_, detail = "") {
+  add <- function(
+      code, level = "warning", scalar = NA_real_, detail = "",
+      blocking = code %in% c(
+        "missing_fitted_profile_anchor",
+        "off_center_nll_below_fitted_anchor",
+        "remaining_profile_spike"
+      )) {
     findings[[length(findings) + 1L]] <<- data.frame(
       code = code, level = level, scalar = scalar, detail = detail,
-      blocking = FALSE, stringsAsFactors = FALSE
+      blocking = isTRUE(blocking), stringsAsFactors = FALSE
     )
   }
   duplicate_rows <- bind_rows_fill_local(profile_duplicate_records)
@@ -1745,6 +2110,7 @@ merge_profile_diagnostics <- function(model_dir, points, profile_qc = data.frame
     rep(NA_real_, nrow(points))
   }
   center <- tryCatch(profile_scalar_center(model_dir), error = function(e) NA_real_)
+  if (!is.finite(center)) center <- profile_anchor_scalar()
   tolerance <- suppressWarnings(as.numeric(Sys.getenv(
     "PROFILE_NLL_MATERIAL_TOLERANCE", "0.1"
   )))
@@ -1763,12 +2129,12 @@ merge_profile_diagnostics <- function(model_dir, points, profile_qc = data.frame
     )
     for (index in below) {
       add(
-        "off_center_nll_below_fitted_anchor", "warning", scalar[[index]],
+        "off_center_nll_below_fitted_anchor", "critical", scalar[[index]],
         sprintf("off-center NLL %.10g; fitted anchor %.10g", nll[[index]], nll[[anchor_row]])
       )
     }
   } else {
-    add("missing_fitted_profile_anchor", "warning", center,
+    add("missing_fitted_profile_anchor", "critical", center,
         "no valid fitted-model objective anchor was retained")
   }
   profile_group <- if ("profile" %in% names(points)) {
@@ -1788,7 +2154,7 @@ merge_profile_diagnostics <- function(model_dir, points, profile_qc = data.frame
         nll[[index]] < min(neighbours) - tolerance
       if (high || low) {
         add(
-          "remaining_profile_spike", "warning", scalar[[index]],
+          "remaining_profile_spike", "critical", scalar[[index]],
           sprintf("NLL %.10g; adjacent %.10g and %.10g", nll[[index]], neighbours[[1L]], neighbours[[2L]])
         )
       }
@@ -1808,6 +2174,27 @@ merge_profile_diagnostics <- function(model_dir, points, profile_qc = data.frame
       }
     }
   }
+  closure_path <- file.path(model_dir, "profile", "profile-closure-result.rds")
+  if (file.exists(closure_path)) {
+    closure <- tryCatch(readRDS(closure_path), error = function(e) NULL)
+    closure_status <- tolower(trimws(as.character(closure$status %||% "failed")))
+    if (!identical(closure_status, "completed")) {
+      stop_reason <- as.character(closure$stop_reason %||% closure$error %||% closure_status)
+      suspects <- suppressWarnings(as.numeric(
+        closure$unresolved_suspect_scalars %||% closure$after_qc$suspect_scalars
+      ))
+      suspects <- suspects[is.finite(suspects)]
+      add(
+        "profile_closure_incomplete", "critical",
+        if (length(suspects)) suspects[[1L]] else NA_real_,
+        paste0(
+          "status=", closure_status, "; reason=", stop_reason,
+          if (length(suspects)) paste0("; suspect scalars=", paste(suspects, collapse = ",")) else ""
+        ),
+        blocking = TRUE
+      )
+    }
+  }
   out <- bind_rows_fill_local(findings)
   if (!nrow(out)) {
     out <- data.frame(
@@ -1823,6 +2210,14 @@ merge_profile_finalize_diagnostics <- function(model_dir, points, profile_qc) {
   provenance <- bind_rows_fill_local(profile_duplicate_records)
   saveRDS(diagnostics, file.path(model_dir, "profile-merge-diagnostics.rds"))
   write.csv(diagnostics, file.path(model_dir, "profile-merge-diagnostics.csv"), row.names = FALSE)
+  dir.create(file.path(model_dir, "profile"), recursive = TRUE, showWarnings = FALSE)
+  saveRDS(
+    diagnostics, file.path(model_dir, "profile", "profile-merge-diagnostics.rds")
+  )
+  write.csv(
+    diagnostics, file.path(model_dir, "profile", "profile-merge-diagnostics.csv"),
+    row.names = FALSE
+  )
   saveRDS(profile_duplicate_records, file.path(model_dir, "profile-merge-provenance.rds"))
   write.csv(provenance, file.path(model_dir, "profile-merge-provenance.csv"), row.names = FALSE)
   invisible(diagnostics)
@@ -1834,18 +2229,32 @@ merge_profile_add_summary_diagnostics <- function(model_dir) {
   diagnostics <- tryCatch(readRDS(path), error = function(e) data.frame())
   if (!is.data.frame(diagnostics)) return(invisible(NULL))
   warning_count <- sum(diagnostics$level == "warning", na.rm = TRUE)
+  critical_count <- sum(diagnostics$level == "critical", na.rm = TRUE)
+  blocking <- any(diagnostics$blocking %in% TRUE, na.rm = TRUE)
   fields <- list(
-    profile_diagnostic_status = if (warning_count) "warning" else "clear",
-    profile_diagnostic_count = warning_count,
+    profile_diagnostic_status = if (blocking || critical_count) {
+      "critical"
+    } else if (warning_count) {
+      "warning"
+    } else {
+      "clear"
+    },
+    profile_diagnostic_count = warning_count + critical_count,
+    profile_diagnostic_critical_count = critical_count,
     profile_diagnostics = paste(unique(diagnostics$code), collapse = ";"),
     profile_legacy_comparability = any(grepl("^legacy_", diagnostics$code), na.rm = TRUE),
-    profile_diagnostics_blocking = FALSE
+    profile_diagnostics_blocking = blocking
   )
   rds_path <- file.path(model_dir, "check-summary.rds")
   if (file.exists(rds_path)) {
     summary <- tryCatch(readRDS(rds_path), error = function(e) NULL)
     if (is.list(summary)) {
       for (field in names(fields)) summary[[field]] <- fields[[field]]
+      if (blocking) {
+        summary$has_failures <- TRUE
+        summary$all_required_units_successful <- FALSE
+        summary$merge_status <- "incomplete"
+      }
       saveRDS(summary, rds_path, compress = "xz")
     }
   }
@@ -1854,6 +2263,11 @@ merge_profile_add_summary_diagnostics <- function(model_dir) {
     summary <- tryCatch(read.csv(csv_path, stringsAsFactors = FALSE), error = function(e) NULL)
     if (is.data.frame(summary)) {
       for (field in names(fields)) summary[[field]] <- fields[[field]]
+      if (blocking) {
+        summary$has_failures <- TRUE
+        summary$all_required_units_successful <- FALSE
+        summary$merge_status <- "incomplete"
+      }
       write.csv(summary, csv_path, row.names = FALSE)
     }
   }
@@ -2244,7 +2658,11 @@ if (length(profile_duplicate_records)) {
 }
 if (identical(check_type, "profile")) {
   write_profile_base_anchor(model_dir)
-  repair_hbase_profile(model_dir, base_selected)
+  if (profile_hbase_merge_mode()) {
+    repair_hbase_profile(model_dir, base_selected)
+  } else {
+    close_ordinary_profile(model_dir, base_selected)
+  }
 }
 
 if (isTRUE(smoke_only)) {

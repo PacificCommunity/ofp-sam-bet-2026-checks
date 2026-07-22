@@ -34,11 +34,11 @@ CHECK_ALIASES = {
 }
 
 DEFAULT_RUNTIME_PACKAGES = (
-    "mfclkit=PacificCommunity/ofp-sam-mfclkit@d2c33d86ecb25aaa578f7c4b3f461d71f0ebba07,"
+    "mfclkit=PacificCommunity/ofp-sam-mfclkit@d8df08e2b7891cdb93b395aa84e0dcf770e3b09f,"
     "mfclshiny=PacificCommunity/mfclshiny@236a9cf96e1148446b2a650db0991d9661f7d9a7"
 )
 
-DEFAULT_PROFILE_VALUES = [value / 2 for value in range(120, 281, 5)]
+DEFAULT_PROFILE_VALUES = [float(value) for value in range(60, 141, 2)]
 DEFAULT_PROFILE_CENTER = "100"
 DEFAULT_JITTER_SEEDS = [str(value) for value in range(1, 31)]
 DEFAULT_RETRO_PEELS = [str(value) for value in range(1, 7)]
@@ -47,6 +47,19 @@ DEFAULT_SELFTEST_REFIT_CONVERGENCE = "-3"
 DEFAULT_CHECK_CPUS = "2"
 DEFAULT_CHECK_MEMORY = "8GB"
 DEFAULT_CHECK_DISK = "10GB"
+DEFAULT_PROFILE_CPUS = "1"
+DEFAULT_PROFILE_MEMORY = "8GB"
+DEFAULT_PROFILE_MERGE_CPUS = "1"
+DEFAULT_PROFILE_MERGE_MEMORY = "4GB"
+DEFAULT_PROFILE_HBASE_MERGE_CPUS = "2"
+DEFAULT_PROFILE_HBASE_MERGE_MEMORY = "16GB"
+DEFAULT_PROFILE_REPAIR_CPUS = "2"
+DEFAULT_PROFILE_REPAIR_MEMORY_GB = "16"
+DEFAULT_PROFILE_REPAIR_MEMORY_PER_WORKER_GB = "8"
+SUVA_HOST = "suvofpsubmit.corp.spc.int"
+SUVA_USER = "kyuhank"
+SUVA_BASE_DIR = "/home/kyuhank/KflowOutput"
+SUVA_SLOT_REQUIREMENT = 'regexp("^suvofp", Machine)'
 MAX_R_INTEGER = 2_147_483_647
 HBASE_PROFILE_MODES = {"h-base", "h_base", "hbase", "hessian-base", "hessian_base"}
 DIAGNOSTIC_OVERLAY_REPLACE_NAMES = [
@@ -392,6 +405,25 @@ def resolved_profile_env(values: list[float] | None = None) -> dict[str, str]:
     }
     default_penalties, default_reps = preset_defaults[preset]
 
+    jagged_repair_passes = env_first(
+        "MFK_PROFILE_JAGGED_REPAIR_PASSES",
+        "PROFILE_JAGGED_REPAIR_PASSES",
+        "PROFILE_HBASE_REPAIR_PASSES",
+    ) or "2"
+    # Generic repair resources are the public contract. Mirror them to the old
+    # h-base names below while existing registered h-base tasks still consume
+    # those aliases.
+    repair_cpus = env_first(
+        "PROFILE_REPAIR_CPUS", "PROFILE_HBASE_REPAIR_CPUS",
+    ) or DEFAULT_PROFILE_REPAIR_CPUS
+    repair_memory_gb = env_first(
+        "PROFILE_REPAIR_MEMORY_GB", "PROFILE_HBASE_REPAIR_MEMORY_GB",
+    ) or DEFAULT_PROFILE_REPAIR_MEMORY_GB
+    repair_memory_per_worker_gb = env_first(
+        "PROFILE_REPAIR_MEMORY_PER_WORKER_GB",
+        "PROFILE_HBASE_REPAIR_MEMORY_PER_WORKER_GB",
+    ) or DEFAULT_PROFILE_REPAIR_MEMORY_PER_WORKER_GB
+
     include_anchor = truthy(
         env_first("MFK_PROFILE_INCLUDE_BASE_ANCHOR", "PROFILE_INCLUDE_BASE_ANCHOR"),
         default=True,
@@ -478,6 +510,12 @@ def resolved_profile_env(values: list[float] | None = None) -> dict[str, str]:
         "PROFILE_CONVERGENCE_EXPONENT": env_first(
             "MFK_PROFILE_CONVERGENCE_EXPONENT", "PROFILE_CONVERGENCE_EXPONENT",
         ) or "-3",
+        "PROFILE_POST_MERGE_REPAIR": env_first(
+            "MFK_PROFILE_POST_MERGE_REPAIR", "PROFILE_POST_MERGE_REPAIR",
+        ) or "false",
+        "PROFILE_REVERSE_ONCE": env_first(
+            "MFK_PROFILE_REVERSE_ONCE", "PROFILE_REVERSE_ONCE",
+        ) or "true",
         "PROFILE_CHAIN": env_first("MFK_PROFILE_CHAIN", "PROFILE_CHAIN") or "true",
         "PROFILE_INCLUDE_BASE_ANCHOR": "true" if include_anchor else "false",
         "PROFILE_AF172": env_first("MFK_PROFILE_AF172", "PROFILE_AF172") or "0",
@@ -529,16 +567,17 @@ def resolved_profile_env(values: list[float] | None = None) -> dict[str, str]:
         ) or "1000",
         "PROFILE_INVALID_RETRY_PASSES": env_first(
             "MFK_PROFILE_INVALID_RETRY_PASSES", "PROFILE_INVALID_RETRY_PASSES",
-        ) or "3",
-        "PROFILE_JAGGED_REPAIR_PASSES": env_first(
-            "MFK_PROFILE_JAGGED_REPAIR_PASSES", "PROFILE_JAGGED_REPAIR_PASSES",
-        ) or "2",
+        ) or "1",
+        "PROFILE_JAGGED_REPAIR_PASSES": jagged_repair_passes,
         "PROFILE_MAX_JAGGED_REPAIRS": env_first(
             "MFK_PROFILE_MAX_JAGGED_REPAIRS", "PROFILE_MAX_JAGGED_REPAIRS",
-        ) or "6",
+        ) or "0",
         "PROFILE_JAGGED_TOLERANCE": env_first(
             "MFK_PROFILE_JAGGED_TOLERANCE", "PROFILE_JAGGED_TOLERANCE",
         ) or "0.1",
+        "PROFILE_REPAIR_CPUS": repair_cpus,
+        "PROFILE_REPAIR_MEMORY_GB": repair_memory_gb,
+        "PROFILE_REPAIR_MEMORY_PER_WORKER_GB": repair_memory_per_worker_gb,
         "PROFILE_HBASE_ENABLED": (
             "true" if is_hbase_profile_mode(env_first("PROFILE_PARALLEL_MODE")) else "false"
         ),
@@ -549,14 +588,44 @@ def resolved_profile_env(values: list[float] | None = None) -> dict[str, str]:
         "PROFILE_HBASE_MAX_COORDINATE_STEP": env_first("PROFILE_HBASE_MAX_COORDINATE_STEP") or "0.35",
         "PROFILE_HBASE_BASE_REL_TOLERANCE": env_first("PROFILE_HBASE_BASE_REL_TOLERANCE") or "1e-5",
         "PROFILE_HBASE_RESTART_BASE": env_first("PROFILE_HBASE_RESTART_BASE") or "920000",
-        "PROFILE_HBASE_REPAIR_PASSES": env_first("PROFILE_HBASE_REPAIR_PASSES") or "2",
-        "PROFILE_HBASE_REPAIR_CPUS": env_first("PROFILE_HBASE_REPAIR_CPUS") or "4",
-        "PROFILE_HBASE_REPAIR_MEMORY_GB": env_first("PROFILE_HBASE_REPAIR_MEMORY_GB") or "32",
-        "PROFILE_HBASE_REPAIR_MEMORY_PER_WORKER_GB": env_first(
-            "PROFILE_HBASE_REPAIR_MEMORY_PER_WORKER_GB"
-        ) or "8",
+        "PROFILE_HBASE_REPAIR_PASSES": jagged_repair_passes,
+        "PROFILE_HBASE_REPAIR_CPUS": repair_cpus,
+        "PROFILE_HBASE_REPAIR_MEMORY_GB": repair_memory_gb,
+        "PROFILE_HBASE_REPAIR_MEMORY_PER_WORKER_GB": repair_memory_per_worker_gb,
     }
     return {key: value for key, value in resolved.items() if str(value).strip()}
+
+
+def resolved_profile_unit_env(values: list[float] | None = None) -> dict[str, str]:
+    """Use cheap local recovery; assess profile shape only after both arms merge."""
+
+    resolved = resolved_profile_env(values)
+    if is_hbase_profile_mode(resolved.get("PROFILE_PARALLEL_MODE")):
+        return resolved
+    resolved.update({
+        "PROFILE_RETRY_INVALID": env_first(
+            "MFK_PROFILE_UNIT_RETRY_INVALID", "PROFILE_UNIT_RETRY_INVALID",
+        ) or "true",
+        "PROFILE_INVALID_RETRY_PASSES": env_first(
+            "MFK_PROFILE_UNIT_INVALID_RETRY_PASSES",
+            "PROFILE_UNIT_INVALID_RETRY_PASSES",
+        ) or "1",
+        "PROFILE_RETRY_JAGGED": env_first(
+            "MFK_PROFILE_UNIT_RETRY_JAGGED", "PROFILE_UNIT_RETRY_JAGGED",
+        ) or "false",
+        "PROFILE_REVERSE_ONCE": env_first(
+            "MFK_PROFILE_UNIT_REVERSE_ONCE", "PROFILE_UNIT_REVERSE_ONCE",
+        ) or "true",
+        "PROFILE_JAGGED_REPAIR_PASSES": env_first(
+            "MFK_PROFILE_UNIT_JAGGED_REPAIR_PASSES",
+            "PROFILE_UNIT_JAGGED_REPAIR_PASSES",
+        ) or "0",
+        "PROFILE_MAX_JAGGED_REPAIRS": env_first(
+            "MFK_PROFILE_UNIT_MAX_JAGGED_REPAIRS",
+            "PROFILE_UNIT_MAX_JAGGED_REPAIRS",
+        ) or "0",
+    })
+    return resolved
 
 
 def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
@@ -617,7 +686,7 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
     if not parallel_units:
         if check_key == "profile":
             values = profile_values_from_env()
-            common_env = resolved_profile_env(values)
+            common_env = resolved_profile_unit_env(values)
             mode = common_env["PROFILE_PARALLEL_MODE"].strip().lower() or "chains"
             execution_mode = common_env["PROFILE_EXECUTION_MODE"].strip().lower()
             if (
@@ -646,7 +715,7 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
 
     if check_key == "profile":
         values = profile_values_from_env()
-        common_env = resolved_profile_env(values)
+        common_env = resolved_profile_unit_env(values)
         profile_name = common_env["PROFILE_NAME"]
         label_name = profile_name if profile_name and profile_name != "profile" else "scalar"
         mode = common_env["PROFILE_PARALLEL_MODE"].strip().lower() or "chains"
@@ -850,6 +919,41 @@ def api_json(
     return json.loads(raw.decode("utf-8")) if raw else {}
 
 
+def check_task_resources(
+    check_type: str,
+    submitter_fields: dict[str, Any],
+) -> dict[str, Any]:
+    key = str(check_type or "").strip().lower().replace("_", "-")
+    resources = {
+        "cpus": int(submitter_fields.get("cpus") or DEFAULT_CHECK_CPUS),
+        "memory": submitter_fields.get("memory") or DEFAULT_CHECK_MEMORY,
+        "disk": submitter_fields.get("disk") or DEFAULT_CHECK_DISK,
+    }
+    if key == "profile":
+        resources["cpus"] = int(
+            os.environ.get("KFLOW_PROFILE_CPUS", DEFAULT_PROFILE_CPUS)
+        )
+        resources["memory"] = os.environ.get(
+            "KFLOW_PROFILE_MEMORY", DEFAULT_PROFILE_MEMORY
+        )
+    elif key == "profile-merge":
+        resources["cpus"] = int(os.environ.get(
+            "KFLOW_PROFILE_MERGE_CPUS",
+            DEFAULT_PROFILE_MERGE_CPUS,
+        ))
+        resources["memory"] = os.environ.get(
+            "KFLOW_PROFILE_MERGE_MEMORY", DEFAULT_PROFILE_MERGE_MEMORY
+        )
+    elif key == "profile-h-base-merge":
+        resources["cpus"] = int(os.environ.get(
+            "KFLOW_PROFILE_HBASE_MERGE_CPUS", DEFAULT_PROFILE_HBASE_MERGE_CPUS
+        ))
+        resources["memory"] = os.environ.get(
+            "KFLOW_PROFILE_HBASE_MERGE_MEMORY", DEFAULT_PROFILE_HBASE_MERGE_MEMORY
+        )
+    return resources
+
+
 def ensure_check_task_registered(
     base_url: str,
     token: str,
@@ -871,6 +975,7 @@ def ensure_check_task_registered(
     repo = str(submitter_fields.get("repo") or "").strip()
     if not repo:
         raise RuntimeError(f"Cannot register {task}: repository is missing.")
+    resources = check_task_resources(check_type, submitter_fields)
     payload = {
         "name": task,
         "description": (
@@ -884,10 +989,11 @@ def ensure_check_task_registered(
         "remote_user": submitter_fields.get("remote_user"),
         "remote_host": submitter_fields.get("remote_host"),
         "remote_base_dir": submitter_fields.get("remote_base_dir"),
+        "slot_requirements": submitter_fields.get("slot_requirements"),
         "docker_image": submitter_fields.get("docker_image"),
-        "cpus": int(submitter_fields.get("cpus") or DEFAULT_CHECK_CPUS),
-        "memory": submitter_fields.get("memory") or DEFAULT_CHECK_MEMORY,
-        "disk": submitter_fields.get("disk") or DEFAULT_CHECK_DISK,
+        "cpus": resources["cpus"],
+        "memory": resources["memory"],
+        "disk": resources["disk"],
         "metadata": {
             "internal_task": True,
             "task_visibility": "internal",
@@ -1131,9 +1237,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-source-path", default=os.environ.get("MODEL_SOURCE_PATH", ""))
     parser.add_argument("--program-path", default=os.environ.get("PROGRAM_PATH", "/home/mfcl/mfclo64"))
     parser.add_argument("--submitter", default=os.environ.get("KFLOW_SUBMITTER", ""))
-    parser.add_argument("--remote-host", default=os.environ.get("KFLOW_REMOTE_HOST", ""))
-    parser.add_argument("--remote-user", default=os.environ.get("KFLOW_REMOTE_USER", ""))
-    parser.add_argument("--remote-base-dir", default=os.environ.get("KFLOW_REMOTE_BASE_DIR", ""))
+    parser.add_argument("--remote-host", default=os.environ.get("KFLOW_REMOTE_HOST", SUVA_HOST))
+    parser.add_argument("--remote-user", default=os.environ.get("KFLOW_REMOTE_USER", SUVA_USER))
+    parser.add_argument("--remote-base-dir", default=os.environ.get("KFLOW_REMOTE_BASE_DIR", SUVA_BASE_DIR))
+    parser.add_argument("--slot-requirements", default=os.environ.get("KFLOW_SLOT_REQUIREMENTS", SUVA_SLOT_REQUIREMENT))
     parser.add_argument("--job-title", default=os.environ.get("JOB_TITLE", ""))
     parser.add_argument("--job-description", default=os.environ.get("JOB_DESCRIPTION", ""))
     parser.add_argument("--parallel-units", default=os.environ.get("KFLOW_PARALLEL_UNITS", "true"))
@@ -1179,7 +1286,10 @@ def main() -> int:
         )
     parallel_units = truthy(args.parallel_units, default=True)
     submit_workers, submit_worker_source = resolve_submit_workers(args.submit_workers)
-    print(f"submission workers: {submit_workers} ({submit_worker_source})")
+    print(
+        f"submission workers: {submit_workers} ({submit_worker_source})",
+        file=sys.stderr,
+    )
     auto_merge = truthy(args.auto_merge, default=True)
     auto_attach = truthy(args.auto_attach, default=True)
     attach_merge_with_latest = truthy(os.environ.get("KFLOW_ATTACH_MERGE_WITH_LATEST", "true"), default=True)
@@ -1244,6 +1354,7 @@ def main() -> int:
             args.remote_user,
             args.submitter or args.remote_host,
         ),
+        "slot_requirements": args.slot_requirements,
     }
     submitter_fields = {key: value for key, value in submitter_fields.items() if str(value or "").strip()}
 
@@ -1502,6 +1613,7 @@ def main() -> int:
                     tags["check_unit"] = check_unit
                 payload: dict[str, Any] = {
                     **submitter_fields,
+                    **check_task_resources(check, submitter_fields),
                     "env": env,
                     "title": title,
                     "description": description,
@@ -1738,6 +1850,7 @@ def main() -> int:
 
         payload = {
             **submitter_fields,
+            **check_task_resources(merge_check, submitter_fields),
             "env": {key: value for key, value in env.items() if value not in (None, "")},
             "title": title,
             "description": description,

@@ -118,7 +118,10 @@ class DiagnosticRunnerControlTests(unittest.TestCase):
         selftest_start = runner.rindex('\n} else if (identical(check_type, "selftest"))')
 
         self.assertIn("par = check_start_par", runner[profile_start:aspm_start])
-        self.assertIn("input_par = check_start_par", runner[aspm_start:selftest_start])
+        self.assertIn(
+            "attempts <- list(run_aspm(check_start_par))",
+            runner[aspm_start:selftest_start],
+        )
 
     def test_profile_full_doitall_is_an_explicit_mfclkit_dispatch(self) -> None:
         runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
@@ -131,6 +134,15 @@ class DiagnosticRunnerControlTests(unittest.TestCase):
         self.assertIn('profile_args$parallel_points <- FALSE', runner)
         self.assertIn("PROFILE_EXECUTION_MODE: continuation", task)
         self.assertIn('PROFILE_DOITALL_PENALTY: "10000000"', task)
+
+    def test_profile_keeps_only_the_restart_par_needed_by_merge_repair(self) -> None:
+        runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
+
+        self.assertIn(
+            'truthy(env("PROFILE_POST_MERGE_REPAIR", "true"), TRUE)',
+            runner,
+        )
+        self.assertIn('"profile.par"', runner)
 
     def test_aspm_defaults_to_the_strict_constant_recruitment_definition(self) -> None:
         runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")

@@ -258,6 +258,16 @@ class IntegerUnitSpecTests(unittest.TestCase):
         self.assertEqual(merge_payload["input_jobs"], unit_refs)
         self.assertEqual(merge_payload["env"]["PROFILE_EXPECTED_VALUES"], expected_values)
         self.assertEqual(merge_payload["env"]["PROFILE_EXECUTION_MODE"], "doitall")
+        self.assertEqual(merge_payload["env"]["PROFILE_POST_MERGE_REPAIR"], "false")
+        self.assertEqual(merge_payload["env"]["PROFILE_JAGGED_TOLERANCE"], "0.1")
+        self.assertEqual(merge_payload["env"]["PROFILE_JAGGED_REPAIR_PASSES"], "2")
+        self.assertEqual(merge_payload["env"]["PROFILE_MAX_JAGGED_REPAIRS"], "0")
+        self.assertEqual(merge_payload["env"]["PROFILE_CONVERGENCE_EXPONENT"], "-3")
+        self.assertEqual(merge_payload["env"]["PROFILE_REPAIR_CPUS"], "2")
+        self.assertEqual(merge_payload["env"]["PROFILE_REPAIR_MEMORY_GB"], "16")
+        self.assertEqual(
+            merge_payload["env"]["PROFILE_REPAIR_MEMORY_PER_WORKER_GB"], "8"
+        )
         self.assertEqual(merge_payload["metadata"]["profile_expected_values"], expected_values)
         self.assertEqual(merge_payload["metadata"]["profile_execution_mode"], "doitall")
         self.assertEqual(merge_payload["metadata"]["profile_parallel_mode"], "scalars")
@@ -296,6 +306,54 @@ class IntegerUnitSpecTests(unittest.TestCase):
         )
         self.assertTrue(all(spec["env"]["PROFILE_CHAIN"] == "true" for spec in specs))
         self.assertTrue(all(spec["env"]["PROFILE_EXECUTION_MODE"] == "continuation" for spec in specs))
+
+    def test_chain_merge_passes_explicit_repair_overrides(self):
+        repair_env = {
+            "PROFILE_PARALLEL_MODE": "chains",
+            "PROFILE_VALUES": "90 100 110",
+            "PROFILE_POST_MERGE_REPAIR": "false",
+            "PROFILE_JAGGED_TOLERANCE": "0.25",
+            "PROFILE_JAGGED_REPAIR_PASSES": "4",
+            "PROFILE_MAX_JAGGED_REPAIRS": "9",
+            "PROFILE_CONVERGENCE_EXPONENT": "-5",
+            "PROFILE_REPAIR_CPUS": "3",
+            "PROFILE_REPAIR_MEMORY_GB": "24",
+            "PROFILE_REPAIR_MEMORY_PER_WORKER_GB": "6",
+        }
+        payloads = run_dry_run(
+            [
+                "submit_kflow_checks.py",
+                "--checks", "profile",
+                "--models", "model",
+                "--input-jobs", "3001",
+                "--parallel-units", "true",
+                "--auto-attach", "false",
+                "--dry-run",
+            ],
+            repair_env,
+        )
+
+        merge_env = payloads[-1]["payload"]["env"]
+        for key, value in repair_env.items():
+            if key != "PROFILE_VALUES":
+                self.assertEqual(merge_env[key], value)
+
+    def test_legacy_hbase_repair_resources_feed_the_generic_contract(self):
+        with mock.patch.dict(os.environ, {
+            "PROFILE_HBASE_REPAIR_PASSES": "5",
+            "PROFILE_HBASE_REPAIR_CPUS": "6",
+            "PROFILE_HBASE_REPAIR_MEMORY_GB": "30",
+            "PROFILE_HBASE_REPAIR_MEMORY_PER_WORKER_GB": "10",
+        }, clear=True):
+            env = submit.resolved_profile_env([90.0, 110.0])
+
+        self.assertEqual(env["PROFILE_JAGGED_REPAIR_PASSES"], "5")
+        self.assertEqual(env["PROFILE_REPAIR_CPUS"], "6")
+        self.assertEqual(env["PROFILE_REPAIR_MEMORY_GB"], "30")
+        self.assertEqual(env["PROFILE_REPAIR_MEMORY_PER_WORKER_GB"], "10")
+        self.assertEqual(env["PROFILE_HBASE_REPAIR_CPUS"], "6")
+        self.assertEqual(env["PROFILE_HBASE_REPAIR_MEMORY_GB"], "30")
+        self.assertEqual(env["PROFILE_HBASE_REPAIR_MEMORY_PER_WORKER_GB"], "10")
 
     def test_full_doitall_rejects_chain_parallelism_with_actionable_error(self):
         with mock.patch.dict(
@@ -603,9 +661,11 @@ class AttachedTaskDefaultsTests(unittest.TestCase):
         self.assertIn("PROFILE_PARALLEL_MODE: chains", task)
         self.assertIn("PROFILE_EXECUTION_MODE: continuation", task)
         self.assertIn('PROFILE_CHAIN: "true"', task)
-        self.assertIn('PROFILE_INVALID_RETRY_PASSES: "3"', task)
-        self.assertIn('PROFILE_JAGGED_REPAIR_PASSES: "2"', task)
-        self.assertIn('PROFILE_MAX_JAGGED_REPAIRS: "6"', task)
+        self.assertIn("PROFILE_PRESET: robust_fast", task)
+        self.assertIn('PROFILE_INVALID_RETRY_PASSES: "1"', task)
+        self.assertIn('PROFILE_RETRY_JAGGED: "false"', task)
+        self.assertIn('PROFILE_JAGGED_REPAIR_PASSES: "0"', task)
+        self.assertIn('PROFILE_MAX_JAGGED_REPAIRS: "0"', task)
 
     def test_total_average_biomass_default_matches_af172_zero(self):
         with mock.patch.dict(os.environ, {}, clear=True):
@@ -613,9 +673,33 @@ class AttachedTaskDefaultsTests(unittest.TestCase):
         self.assertEqual(env["PROFILE_NAME"], "total_average_biomass")
         self.assertEqual(env["PROFILE_AF172"], "0")
         self.assertEqual(env["PROFILE_CONVERGENCE_EXPONENT"], "-3")
-        self.assertEqual(env["PROFILE_INVALID_RETRY_PASSES"], "3")
+        self.assertEqual(env["PROFILE_POST_MERGE_REPAIR"], "false")
+        self.assertEqual(env["PROFILE_REVERSE_ONCE"], "true")
+        self.assertEqual(env["PROFILE_INVALID_RETRY_PASSES"], "1")
         self.assertEqual(env["PROFILE_JAGGED_REPAIR_PASSES"], "2")
-        self.assertEqual(env["PROFILE_MAX_JAGGED_REPAIRS"], "6")
+        self.assertEqual(env["PROFILE_MAX_JAGGED_REPAIRS"], "0")
+        self.assertEqual(env["PROFILE_REPAIR_CPUS"], "2")
+        self.assertEqual(env["PROFILE_REPAIR_MEMORY_GB"], "16")
+        self.assertEqual(env["PROFILE_REPAIR_MEMORY_PER_WORKER_GB"], "8")
+
+    def test_profile_units_defer_shape_repair_to_the_merge(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            env = submit.resolved_profile_unit_env([90.0, 110.0])
+        self.assertEqual(env["PROFILE_RETRY_INVALID"], "true")
+        self.assertEqual(env["PROFILE_INVALID_RETRY_PASSES"], "1")
+        self.assertEqual(env["PROFILE_RETRY_JAGGED"], "false")
+        self.assertEqual(env["PROFILE_JAGGED_REPAIR_PASSES"], "0")
+        self.assertEqual(env["PROFILE_MAX_JAGGED_REPAIRS"], "0")
+
+    def test_profile_tasks_use_stage_specific_resources(self):
+        generic = {"cpus": 9, "memory": "99GB", "disk": "7GB"}
+        with mock.patch.dict(os.environ, {}, clear=True):
+            unit = submit.check_task_resources("profile", generic)
+            merge = submit.check_task_resources("profile-merge", generic)
+            jitter = submit.check_task_resources("jitter", generic)
+        self.assertEqual(unit, {"cpus": 1, "memory": "8GB", "disk": "7GB"})
+        self.assertEqual(merge, {"cpus": 1, "memory": "4GB", "disk": "7GB"})
+        self.assertEqual(jitter, generic)
 
     def test_absolute_profile_targets_keep_the_fitted_quantity_anchor(self):
         with mock.patch.dict(os.environ, {

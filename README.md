@@ -249,8 +249,8 @@ make kflow CHECK_TYPE=model-bundle \
   retained as failed `missing` rows, and the merge is marked `incomplete`.
 - `PROFILE_TYPE`: `quantity` or `fixed_parameter`.
 - `PROFILE_VALUES`: comma/space list of profile values.
-- `PROFILE_PRESET`: quantity-profile continuation preset. `three_stage`
-  (the default task setting) uses penalties `1e5, 1e6, 1e7` and evaluations
+- `PROFILE_PRESET`: quantity-profile continuation preset. `robust_fast` is the
+  default; `three_stage` uses penalties `1e5, 1e6, 1e7` and evaluations
   `50, 50, 2000`; `manual_7stage` follows the MFCL manual; `adaptive` retains
   the distance-scaled BET sensitivity schedule. `PROFILE_STYLE` remains a
   legacy alias (`bet` maps to `adaptive`; older three-stage aliases remain
@@ -281,7 +281,8 @@ make kflow CHECK_TYPE=model-bundle \
   `1e-4`.
 - `PROFILE_CENTER`: profile anchor scalar, default `100`. The center is the
   fitted base model and is not re-run as a profile unit; merge writes it once as
-  the base-anchor point.
+  the base-anchor point. In absolute mode it is the fitted quantity itself,
+  not a percentage multiplier.
 - `PROFILE_INCLUDE_BASE_ANCHOR`: include the fitted base model as the center
   profile point during merge. Default is `true`.
 - `PROFILE_EXPECTED_VALUES`: full expected scalar set passed to the merge job.
@@ -296,6 +297,20 @@ make kflow CHECK_TYPE=model-bundle \
   `PROFILE_RETRY_INVALID`, `PROFILE_RETRY_JAGGED`,
   `PROFILE_CONTINUATION_REPS`, and `PROFILE_JAGGED_TOLERANCE` control the
   selective retry policy.
+- `PROFILE_REVERSE_ONCE`: defaults to `true` for ordinary chain profiles. Each
+  lower or upper branch first completes its `60-140%` grid at 2% intervals,
+  then reruns each jagged point exactly once from the nearest valid outer-side
+  PAR. A valid, target-attained, comparable, strictly lower-NLL result is the
+  only result that can replace the original point. Failure or non-improvement
+  is retained as QC and does not fail the job.
+- `PROFILE_POST_MERGE_REPAIR`: defaults to `false`. Ordinary profile merge only
+  combines the two branches, retains the fitted anchor, builds QC, and
+  publishes outputs; it does not run MFCL.
+- `PROFILE_REPAIR_CPUS`, `PROFILE_REPAIR_MEMORY_GB`, and
+  `PROFILE_REPAIR_MEMORY_PER_WORKER_GB`: merge-repair capacity, defaulting to
+  `2`, `16`, and `8` for the opt-in advanced/h-base repair path. Ordinary
+  profile chains request 1 CPU/8 GB, while the file-only profile merge requests
+  1 CPU/4 GB.
 - `PROFILE_CHAIN`: run profile values sequentially within a job. Scalar jobs
   force this to `false`; chain mode forces it to `true`.
 - `PROFILE_NAME`: profile folder name.

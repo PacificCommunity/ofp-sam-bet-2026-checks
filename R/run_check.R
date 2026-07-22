@@ -1354,7 +1354,12 @@ compact_check_outputs <- function() {
       keep_names = c(
         "profile_payload.rds", "profile_point_info.rds", "info.rds",
         "test_plot_output", "hessian_info.rds",
-        if (isTRUE(profile_hbase_enabled)) "profile.par" else character()
+        if (isTRUE(profile_hbase_enabled) ||
+            truthy(env("PROFILE_POST_MERGE_REPAIR", "true"), TRUE)) {
+          "profile.par"
+        } else {
+          character()
+        }
       ),
       keep_patterns = c(log_patterns, "(^|/)neigenvalues$"),
       recursive = TRUE
@@ -2237,6 +2242,59 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
       }
     }
     result <- do.call(profile_runner, profile_args)
+    if (truthy(env("MFK_PROFILE_REVERSE_ONCE", env("PROFILE_REVERSE_ONCE", "false")), FALSE)) {
+      reverse_limit <- length(unique(profile_values[is.finite(profile_values)]))
+      closure_result <- tryCatch({
+        if (!"mfk_close_quantity_profile" %in% getNamespaceExports("mfclkit")) {
+          stop("Installed mfclkit does not export mfk_close_quantity_profile().")
+        }
+        mfclkit::mfk_close_quantity_profile(
+          backend = backend,
+          input_dir = prepared$case_dir,
+          model_dir = model_dir,
+          profile = profile,
+          par = check_start_par,
+          frq = prepared$frq,
+          preset = profile_preset,
+          center = profile_center,
+          penalties = profile_penalties_arg,
+          reps = profile_reps_arg,
+          search_threshold = 10^profile_convergence_exponent,
+          target_rel_tolerance = profile_target_tolerance,
+          continuation_reps = profile_continuation_reps,
+          jagged_tolerance = profile_jagged_tolerance,
+          repair_passes = 1L,
+          max_runs = reverse_limit,
+          max_scalars = reverse_limit,
+          final_polish = FALSE,
+          parallel = FALSE,
+          cpus = 1L,
+          cpus_per_worker = 1L,
+          memory_gb = 8,
+          memory_gb_per_worker = 8,
+          run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE),
+          value_mode = profile_value_mode,
+          fitted_center = profile_center,
+          strategy = "reverse_once"
+        )
+      }, error = function(e) {
+        warning(
+          "Reverse-once profile repair was skipped: ", conditionMessage(e),
+          call. = FALSE
+        )
+        list(
+          status = "repair_error",
+          complete = FALSE,
+          failure_reason = conditionMessage(e),
+          strategy = "reverse_once"
+        )
+      })
+      saveRDS(
+        closure_result,
+        file.path(model_dir, "profile-reverse-once.rds"),
+        compress = "xz"
+      )
+    }
   } else if (identical(profile_type, "fixed_parameter")) {
     parameter <- env("PROFILE_PARAMETER", "")
     apply_script <- env("PROFILE_APPLY_SCRIPT", "")
