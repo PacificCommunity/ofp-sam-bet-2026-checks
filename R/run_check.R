@@ -1809,6 +1809,59 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
   saveRDS(result, file.path(model_dir, "hessian_runs.rds"), compress = "xz")
 
 } else if (identical(check_type, "profile")) {
+  freeze_dm_weights <- truthy(env(
+    "MFK_PROFILE_FREEZE_DM_WEIGHTS",
+    env("PROFILE_FREEZE_DM_WEIGHTS", "false")
+  ), FALSE)
+  if (isTRUE(freeze_dm_weights)) {
+    if (!"mfk_freeze_dm_weights" %in% getNamespaceExports("mfclkit")) {
+      stop(
+        "PROFILE_FREEZE_DM_WEIGHTS requires mfclkit::mfk_freeze_dm_weights().",
+        call. = FALSE
+      )
+    }
+    frozen_start_par <- file.path(
+      dirname(check_start_par), "profile-fixed-dm-weights.par"
+    )
+    frozen_par <- mfclkit::mfk_freeze_dm_weights(
+      check_start_par,
+      output = frozen_start_par,
+      strict = truthy(env("PROFILE_FREEZE_DM_WEIGHTS_STRICT", "true"), TRUE)
+    )
+    freeze_audit <- attr(frozen_par, "mfk_dm_weight_freeze")
+    saveRDS(
+      freeze_audit,
+      file.path(model_dir, "profile_dm_weight_freeze_audit.rds"),
+      compress = "xz"
+    )
+    write.csv(
+      data.frame(
+        setting = c(
+          "dm_likelihood_flag_141", "nmax_flag_342", "fishery_count",
+          "frozen_flag_rows", "active_values_before", "active_values_after",
+          "preserved"
+        ),
+        value = c(
+          freeze_audit$dm_likelihood_flag_141,
+          freeze_audit$nmax_flag_342,
+          freeze_audit$fishery_count,
+          freeze_audit$frozen_flag_rows,
+          paste(freeze_audit$active_values_before, collapse = " "),
+          paste(freeze_audit$active_values_after, collapse = " "),
+          freeze_audit$preserved
+        ),
+        stringsAsFactors = FALSE
+      ),
+      file.path(model_dir, "profile_dm_weight_freeze_audit.csv"),
+      row.names = FALSE
+    )
+    check_start_par <- frozen_start_par
+    start_par_name <- basename(check_start_par)
+    message(
+      "[checks] fixed fitted DM weights for profile start: ",
+      start_par_name
+    )
+  }
   profile_type <- tolower(trimws(env("PROFILE_TYPE", env("MFK_PROFILE_TYPE", "quantity"))))
   profile_name <- env(
     "PROFILE_NAME",
