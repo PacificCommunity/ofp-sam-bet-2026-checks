@@ -1292,15 +1292,52 @@ git_clone_repo <- function(repo, ref, dest) {
 
 resolve_source_case <- function(row, source_root) {
   override <- env("MODEL_SOURCE_PATH", "")
-  source_path <- override %||% as.character(row$model_source %||% "")
+  source_paths <- unique(c(
+    override,
+    as.character(row$model_source %||% "")
+  ))
+  source_paths <- source_paths[nzchar(source_paths)]
   step_id <- as.character(row$step_id %||% "")
+  selector <- env("MODEL_SELECTOR", "")
+  model_keys <- unique(c(
+    selector,
+    as.character(row$model_key %||% ""),
+    step_id
+  ))
+  model_keys <- model_keys[nzchar(model_keys)]
+
+  base_candidates <- vapply(source_paths, function(source_path) {
+    if (is_absolute_path(source_path)) source_path else file.path(source_root, source_path)
+  }, character(1L), USE.NAMES = FALSE)
   candidates <- character()
-  if (nzchar(source_path)) {
-    candidates <- c(candidates, if (is_absolute_path(source_path)) source_path else file.path(source_root, source_path))
+  for (base in base_candidates) {
+    candidates <- c(candidates, base, file.path(base, "model"))
+    for (model_key in model_keys) {
+      candidates <- c(
+        candidates,
+        file.path(base, model_key, "model"),
+        file.path(base, model_key)
+      )
+    }
   }
-  if (nzchar(step_id)) candidates <- c(candidates, file.path(source_root, "steps", step_id, "model"))
+  for (model_key in model_keys) {
+    candidates <- c(
+      candidates,
+      file.path(source_root, model_key, "model"),
+      file.path(source_root, model_key)
+    )
+  }
+  if (nzchar(step_id)) {
+    candidates <- c(candidates, file.path(source_root, "steps", step_id, "model"))
+  }
   candidates <- unique(normalize_loose(candidates))
-  hits <- candidates[dir.exists(candidates)]
+  is_model_case <- vapply(candidates, function(candidate) {
+    dir.exists(candidate) && length(list.files(
+      candidate, pattern = "[.]frq$", full.names = TRUE,
+      recursive = FALSE, ignore.case = TRUE
+    )) > 0L
+  }, logical(1L))
+  hits <- candidates[is_model_case]
   if (!length(hits)) {
     stop("Could not resolve source case for selected model. Tried: ", paste(candidates, collapse = ", "), call. = FALSE)
   }
