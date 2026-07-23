@@ -42,6 +42,87 @@ def run_dry_run(argv: list[str], env: dict[str, str] | None = None) -> list[dict
     return decode_dry_run_payloads(output.getvalue())
 
 
+class ModelSelectorResolutionTests(unittest.TestCase):
+    def test_single_model_parent_resolves_all_to_exact_output_key(self):
+        parent = {
+            "metadata": {
+                "model_selector": "all",
+                "model_key": "06-AddLengthData",
+            }
+        }
+        with mock.patch.object(submit, "api_job", return_value=parent):
+            models = submit.resolve_input_models(
+                "https://kflow.test",
+                "token",
+                "3001",
+                ["all"],
+            )
+
+        self.assertEqual(models, ["06-AddLengthData"])
+
+    def test_multi_model_parent_preserves_all_selector_behavior(self):
+        parent = {
+            "metadata": {
+                "model_selector": "all",
+                "model_keys": ["05-Base", "06-AddLengthData"],
+            }
+        }
+        with mock.patch.object(submit, "api_job", return_value=parent):
+            models = submit.resolve_input_models(
+                "https://kflow.test",
+                "token",
+                "3001",
+                ["all"],
+            )
+
+        self.assertEqual(models, ["all"])
+
+    def test_single_model_hessian_and_profile_payloads_use_canonical_identity(self):
+        parent = {
+            "metadata": {
+                "model_selector": "all",
+                "model_keys": ["06-AddLengthData"],
+            }
+        }
+        for check in ("hessian", "profile"):
+            with self.subTest(check=check), mock.patch.object(
+                submit,
+                "api_job",
+                return_value=parent,
+            ):
+                payloads = run_dry_run(
+                    [
+                        "submit_kflow_checks.py",
+                        "--checks", check,
+                        "--models", "all",
+                        "--input-jobs", "3001",
+                        "--parallel-units", "false",
+                        "--dry-run",
+                    ],
+                    {"KFLOW_API_TOKEN": "token"},
+                )
+
+            for item in payloads:
+                payload = item["payload"]
+                self.assertEqual(payload["env"]["MODEL_SELECTOR"], "06-AddLengthData")
+                self.assertEqual(payload["metadata"]["model_selector"], "06-AddLengthData")
+                self.assertEqual(payload["tags"]["model"], "06-AddLengthData")
+
+            merge = payloads[-1]["payload"]
+            self.assertEqual(
+                merge["metadata"]["attached_work_group"],
+                "bet-2026-checks:06-AddLengthData:diagnostics",
+            )
+            self.assertEqual(
+                merge["metadata"]["attached_work_slot"],
+                f"diagnostics:06-AddLengthData:{check}",
+            )
+            self.assertNotIn(
+                ":all:",
+                merge["metadata"]["attached_work_group"],
+            )
+
+
 class IntegerUnitSpecTests(unittest.TestCase):
     CASES = (
         ("jitter", "JITTER_SEEDS", "JITTER_SEED", "seed"),

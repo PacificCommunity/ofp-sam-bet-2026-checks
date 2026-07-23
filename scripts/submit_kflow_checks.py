@@ -62,6 +62,7 @@ SUVA_BASE_DIR = "/home/kyuhank/KflowOutput"
 SUVA_SLOT_REQUIREMENT = 'regexp("^suvofp", Machine)'
 MAX_R_INTEGER = 2_147_483_647
 HBASE_PROFILE_MODES = {"h-base", "h_base", "hbase", "hessian-base", "hessian_base"}
+MODEL_SELECTOR_WILDCARDS = {"all", "*"}
 DIAGNOSTIC_OVERLAY_REPLACE_NAMES = [
     "jitter",
     "retro",
@@ -1162,6 +1163,19 @@ def resolve_input_models(
     canonical = job_model_selectors(api_job(base_url, token, base_input_job))
     if not canonical:
         return requested
+
+    # A single-output parent can advertise both the selector used to launch it
+    # (usually "all") and the concrete key it actually published. Do not count
+    # that wildcard as a second model: dependent diagnostics need the exact
+    # published key for artifact selection and attached-work slot identity.
+    concrete = [
+        value
+        for value in canonical
+        if value.casefold() not in MODEL_SELECTOR_WILDCARDS
+    ]
+    if len(concrete) == 1:
+        canonical = concrete
+
     if not requested:
         return canonical
 
