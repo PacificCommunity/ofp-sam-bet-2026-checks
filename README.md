@@ -325,6 +325,10 @@ make kflow CHECK_TYPE=model-bundle \
   project-specific R script that edits copied MFCL inputs for each profile point.
 - `SELFTEST_RUNNER`: optional override for native MFCL self-test. If unset,
   checks use the native self-test runner bundled with `mfclkit`.
+- `SELFTEST_PROGRAM_PATH`: MFCL executable used for pseudo-data generation and
+  refits. The default is `/home/mfcl/mfclo64` from the pinned Kflow image, which
+  includes the current strict-tag and DM-report fixes. Set an alternate path
+  only for a deliberately versioned sensitivity run.
 - `SELFTEST_RUN_REFIT`: run self-test refits and write
   `selftest/refit/rep_*` outputs for mfclshiny. Default is `true`.
 - `SELFTEST_SOURCE_MODE`: source pseudo-data from the fitted best estimate.
