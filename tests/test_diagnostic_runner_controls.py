@@ -118,10 +118,10 @@ class DiagnosticRunnerControlTests(unittest.TestCase):
         selftest_start = runner.rindex('\n} else if (identical(check_type, "selftest"))')
 
         self.assertIn("par = check_start_par", runner[profile_start:aspm_start])
-        self.assertIn(
-            "attempts <- list(run_aspm(check_start_par))",
-            runner[aspm_start:selftest_start],
-        )
+        aspm_code = runner[aspm_start:selftest_start]
+        self.assertIn("attempts <- list(run_aspm(", aspm_code)
+        self.assertIn("check_start_par,", aspm_code)
+        self.assertIn("recruitment_mode = recruitment_mode", aspm_code)
 
     def test_profile_full_doitall_is_an_explicit_mfclkit_dispatch(self) -> None:
         runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
@@ -154,6 +154,17 @@ class DiagnosticRunnerControlTests(unittest.TestCase):
         self.assertIn("diagnostic_definition = diagnostic_definition", runner)
         self.assertIn("ASPM_RECRUITMENT_MODE: constant", task)
         self.assertIn("ASPM_DIAGNOSTIC_DEFINITION: strict", task)
+
+    def test_aspmrec_estimates_recruitment_as_an_explicit_variant(self) -> None:
+        runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+        self.assertIn(
+            'valid_recruitment_modes <- c("constant", "fitted", "estimated")',
+            runner,
+        )
+        self.assertIn("constant estimated", readme)
+        self.assertIn("ASPMrec", readme)
 
     def test_hessian_units_preserve_regional_scaling_for_later_stitching(self) -> None:
         runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")

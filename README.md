@@ -347,7 +347,8 @@ make kflow CHECK_TYPE=model-bundle \
 - `ASPM_FIX_SELECTIVITY`: fix selectivity to the fitted values before excluding
   composition data. Default is `true`.
 - `ASPM_RECRUITMENT_MODES`: one or more sequential variants. For example,
-  `constant fitted` runs strict ASPM followed by ASPMfix in the same job.
+  `constant estimated` runs strict ASPM followed by ASPMrec, which estimates
+  recruitment deviations, in the same job.
 - `ASPM_MIN_LF_SAMPLE_SIZE` and `ASPM_MIN_WF_SAMPLE_SIZE`: high minimum sample
   size controls used to exclude LF/WF composition influence. Defaults are
   `1000000`.
