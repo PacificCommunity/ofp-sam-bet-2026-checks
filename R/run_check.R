@@ -1291,29 +1291,70 @@ ensure_profile_payloads <- function() {
 }
 
 enrich_aspm_payload <- function() {
-  aspm_dir <- file.path(model_dir, "aspm")
-  if (!dir.exists(aspm_dir)) return(invisible(data.frame()))
+  aspm_root <- file.path(model_dir, "aspm")
+  if (!dir.exists(aspm_root)) return(invisible(data.frame()))
   if (!requireNamespace("mfclshiny", quietly = TRUE)) {
     stop("mfclshiny is required to build compact ASPM payloads.", call. = FALSE)
   }
 
   tool_env <- mfclshiny_payload_tool_env("ASPM")
-  payload <- tool_env$mp_build_model_payload(aspm_dir)
-  payload_file <- file.path(aspm_dir, "model_payload.rds")
-  saveRDS(payload, payload_file, compress = "xz")
-  if ("write_model_payload_manifest" %in% getNamespaceExports("mfclshiny")) {
-    mfclshiny::write_model_payload_manifest(payload = payload, folder = aspm_dir, payload_file = payload_file)
-  }
-
-  out <- data.frame(
-    check_type = check_type,
-    model_key = model_key,
-    payload_role = "aspm_model_payload",
-    folder = normalize_loose(aspm_dir),
-    payload = normalize_loose(payload_file),
-    bytes = suppressWarnings(as.numeric(file.info(payload_file)$size)),
-    stringsAsFactors = FALSE
-  )
+  info_files <- unique(c(
+    file.path(aspm_root, "aspm_info.rds"),
+    list.files(
+      aspm_root,
+      pattern = "^aspm_info[.]rds$",
+      recursive = TRUE,
+      full.names = TRUE
+    )
+  ))
+  aspm_dirs <- unique(dirname(info_files[file.exists(info_files)]))
+  if (!length(aspm_dirs)) return(invisible(data.frame()))
+  rows <- lapply(aspm_dirs, function(aspm_dir) {
+    aspm_info <- tryCatch(
+      readRDS(file.path(aspm_dir, "aspm_info.rds")),
+      error = function(e) NULL
+    )
+    output_par <- as.character(aspm_info$output_par %||% "")
+    if (length(output_par) && !is.na(output_par[[1L]]) &&
+        nzchar(output_par[[1L]]) &&
+        file.exists(file.path(aspm_dir, output_par[[1L]]))) {
+      saveRDS(
+        list(
+          diagnostic = "aspm",
+          definition = as.character(aspm_info$definition %||% ""),
+          recruitment_mode = as.character(aspm_info$recruitment_mode %||% ""),
+          par_out = output_par[[1L]],
+          rep_out = as.character(aspm_info$output_rep %||% "")
+        ),
+        file.path(aspm_dir, "model_info.rds"),
+        compress = "xz"
+      )
+    }
+    payload <- tool_env$mp_build_model_payload(aspm_dir)
+    payload_file <- file.path(aspm_dir, "model_payload.rds")
+    saveRDS(payload, payload_file, compress = "xz")
+    if ("write_model_payload_manifest" %in% getNamespaceExports("mfclshiny")) {
+      mfclshiny::write_model_payload_manifest(
+        payload = payload,
+        folder = aspm_dir,
+        payload_file = payload_file
+      )
+    }
+    data.frame(
+      check_type = check_type,
+      model_key = model_key,
+      variant = if (identical(
+        normalize_loose(aspm_dir),
+        normalize_loose(aspm_root)
+      )) "aspm" else basename(aspm_dir),
+      payload_role = "aspm_model_payload",
+      folder = normalize_loose(aspm_dir),
+      payload = normalize_loose(payload_file),
+      bytes = suppressWarnings(as.numeric(file.info(payload_file)$size)),
+      stringsAsFactors = FALSE
+    )
+  })
+  out <- bind_rows_fill(rows)
   write.csv(out, file.path(model_dir, "aspm-payload-index.csv"), row.names = FALSE)
   invisible(out)
 }
@@ -1371,6 +1412,7 @@ compact_check_outputs <- function() {
         "model_payload.rds",
         "model_payload_manifest.json",
         "model_payload_manifest.csv",
+        "model_info.rds",
         "aspm_info.rds",
         "aspm-index.csv",
         "aspm_control.txt",
@@ -2357,10 +2399,28 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
   lf_flag_311 <- as.integer(split_numbers(env("ASPM_LF_FLAG_311", "11"), default = 11)[[1L]])
   wf_flag_301 <- as.integer(split_numbers(env("ASPM_WF_FLAG_301", "1"), default = 1)[[1L]])
   fix_selectivity <- truthy(env("ASPM_FIX_SELECTIVITY", "true"), TRUE)
-  recruitment_mode <- tolower(env("ASPM_RECRUITMENT_MODE", "constant"))
-  diagnostic_definition <- tolower(env("ASPM_DIAGNOSTIC_DEFINITION", "strict"))
+  recruitment_modes <- unique(tolower(split_values(env(
+    "ASPM_RECRUITMENT_MODES",
+    env("ASPM_RECRUITMENT_MODE", "constant")
+  ))))
+  valid_recruitment_modes <- c("constant", "fitted", "estimated")
+  invalid_recruitment_modes <- setdiff(recruitment_modes, valid_recruitment_modes)
+  if (!length(recruitment_modes) || length(invalid_recruitment_modes)) {
+    stop(
+      "ASPM_RECRUITMENT_MODES must contain one or more of: ",
+      paste(valid_recruitment_modes, collapse = ", "),
+      if (length(invalid_recruitment_modes)) {
+        paste0(". Invalid: ", paste(invalid_recruitment_modes, collapse = ", "))
+      } else {
+        ""
+      },
+      call. = FALSE
+    )
+  }
+  constant_definition <- tolower(env("ASPM_DIAGNOSTIC_DEFINITION", "strict"))
   output_par <- env("ASPM_OUTPUT_PAR", "aspm.par")
-  aspm_dir <- file.path(model_dir, "aspm")
+  aspm_root <- file.path(model_dir, "aspm")
+  multiple_variants <- length(recruitment_modes) > 1L
   write_run_manifest(list(
     aspm_max_evals = max_evals,
     aspm_restart_passes = restart_passes,
@@ -2370,6 +2430,7 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
     aspm_wf_flag_301 = wf_flag_301,
     aspm_fix_selectivity = fix_selectivity,
     aspm_output_par = output_par,
+    aspm_recruitment_modes = paste(recruitment_modes, collapse = " "),
     aspm_population_scale_start = population_scale_start %||% NA_real_
   ))
   restart_output_par <- function(pass) {
@@ -2385,6 +2446,9 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
   }
 
   run_aspm <- function(input_par,
+                       aspm_dir,
+                       recruitment_mode,
+                       diagnostic_definition,
                        output_par_name = output_par,
                        copy_case = TRUE,
                        population_scale_start_value = population_scale_start) mfk_run_aspm(
@@ -2408,56 +2472,101 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
     run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
   )
 
-  attempts <- list(run_aspm(check_start_par))
-  attempts[[1L]]$restart_pass <- 0L
-  result <- attempts[[1L]]
-  if (restart_passes > 0L) {
-    for (pass in seq_len(restart_passes)) {
-      if (isTRUE(result$converged)) break
-      restart_par <- file.path(aspm_dir, as.character(result$output_par %||% output_par))
-      if (!file.exists(restart_par)) {
-        message("[checks] ASPM restart skipped because output PAR is missing: ", restart_par)
-        break
-      }
-      message("[checks] ASPM restart pass ", pass, "/", restart_passes,
-              " from ", basename(restart_par))
-      result <- run_aspm(
-        normalizePath(restart_par, winslash = "/", mustWork = TRUE),
-        output_par_name = restart_output_par(pass),
-        copy_case = FALSE,
-        population_scale_start_value = NULL
-      )
-      result$restart_pass <- as.integer(pass)
-      attempts[[length(attempts) + 1L]] <- result
+  all_attempts <- list()
+  final_results <- list()
+  attempt_tables <- list()
+  for (recruitment_mode in recruitment_modes) {
+    diagnostic_definition <- if (identical(recruitment_mode, "constant")) {
+      constant_definition
+    } else {
+      "nonstandard"
     }
-  }
-
-  attempt_rows <- bind_rows_fill(lapply(seq_along(attempts), function(i) {
-    one <- attempts[[i]]
-    data.frame(
-      attempt = as.integer(i),
-      restart_pass = as.integer(one$restart_pass %||% (i - 1L)),
-      run_status = as.character(one$run_status %||% ""),
-      run_completed = isTRUE(one$run_completed),
-      convergence_status = as.character(one$convergence_status %||% ""),
-      converged = isTRUE(one$converged),
-      obj_fun = suppressWarnings(as.numeric(one$obj_fun %||% NA_real_)),
-      max_grad = suppressWarnings(as.numeric(one$max_grad %||% NA_real_)),
-      population_scale_start_original = suppressWarnings(as.numeric(
-        one$population_scale_start_original %||% NA_real_
-      )),
-      population_scale_start_applied = suppressWarnings(as.numeric(
-        one$population_scale_start_applied %||% NA_real_
-      )),
-      input_par = as.character(one$input_par %||% ""),
-      output_par = as.character(one$output_par %||% ""),
-      failure_reason = as.character(one$failure_reason %||% ""),
-      stringsAsFactors = FALSE
+    aspm_dir <- if (multiple_variants) {
+      file.path(aspm_root, recruitment_mode)
+    } else {
+      aspm_root
+    }
+    initial_population_scale_start <- if (identical(recruitment_mode, "constant")) {
+      population_scale_start
+    } else {
+      NULL
+    }
+    message(
+      "[checks] ASPM variant ", recruitment_mode,
+      " (", diagnostic_definition, ")"
     )
-  }))
-  write.csv(attempt_rows, file.path(model_dir, "aspm-attempts.csv"), row.names = FALSE)
-  saveRDS(attempts, file.path(model_dir, "aspm_attempts.rds"), compress = "xz")
-  saveRDS(result, file.path(model_dir, "aspm_runs.rds"), compress = "xz")
+    attempts <- list(run_aspm(
+      check_start_par,
+      aspm_dir = aspm_dir,
+      recruitment_mode = recruitment_mode,
+      diagnostic_definition = diagnostic_definition,
+      population_scale_start_value = initial_population_scale_start
+    ))
+    attempts[[1L]]$restart_pass <- 0L
+    result <- attempts[[1L]]
+    if (restart_passes > 0L) {
+      for (pass in seq_len(restart_passes)) {
+        if (isTRUE(result$converged)) break
+        restart_par <- file.path(aspm_dir, as.character(result$output_par %||% output_par))
+        if (!file.exists(restart_par)) {
+          message("[checks] ASPM restart skipped because output PAR is missing: ", restart_par)
+          break
+        }
+        message("[checks] ASPM restart pass ", pass, "/", restart_passes,
+                " from ", basename(restart_par))
+        result <- run_aspm(
+          normalizePath(restart_par, winslash = "/", mustWork = TRUE),
+          aspm_dir = aspm_dir,
+          recruitment_mode = recruitment_mode,
+          diagnostic_definition = diagnostic_definition,
+          output_par_name = restart_output_par(pass),
+          copy_case = FALSE,
+          population_scale_start_value = NULL
+        )
+        result$restart_pass <- as.integer(pass)
+        attempts[[length(attempts) + 1L]] <- result
+      }
+    }
+
+    attempt_rows <- bind_rows_fill(lapply(seq_along(attempts), function(i) {
+      one <- attempts[[i]]
+      data.frame(
+        variant = recruitment_mode,
+        definition = diagnostic_definition,
+        attempt = as.integer(i),
+        restart_pass = as.integer(one$restart_pass %||% (i - 1L)),
+        run_status = as.character(one$run_status %||% ""),
+        run_completed = isTRUE(one$run_completed),
+        convergence_status = as.character(one$convergence_status %||% ""),
+        converged = isTRUE(one$converged),
+        obj_fun = suppressWarnings(as.numeric(one$obj_fun %||% NA_real_)),
+        max_grad = suppressWarnings(as.numeric(one$max_grad %||% NA_real_)),
+        population_scale_start_original = suppressWarnings(as.numeric(
+          one$population_scale_start_original %||% NA_real_
+        )),
+        population_scale_start_applied = suppressWarnings(as.numeric(
+          one$population_scale_start_applied %||% NA_real_
+        )),
+        input_par = as.character(one$input_par %||% ""),
+        output_par = as.character(one$output_par %||% ""),
+        failure_reason = as.character(one$failure_reason %||% ""),
+        stringsAsFactors = FALSE
+      )
+    }))
+    write.csv(attempt_rows, file.path(aspm_dir, "aspm-attempts.csv"), row.names = FALSE)
+    saveRDS(attempts, file.path(aspm_dir, "aspm_attempts.rds"), compress = "xz")
+    saveRDS(result, file.path(aspm_dir, "aspm_runs.rds"), compress = "xz")
+    all_attempts[[recruitment_mode]] <- attempts
+    final_results[[recruitment_mode]] <- result
+    attempt_tables[[recruitment_mode]] <- attempt_rows
+  }
+  write.csv(
+    bind_rows_fill(attempt_tables),
+    file.path(model_dir, "aspm-attempts.csv"),
+    row.names = FALSE
+  )
+  saveRDS(all_attempts, file.path(model_dir, "aspm_attempts.rds"), compress = "xz")
+  saveRDS(final_results, file.path(model_dir, "aspm_runs.rds"), compress = "xz")
   try(write.csv(mfk_collect_aspm(model_dir), file.path(model_dir, "aspm-index.csv"), row.names = FALSE), silent = TRUE)
 
 } else if (identical(check_type, "selftest")) {
