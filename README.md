@@ -352,6 +352,8 @@ make kflow CHECK_TYPE=model-bundle \
 - `ASPM_EXTRA_SWITCH_LINES`: optional newline- or semicolon-separated MFCL
   control lines appended to the ASPM run. Use only for deliberate model-specific
   diagnostics.
+- `ASPM_POPULATION_SCALE_START`: optional population-scale optimization start.
+  This changes only the ASPM starting value and is recorded in run metadata.
 - `CHECK_COMPACT_OUTPUTS`: keep check archives payload-first by removing raw
   MFCL case copies and intermediate files after the diagnostic payloads and logs
   have been written. Default is `true`.

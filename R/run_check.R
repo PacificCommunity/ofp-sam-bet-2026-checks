@@ -2339,6 +2339,19 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
   if (!is.finite(restart_passes) || restart_passes < 0L) {
     stop("ASPM_RESTART_PASSES must be a non-negative integer.", call. = FALSE)
   }
+  population_scale_start_raw <- trimws(env("ASPM_POPULATION_SCALE_START", ""))
+  population_scale_start <- if (nzchar(population_scale_start_raw)) {
+    value <- split_numbers(population_scale_start_raw, default = NA_real_)
+    if (length(value) != 1L || !is.finite(value[[1L]])) {
+      stop(
+        "ASPM_POPULATION_SCALE_START must be one finite numeric value.",
+        call. = FALSE
+      )
+    }
+    as.numeric(value[[1L]])
+  } else {
+    NULL
+  }
   min_lf_sample_size <- split_numbers(env("ASPM_MIN_LF_SAMPLE_SIZE", "1000000"), default = 1000000)[[1L]]
   min_wf_sample_size <- split_numbers(env("ASPM_MIN_WF_SAMPLE_SIZE", "1000000"), default = 1000000)[[1L]]
   lf_flag_311 <- as.integer(split_numbers(env("ASPM_LF_FLAG_311", "11"), default = 11)[[1L]])
@@ -2356,7 +2369,8 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
     aspm_lf_flag_311 = lf_flag_311,
     aspm_wf_flag_301 = wf_flag_301,
     aspm_fix_selectivity = fix_selectivity,
-    aspm_output_par = output_par
+    aspm_output_par = output_par,
+    aspm_population_scale_start = population_scale_start %||% NA_real_
   ))
   restart_output_par <- function(pass) {
     name <- basename(output_par)
@@ -2370,7 +2384,10 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
     sprintf("%s-restart-%d%s", stem, pass, extension)
   }
 
-  run_aspm <- function(input_par, output_par_name = output_par, copy_case = TRUE) mfk_run_aspm(
+  run_aspm <- function(input_par,
+                       output_par_name = output_par,
+                       copy_case = TRUE,
+                       population_scale_start_value = population_scale_start) mfk_run_aspm(
     backend,
     input_dir = prepared$case_dir,
     output_dir = aspm_dir,
@@ -2386,6 +2403,7 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
     extra_switch_lines = aspm_extra_switch_lines(),
     recruitment_mode = recruitment_mode,
     diagnostic_definition = diagnostic_definition,
+    population_scale_start = population_scale_start_value,
     copy_case = copy_case,
     run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
   )
@@ -2406,7 +2424,8 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
       result <- run_aspm(
         normalizePath(restart_par, winslash = "/", mustWork = TRUE),
         output_par_name = restart_output_par(pass),
-        copy_case = FALSE
+        copy_case = FALSE,
+        population_scale_start_value = NULL
       )
       result$restart_pass <- as.integer(pass)
       attempts[[length(attempts) + 1L]] <- result
@@ -2424,6 +2443,12 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
       converged = isTRUE(one$converged),
       obj_fun = suppressWarnings(as.numeric(one$obj_fun %||% NA_real_)),
       max_grad = suppressWarnings(as.numeric(one$max_grad %||% NA_real_)),
+      population_scale_start_original = suppressWarnings(as.numeric(
+        one$population_scale_start_original %||% NA_real_
+      )),
+      population_scale_start_applied = suppressWarnings(as.numeric(
+        one$population_scale_start_applied %||% NA_real_
+      )),
       input_par = as.character(one$input_par %||% ""),
       output_par = as.character(one$output_par %||% ""),
       failure_reason = as.character(one$failure_reason %||% ""),
