@@ -6,6 +6,19 @@ local_apps:
     memory: 8g
     archive_sources:
       - outputs
+    package_sources:
+      - name: FLR4MFCL
+        type: github
+        repo: PacificCommunity/ofp-sam-flr4mfcl
+        ref: 3faaf84a4867175bfea50d89e4d518c085e84739
+      - name: mfclkit
+        type: github
+        repo: PacificCommunity/ofp-sam-mfclkit
+        ref: ec40db67bce2463aa6de2a56a8d7c5d5a5981910
+      - name: mfclshiny
+        type: github
+        repo: PacificCommunity/mfclshiny
+        ref: 2a4781bf03b7cfc52acd7bb23c3a6ae53af22a15
     container_port: 3838
     env:
       OMP_NUM_THREADS: "1"
@@ -14,9 +27,7 @@ local_apps:
       VECLIB_MAXIMUM_THREADS: "1"
       NUMEXPR_NUM_THREADS: "1"
       R_REMOTES_NO_ERRORS_FROM_WARNINGS: "true"
-      KFLOW_LOCAL_APP_PACKAGE_UPDATE: "auto"
-      MFCLSHINY_GITHUB_REF: db11d83fa3854c571a634aa289c56ac8981d2e53
-      MFCLKIT_GITHUB_REF: a0fe04baa9c119353123367e5a652bb73d909b84
+      KFLOW_LOCAL_APP_PACKAGE_UPDATE: "never"
       MFCLSHINY_AUTO_LOAD: "true"
       MFCLSHINY_INITIAL_RENDER: "false"
       MFCLSHINY_LIVE_UPDATE: "false"
@@ -134,8 +145,21 @@ local_apps:
         invisible(TRUE)
       }
 
-      install_github_package("mfclkit", "PacificCommunity/ofp-sam-mfclkit", Sys.getenv("MFCLKIT_GITHUB_REF", "main"))
-      install_github_package("mfclshiny", "PacificCommunity/mfclshiny", Sys.getenv("MFCLSHINY_GITHUB_REF", "main"))
+      install_github_package(
+        "FLR4MFCL",
+        "PacificCommunity/ofp-sam-flr4mfcl",
+        "3faaf84a4867175bfea50d89e4d518c085e84739"
+      )
+      install_github_package(
+        "mfclkit",
+        "PacificCommunity/ofp-sam-mfclkit",
+        "ec40db67bce2463aa6de2a56a8d7c5d5a5981910"
+      )
+      install_github_package(
+        "mfclshiny",
+        "PacificCommunity/mfclshiny",
+        "2a4781bf03b7cfc52acd7bb23c3a6ae53af22a15"
+      )
       library(mfclshiny)
 
       normalize_loose <- function(path) normalizePath(path, winslash = "/", mustWork = FALSE)
