@@ -14,7 +14,7 @@ local_apps:
       - name: mfclkit
         type: github
         repo: PacificCommunity/ofp-sam-mfclkit
-        ref: ec40db67bce2463aa6de2a56a8d7c5d5a5981910
+        ref: 9b949db539619be52a63b321bd138c937f868199
       - name: mfclshiny
         type: github
         repo: PacificCommunity/mfclshiny
@@ -153,7 +153,7 @@ local_apps:
       install_github_package(
         "mfclkit",
         "PacificCommunity/ofp-sam-mfclkit",
-        "ec40db67bce2463aa6de2a56a8d7c5d5a5981910"
+        "9b949db539619be52a63b321bd138c937f868199"
       )
       install_github_package(
         "mfclshiny",

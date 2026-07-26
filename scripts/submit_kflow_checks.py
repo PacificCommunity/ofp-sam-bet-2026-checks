@@ -36,7 +36,7 @@ CHECK_ALIASES = {
 DEFAULT_RUNTIME_PACKAGES = "none"
 DEFAULT_REPO_RUNTIME_PACKAGES = (
     "FLR4MFCL=PacificCommunity/ofp-sam-flr4mfcl@3faaf84a4867175bfea50d89e4d518c085e84739,"
-    "mfclkit=PacificCommunity/ofp-sam-mfclkit@ec40db67bce2463aa6de2a56a8d7c5d5a5981910,"
+    "mfclkit=PacificCommunity/ofp-sam-mfclkit@9b949db539619be52a63b321bd138c937f868199,"
     "mfclshiny=PacificCommunity/mfclshiny@2a4781bf03b7cfc52acd7bb23c3a6ae53af22a15"
 )
 
