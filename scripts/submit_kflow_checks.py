@@ -33,9 +33,11 @@ CHECK_ALIASES = {
     "selftest": "selftest",
 }
 
-DEFAULT_RUNTIME_PACKAGES = (
-    "mfclkit=PacificCommunity/ofp-sam-mfclkit@a0fe04baa9c119353123367e5a652bb73d909b84,"
-    "mfclshiny=PacificCommunity/mfclshiny@db11d83fa3854c571a634aa289c56ac8981d2e53"
+DEFAULT_RUNTIME_PACKAGES = "none"
+DEFAULT_REPO_RUNTIME_PACKAGES = (
+    "FLR4MFCL=PacificCommunity/ofp-sam-flr4mfcl@3faaf84a4867175bfea50d89e4d518c085e84739,"
+    "mfclkit=PacificCommunity/ofp-sam-mfclkit@ec40db67bce2463aa6de2a56a8d7c5d5a5981910,"
+    "mfclshiny=PacificCommunity/mfclshiny@2a4781bf03b7cfc52acd7bb23c3a6ae53af22a15"
 )
 
 DEFAULT_PROFILE_VALUES = [float(value) for value in range(60, 141, 2)]
@@ -1456,7 +1458,10 @@ def main() -> int:
                     "TUNA_FLOW_RUNTIME_UPDATE": os.environ.get("TUNA_FLOW_RUNTIME_UPDATE", "always"),
                     "KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS": os.environ.get("KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS", "0"),
                     "KFLOW_RUNTIME_PACKAGES": os.environ.get("KFLOW_RUNTIME_PACKAGES", DEFAULT_RUNTIME_PACKAGES),
-                    "KFLOW_REPO_RUNTIME_PACKAGES": os.environ.get("KFLOW_REPO_RUNTIME_PACKAGES", "none"),
+                    "KFLOW_REPO_RUNTIME_PACKAGES": os.environ.get(
+                        "KFLOW_REPO_RUNTIME_PACKAGES",
+                        DEFAULT_REPO_RUNTIME_PACKAGES,
+                    ),
                     "KFLOW_REPO_RUNTIME_UPDATE": os.environ.get("KFLOW_REPO_RUNTIME_UPDATE", "always"),
                     "KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES": os.environ.get("KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES", "true"),
                     "KFLOW_RUNTIME_GITHUB_AUTH": os.environ.get("KFLOW_RUNTIME_GITHUB_AUTH", "true"),
@@ -1532,7 +1537,7 @@ def main() -> int:
                         f"Run {check} check for {model}."
                     )
                     runtime_packages_default = DEFAULT_RUNTIME_PACKAGES
-                    repo_runtime_packages_default = "none"
+                    repo_runtime_packages_default = DEFAULT_REPO_RUNTIME_PACKAGES
                     repo_runtime_update_default = "always"
                 env = {
                     "CHECK_TYPE": check,
@@ -1746,7 +1751,10 @@ def main() -> int:
             "TUNA_FLOW_RUNTIME_UPDATE": os.environ.get("TUNA_FLOW_RUNTIME_UPDATE", "always"),
             "KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS": os.environ.get("KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS", "0"),
             "KFLOW_RUNTIME_PACKAGES": os.environ.get("KFLOW_RUNTIME_PACKAGES", DEFAULT_RUNTIME_PACKAGES),
-            "KFLOW_REPO_RUNTIME_PACKAGES": os.environ.get("KFLOW_REPO_RUNTIME_PACKAGES", "none"),
+            "KFLOW_REPO_RUNTIME_PACKAGES": os.environ.get(
+                "KFLOW_REPO_RUNTIME_PACKAGES",
+                DEFAULT_REPO_RUNTIME_PACKAGES,
+            ),
             "KFLOW_REPO_RUNTIME_UPDATE": os.environ.get("KFLOW_REPO_RUNTIME_UPDATE", "always"),
             "KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES": os.environ.get("KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES", "true"),
             "KFLOW_RUNTIME_GITHUB_AUTH": os.environ.get("KFLOW_RUNTIME_GITHUB_AUTH", "true"),
@@ -1977,7 +1985,10 @@ def main() -> int:
                 "TUNA_FLOW_RUNTIME_UPDATE": os.environ.get("TUNA_FLOW_RUNTIME_UPDATE", "always"),
                 "KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS": os.environ.get("KFLOW_RUNTIME_UPDATE_INTERVAL_HOURS", "0"),
                 "KFLOW_RUNTIME_PACKAGES": os.environ.get("KFLOW_RUNTIME_PACKAGES", DEFAULT_RUNTIME_PACKAGES),
-                "KFLOW_REPO_RUNTIME_PACKAGES": os.environ.get("KFLOW_REPO_RUNTIME_PACKAGES", "none"),
+                "KFLOW_REPO_RUNTIME_PACKAGES": os.environ.get(
+                    "KFLOW_REPO_RUNTIME_PACKAGES",
+                    DEFAULT_REPO_RUNTIME_PACKAGES,
+                ),
                 "KFLOW_REPO_RUNTIME_UPDATE": os.environ.get("KFLOW_REPO_RUNTIME_UPDATE", "always"),
                 "KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES": os.environ.get("KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES", "true"),
                 "KFLOW_RUNTIME_GITHUB_AUTH": os.environ.get("KFLOW_RUNTIME_GITHUB_AUTH", "true"),
