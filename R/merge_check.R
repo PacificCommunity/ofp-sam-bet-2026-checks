@@ -672,6 +672,58 @@ profile_base_par <- function(root) {
   if (length(candidates)) candidates[[1L]] else NA_character_
 }
 
+profile_text_number <- function(path, labels) {
+  if (is.na(path) || !file.exists(path) || file.info(path)$size <= 0) {
+    return(NA_real_)
+  }
+  lines <- tryCatch(
+    readLines(path, warn = FALSE),
+    error = function(e) character()
+  )
+  if (!length(lines)) return(NA_real_)
+  hits <- which(vapply(lines, function(line) {
+    any(vapply(labels, grepl, logical(1L), x = line, ignore.case = TRUE))
+  }, logical(1L)))
+  if (!length(hits)) return(NA_real_)
+  number_pattern <- "[-+]?(?:[0-9]+(?:[.][0-9]*)?|[.][0-9]+)(?:[eEdD][-+]?[0-9]+)?"
+  for (hit in rev(hits)) {
+    candidates <- lines[seq.int(hit, min(length(lines), hit + 3L))]
+    for (candidate in candidates) {
+      match <- regexpr(number_pattern, candidate, perl = TRUE)
+      if (match[[1L]] < 0L) next
+      token <- regmatches(candidate, match)
+      value <- suppressWarnings(as.numeric(gsub("[dD]", "e", token)))
+      if (length(value) && is.finite(value[[1L]])) return(value[[1L]])
+    }
+  }
+  NA_real_
+}
+
+profile_raw_fit_number <- function(root, par, field) {
+  value <- switch(
+    field,
+    objective = profile_text_number(
+      par, c("^[[:space:]]*#[[:space:]]*Objective function value")
+    ),
+    max_grad = profile_text_number(
+      par, c("^[[:space:]]*#[[:space:]]*Maximum magnitude gradient value")
+    ),
+    NA_real_
+  )
+  if (is.finite(value) || !identical(field, "max_grad")) return(value)
+
+  gradient <- file.path(root, "gradient.rpt")
+  if (!file.exists(gradient) || file.info(gradient)$size <= 0) return(NA_real_)
+  tokens <- tryCatch(
+    scan(gradient, what = numeric(), quiet = TRUE),
+    error = function(e) numeric()
+  )
+  if (length(tokens) < 2L) return(NA_real_)
+  gradients <- tokens[seq.int(2L, length(tokens), by = 2L)]
+  gradients <- gradients[is.finite(gradients)]
+  if (length(gradients)) max(abs(gradients)) else NA_real_
+}
+
 profile_anchor_has_par <- function(scalar_dir) {
   candidates <- list.files(
     scalar_dir, pattern = "[.]par$", full.names = TRUE, recursive = FALSE
@@ -979,12 +1031,18 @@ write_profile_base_anchor <- function(root) {
   scalar_dir <- file.path(profile_root, paste0("scalar_", scalar_token))
 
   payload <- profile_base_payload(root)
+  base_par <- profile_base_par(root)
   obj_fun <- profile_payload_number(payload, c("obj_fun", "total_nll", "objective"))
+  if (!is.finite(obj_fun)) {
+    obj_fun <- profile_raw_fit_number(root, base_par, "objective")
+  }
   max_grad <- profile_payload_number(payload, c("max_grad", "maximum_gradient"))
+  if (!is.finite(max_grad)) {
+    max_grad <- profile_raw_fit_number(root, base_par, "max_grad")
+  }
   fit_completed <- profile_payload_logical(
     payload, c("run_completed", "fit_completed", "completed"), default = NA
   )
-  base_par <- profile_base_par(root)
   restored_par <- FALSE
   if (is.na(base_par) || !file.exists(base_par) || file.info(base_par)$size <= 0) {
     restored_path <- tempfile(
@@ -1012,7 +1070,7 @@ write_profile_base_anchor <- function(root) {
     file.info(base_par)$size > 0
   if (!isTRUE(completed_fit)) {
     warning(
-      "Fitted profile anchor was not replaced because the compact base fit or PAR was incomplete.",
+      "Fitted profile anchor was not replaced because the base fit or PAR was incomplete.",
       call. = FALSE
     )
     return(invisible(FALSE))

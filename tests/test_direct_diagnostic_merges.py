@@ -431,6 +431,63 @@ mfk_close_quantity_profile <- function(
                 check=True,
             )
 
+    def test_raw_final_par_footer_restores_fitted_anchor(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            input_root, output_dir, base_model = self.make_case(root, "profile")
+            raw_par = (
+                "raw fitted parameters\n"
+                "# Objective function value\n"
+                "   8.91628379378823e+04\n"
+                "# The number of parameters\n"
+                "   1981\n"
+                "# Maximum magnitude gradient value \n"
+                "6.19683122928385e-05\n"
+            )
+            (base_model / "final.par").write_text(raw_par, encoding="utf-8")
+
+            self.run_merge(
+                input_root,
+                output_dir,
+                "profile",
+                extra_env={
+                    **self.mock_env(),
+                    "PROFILE_INCLUDE_BASE_ANCHOR": "true",
+                    "PROFILE_NAME": "adult_biomass",
+                    "PROFILE_EXPECTED_VALUES": "100",
+                    "PROFILE_BASE_QUANTITY": "1110931.23630137",
+                    "PROFILE_POST_MERGE_REPAIR": "false",
+                },
+            )
+
+            anchor = output_dir / "models/model/profile/adult_biomass/scalar_100"
+            self.assertEqual(
+                (anchor / "final.par").read_text(encoding="utf-8"),
+                raw_par,
+            )
+            result = subprocess.run(
+                [
+                    "Rscript",
+                    "-e",
+                    (
+                        "x <- readRDS(commandArgs(TRUE)[1]); "
+                        "print(list(nll=x$total_nll, grad=x$max_grad, "
+                        "quantity=x$actual_quantity, valid=x$point_valid)); "
+                        "stopifnot(isTRUE(x$base_anchor), isTRUE(x$point_valid), "
+                        "isTRUE(all.equal(x$total_nll, 89162.8379378823)), "
+                        "isTRUE(all.equal(x$max_grad, 6.19683122928385e-05)), "
+                        "isTRUE(all.equal(x$actual_quantity, 1110931.23630137)), "
+                        "identical(x$objective_source, 'fitted_model_par'))"
+                    ),
+                    str(anchor / "profile_point_info.rds"),
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_invalid_scalar_100_is_replaced_by_compact_fitted_anchor(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
