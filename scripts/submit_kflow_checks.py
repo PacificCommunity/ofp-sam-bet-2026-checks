@@ -501,6 +501,9 @@ def resolved_profile_env(values: list[float] | None = None) -> dict[str, str]:
             else env_first("PROFILE_PARALLEL_MODE") or "chains"
         ),
         "PROFILE_EXECUTION_MODE": execution_mode,
+        "MFCL_LIVE_LOG": env_first("MFCL_LIVE_LOG") or "true",
+        "MFK_RUN_MESSAGES": env_first("MFK_RUN_MESSAGES") or "true",
+        "MFK_STREAM_LOGS": env_first("MFK_STREAM_LOGS") or "true",
         "PROFILE_DOITALL_PENALTY": env_first(
             "MFK_PROFILE_DOITALL_PENALTY", "PROFILE_DOITALL_PENALTY",
         ) or "10000000",

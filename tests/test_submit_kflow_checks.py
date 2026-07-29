@@ -762,6 +762,9 @@ class AttachedTaskDefaultsTests(unittest.TestCase):
         self.assertEqual(env["PROFILE_REPAIR_CPUS"], "2")
         self.assertEqual(env["PROFILE_REPAIR_MEMORY_GB"], "16")
         self.assertEqual(env["PROFILE_REPAIR_MEMORY_PER_WORKER_GB"], "8")
+        self.assertEqual(env["MFCL_LIVE_LOG"], "true")
+        self.assertEqual(env["MFK_RUN_MESSAGES"], "true")
+        self.assertEqual(env["MFK_STREAM_LOGS"], "true")
 
     def test_profile_units_defer_shape_repair_to_the_merge(self):
         with mock.patch.dict(os.environ, {}, clear=True):
