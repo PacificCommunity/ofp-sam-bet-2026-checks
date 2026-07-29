@@ -1,7 +1,7 @@
 SHELL := /usr/bin/env bash
 
 CHECK_TYPES ?= profile jitter hessian retro selftest aspm
-KFLOW_REGISTER_CHECK_TYPES ?= profile profile-h-base-prep profile-h-base profile-h-base-merge jitter hessian hessian-merge jitter-merge profile-merge retro-merge selftest-merge retro selftest aspm aspm-merge attach-checks model-bundle
+KFLOW_REGISTER_CHECK_TYPES ?= profile profile-h-base-prep profile-h-base profile-h-base-merge jitter hessian hessian-merge jitter-merge profile-merge retro-merge selftest-merge retro selftest aspm aspm-merge attach-checks model-bundle payload-build
 CHECK_TYPE ?= jitter
 MODEL_SELECTOR ?=
 MODEL_SELECTORS ?= $(MODEL_SELECTOR)

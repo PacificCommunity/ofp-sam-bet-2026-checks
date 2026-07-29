@@ -280,6 +280,9 @@ case "$CHECK_TYPE" in
   model_bundle|model-bundle|bundle|export-bundle|mfcl-bundle)
     Rscript R/export_model_bundle.R
     ;;
+  payload_build|payload-build|build-payload)
+    Rscript R/build_model_payload.R
+    ;;
   hessian_merge|hessian-merge)
     Rscript R/merge_hessian.R
     ;;

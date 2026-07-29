@@ -13,6 +13,7 @@ Kflow tasks for running `mfclkit` diagnostics on fitted MFCL model outputs:
 - `selftest`
 - `aspm`
 - `model-bundle`
+- `payload-build`
 
 The registered Kflow tasks pin `mfclkit 0.0.0.9024` and
 `mfclshiny 0.0.0.9018` by commit so reruns do not drift when either package's
@@ -182,6 +183,11 @@ make kflow CHECK_TYPE=model-bundle \
   MODEL_SOURCE_REF=6226c5387d921290535512c79d8a92ff7e4addd3 \
   KFLOW_AUTO_MERGE=false KFLOW_AUTO_ATTACH=false
 ```
+
+Use `payload-build` when a completed fitted-model archive contains native MFCL
+outputs but no `model_payload.rds`. It copies the selected fitted case, builds
+and validates the payload, and publishes a full MFCL Shiny-compatible model
+output without changing the original archive.
 
 ## Check-specific fields
 
