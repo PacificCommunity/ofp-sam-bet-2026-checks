@@ -159,6 +159,17 @@ class DiagnosticRunnerControlTests(unittest.TestCase):
         self.assertIn('Sys.setenv(CHECK_BUILD_REPORT_FIGURES = "false")', runner)
         self.assertIn('Sys.setenv(CHECK_REQUIRE_PAYLOAD_REFRESH = "false")', runner)
 
+    def test_completed_profile_recovery_validates_before_repacking(self) -> None:
+        recovery = (
+            ROOT / "scripts" / "recover_completed_profile.sh"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("all_required_units_successful", recovery)
+        self.assertIn('row.get("point_valid"', recovery)
+        self.assertIn('row.get("converged"', recovery)
+        self.assertIn("does not match expected grid", recovery)
+        self.assertIn('cp -a "$source_root"/. "$output_root"/', recovery)
+
     def test_aspm_defaults_to_the_strict_constant_recruitment_definition(self) -> None:
         runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
         task = (ROOT / "aspm" / "kflow.yaml").read_text(encoding="utf-8")
