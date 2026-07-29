@@ -6,6 +6,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class DiagnosticRunnerControlTests(unittest.TestCase):
+    def test_runtime_git_avoids_http2_stalls_and_has_a_deadline(self) -> None:
+        launcher = (ROOT / "run.sh").read_text(encoding="utf-8")
+
+        self.assertIn("-c http.version=HTTP/1.1", launcher)
+        self.assertIn("KFLOW_RUNTIME_GIT_TIMEOUT_SECONDS", launcher)
+        self.assertIn("timeout --signal=TERM --kill-after=10s", launcher)
+
     def test_jitter_requirement_reaches_both_runner_paths(self) -> None:
         runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
         task = (ROOT / "jitter" / "kflow.yaml").read_text(encoding="utf-8")

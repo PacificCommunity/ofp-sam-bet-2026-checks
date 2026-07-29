@@ -48,13 +48,32 @@ runtime_retry_delay() {
   printf '%s' "$value"
 }
 
+runtime_git_timeout() {
+  local value="${KFLOW_RUNTIME_GIT_TIMEOUT_SECONDS:-120}"
+  [[ "$value" =~ ^[0-9]+$ ]] || value=120
+  (( value < 30 )) && value=30
+  (( value > 600 )) && value=600
+  printf '%s' "$value"
+}
+
 runtime_git() {
-  local askpass="$1" token="$2"
+  local askpass="$1" token="$2" timeout_seconds
   shift 2
+  timeout_seconds="$(runtime_git_timeout)"
+  local -a command=(
+    git
+    -c http.version=HTTP/1.1
+    -c http.lowSpeedLimit=1024
+    -c http.lowSpeedTime=30
+    "$@"
+  )
+  if command -v timeout >/dev/null 2>&1; then
+    command=(timeout --signal=TERM --kill-after=10s "${timeout_seconds}s" "${command[@]}")
+  fi
   if [[ -n "$token" ]]; then
-    GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 KFLOW_GIT_ASKPASS_TOKEN="$token" git "$@"
+    GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 KFLOW_GIT_ASKPASS_TOKEN="$token" "${command[@]}"
   else
-    GIT_TERMINAL_PROMPT=0 git "$@"
+    GIT_TERMINAL_PROMPT=0 "${command[@]}"
   fi
 }
 
