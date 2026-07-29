@@ -1616,6 +1616,13 @@ def main() -> int:
                         or "true"
                     )
                 env.update(unit.get("env", {}))
+                if check == "profile":
+                    # Worker chains/scalars are intermediate diagnostic
+                    # products. The merge job alone owns the standalone model
+                    # payload and report-ready figure refresh.
+                    env.setdefault("CHECK_BUILD_PAYLOADS", "false")
+                    env.setdefault("CHECK_BUILD_REPORT_FIGURES", "false")
+                    env.setdefault("CHECK_REQUIRE_PAYLOAD_REFRESH", "false")
                 if is_hbase:
                     env.update({
                         "PROFILE_HBASE_ENABLED": "true",

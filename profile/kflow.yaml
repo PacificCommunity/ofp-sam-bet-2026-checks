@@ -23,6 +23,11 @@ env:
   KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME: "true"
   CHECK_COMPACT_OUTPUTS: "true"
   CHECK_ENRICH_PAYLOADS: "true"
+  # Split profile workers publish scalar payloads only. The merge job builds
+  # the final model payload and report figures.
+  CHECK_BUILD_PAYLOADS: "false"
+  CHECK_BUILD_REPORT_FIGURES: "false"
+  CHECK_REQUIRE_PAYLOAD_REFRESH: "false"
   CHECK_KEEP_RAW_OUTPUTS: "false"
   CHECK_FAIL_ON_FAILED_UNITS: "false"
   PROFILE_TYPE: quantity
@@ -105,6 +110,8 @@ metadata:
       - CHECK_DRY_RUN
       - CHECK_SMOKE_ONLY
       - CHECK_BUILD_REPORT_FIGURES
+      - CHECK_BUILD_PAYLOADS
+      - CHECK_REQUIRE_PAYLOAD_REFRESH
       - CHECK_REPORT_FIGURE_KEYS
       - CHECK_RENDER_REVIEW_HTML
       - CHECK_COMPACT_OUTPUTS

@@ -151,6 +151,14 @@ class DiagnosticRunnerControlTests(unittest.TestCase):
         )
         self.assertIn('"profile.par"', runner)
 
+    def test_split_profile_worker_defers_report_payload_to_merge(self) -> None:
+        runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
+
+        self.assertIn('split_profile_worker <- identical(check_type, "profile")', runner)
+        self.assertIn('Sys.setenv(CHECK_BUILD_PAYLOADS = "false")', runner)
+        self.assertIn('Sys.setenv(CHECK_BUILD_REPORT_FIGURES = "false")', runner)
+        self.assertIn('Sys.setenv(CHECK_REQUIRE_PAYLOAD_REFRESH = "false")', runner)
+
     def test_aspm_defaults_to_the_strict_constant_recruitment_definition(self) -> None:
         runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
         task = (ROOT / "aspm" / "kflow.yaml").read_text(encoding="utf-8")

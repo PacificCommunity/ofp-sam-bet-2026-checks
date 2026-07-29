@@ -2517,6 +2517,25 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
   stop("Unsupported CHECK_TYPE: ", check_type, call. = FALSE)
 }
 
+# Split profile workers only need to publish their scalar profile payloads for
+# the merge job.  Building a standalone model payload in each worker is both
+# redundant and can fail after every native profile point has completed,
+# incorrectly turning a successful chain into a failed Kflow job.  The merge
+# job remains responsible for the report-ready payload and figures.
+split_profile_worker <- identical(check_type, "profile") &&
+  nzchar(trimws(env("PROFILE_CHAIN_SIDE", "")))
+if (isTRUE(split_profile_worker)) {
+  if (!nzchar(Sys.getenv("CHECK_BUILD_PAYLOADS", ""))) {
+    Sys.setenv(CHECK_BUILD_PAYLOADS = "false")
+  }
+  if (!nzchar(Sys.getenv("CHECK_BUILD_REPORT_FIGURES", ""))) {
+    Sys.setenv(CHECK_BUILD_REPORT_FIGURES = "false")
+  }
+  if (!nzchar(Sys.getenv("CHECK_REQUIRE_PAYLOAD_REFRESH", ""))) {
+    Sys.setenv(CHECK_REQUIRE_PAYLOAD_REFRESH = "false")
+  }
+}
+
 enrich_check_payloads()
 try(mfclkit::mfk_collect_diagnostics(model_dir, write_index = TRUE), silent = TRUE)
 write_check_status_summary(model_dir, check_type)
