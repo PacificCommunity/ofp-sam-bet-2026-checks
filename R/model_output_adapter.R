@@ -1415,7 +1415,10 @@ stage_selected_model <- function(row, work_dir = env("WORK_DIR", "work"), output
   stage_dir <- file.path(work_dir, "case")
   source_root <- ""
   compact_dir <- as.character(row$compact_dir %||% "")
-  full_case <- identical(as.character(row$candidate_type %||% ""), "full_case") && has_full_case(compact_dir)
+  # An indexed model directory may itself be a complete fitted MFCL case.
+  # Prefer it over the nested mfcl-inputs copy so native fitted reports such
+  # as plot-final.par.rep remain available to quantity profiles.
+  full_case <- has_full_case(compact_dir)
   compact_case <- file.path(compact_dir, "mfcl-inputs")
 
   if (isTRUE(full_case)) {
