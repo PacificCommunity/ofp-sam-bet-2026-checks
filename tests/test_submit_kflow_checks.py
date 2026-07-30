@@ -357,6 +357,33 @@ class IntegerUnitSpecTests(unittest.TestCase):
         self.assertEqual(merge_payload["metadata"]["profile_parallel_mode"], "scalars")
         self.assertEqual(merge_payload["metadata"]["profile_doitall_penalty"], "10000000")
 
+    def test_split_hessian_workers_defer_report_payload_to_merge(self):
+        payloads = run_dry_run(
+            [
+                "submit_kflow_checks.py",
+                "--checks", "hessian",
+                "--models", "model",
+                "--input-jobs", "3001",
+                "--parallel-units", "true",
+                "--dry-run",
+            ],
+            {"HESSIAN_NSPLIT": "3"},
+        )
+
+        self.assertEqual(len(payloads), 4)
+        units, merge = payloads[:-1], payloads[-1]
+        self.assertTrue(all(item["task"].endswith("-hessian") for item in units))
+        self.assertTrue(merge["task"].endswith("-hessian-merge"))
+        for item in units:
+            env = item["payload"]["env"]
+            self.assertEqual(env["CHECK_BUILD_PAYLOADS"], "false")
+            self.assertEqual(env["CHECK_BUILD_REPORT_FIGURES"], "false")
+            self.assertEqual(env["CHECK_REQUIRE_PAYLOAD_REFRESH"], "false")
+        merge_env = merge["payload"]["env"]
+        self.assertNotIn("CHECK_BUILD_PAYLOADS", merge_env)
+        self.assertNotIn("CHECK_BUILD_REPORT_FIGURES", merge_env)
+        self.assertNotIn("CHECK_REQUIRE_PAYLOAD_REFRESH", merge_env)
+
     def test_point_alias_uses_scalar_jobs_and_default_continuation_mode(self):
         with mock.patch.dict(
             os.environ,

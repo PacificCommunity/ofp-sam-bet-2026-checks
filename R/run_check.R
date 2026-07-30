@@ -2517,14 +2517,17 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
   stop("Unsupported CHECK_TYPE: ", check_type, call. = FALSE)
 }
 
-# Split profile workers only need to publish their scalar profile payloads for
-# the merge job.  Building a standalone model payload in each worker is both
-# redundant and can fail after every native profile point has completed,
-# incorrectly turning a successful chain into a failed Kflow job.  The merge
+# Split profile and Hessian workers only need to publish their diagnostic
+# fragments for the merge job. Building a standalone model payload in each
+# worker is redundant and can fail after the native diagnostic has completed,
+# incorrectly turning a successful worker into a failed Kflow job. The merge
 # job remains responsible for the report-ready payload and figures.
-split_profile_worker <- identical(check_type, "profile") &&
-  nzchar(trimws(env("PROFILE_CHAIN_SIDE", "")))
-if (isTRUE(split_profile_worker)) {
+split_diagnostic_worker <-
+  (identical(check_type, "profile") &&
+     nzchar(trimws(env("PROFILE_CHAIN_SIDE", "")))) ||
+  (identical(check_type, "hessian") &&
+     nzchar(trimws(env("HESSIAN_PART", env("HESSIAN_PARTS", "")))))
+if (isTRUE(split_diagnostic_worker)) {
   if (!nzchar(Sys.getenv("CHECK_BUILD_PAYLOADS", ""))) {
     Sys.setenv(CHECK_BUILD_PAYLOADS = "false")
   }
