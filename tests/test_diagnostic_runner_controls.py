@@ -102,7 +102,12 @@ class DiagnosticRunnerControlTests(unittest.TestCase):
         self.assertIn('Rscript R/run_check.R "$CHECK_TYPE"', launcher)
         self.assertNotIn("CHECK_FAIL_ON_FAILED_UNITS:", merge_task)
 
-        for check_type in ("jitter", "retro", "profile", "aspm", "hessian"):
+        jitter_task = (ROOT / "jitter" / "kflow.yaml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('CHECK_FAIL_ON_FAILED_UNITS: "true"', jitter_task)
+
+        for check_type in ("retro", "profile", "aspm", "hessian"):
             unit_task = (ROOT / check_type / "kflow.yaml").read_text(
                 encoding="utf-8"
             )

@@ -13,7 +13,7 @@ env:
   MODEL_SOURCE_REF: main
   PROGRAM_PATH: /home/mfcl/mfclo64
   KFLOW_RUNTIME_PACKAGES: none
-  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@a0fe04baa9c119353123367e5a652bb73d909b84,mfclshiny=PacificCommunity/mfclshiny@db11d83fa3854c571a634aa289c56ac8981d2e53
+  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@34c56de25afecdd13e9f8e94f2e421e37d9c2f9b,mfclshiny=PacificCommunity/mfclshiny@db11d83fa3854c571a634aa289c56ac8981d2e53
   KFLOW_REPO_RUNTIME_UPDATE: always
   KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
   KFLOW_RUNTIME_UPDATE: always
@@ -24,7 +24,7 @@ env:
   CHECK_COMPACT_OUTPUTS: "true"
   CHECK_ENRICH_PAYLOADS: "true"
   CHECK_KEEP_RAW_OUTPUTS: "false"
-  CHECK_FAIL_ON_FAILED_UNITS: "false"
+  CHECK_FAIL_ON_FAILED_UNITS: "true"
   JITTER_SEEDS: "1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30"
   JITTER_CV: "0.1"
   JITTER_CONVERGENCE: "-3"

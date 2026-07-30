@@ -253,34 +253,44 @@ class IntegerUnitSpecTests(unittest.TestCase):
             self.assertEqual(env["FLOW_SPECIES_LABEL"], "yellowfin tuna")
             self.assertEqual(env["FLOW_ASSESSMENT_YEAR"], "2027")
 
-    def test_selftest_units_fail_on_failed_replicates_by_default(self):
-        argv = [
-            "submit_kflow_checks.py",
-            "--checks", "selftest",
-            "--models", "model",
-            "--input-jobs", "123",
-            "--parallel-units", "false",
-            "--dry-run",
-        ]
-        payloads = run_dry_run(argv, {"SELFTEST_REPS": "1"})
+    def test_jitter_and_selftest_units_surface_failed_runs_by_default(self):
+        for check, unit_env, unit_value in (
+            ("jitter", "JITTER_SEEDS", "1"),
+            ("selftest", "SELFTEST_REPS", "1"),
+        ):
+            with self.subTest(check=check):
+                argv = [
+                    "submit_kflow_checks.py",
+                    "--checks", check,
+                    "--models", "model",
+                    "--input-jobs", "123",
+                    "--parallel-units", "false",
+                    "--dry-run",
+                ]
+                payloads = run_dry_run(argv, {unit_env: unit_value})
 
-        self.assertEqual(len(payloads), 2)
-        unit = payloads[0]["payload"]
-        merge = payloads[1]["payload"]
-        self.assertEqual(unit["env"]["CHECK_FAIL_ON_FAILED_UNITS"], "true")
-        self.assertNotIn("CHECK_FAIL_ON_FAILED_UNITS", merge["env"])
+                self.assertEqual(len(payloads), 2)
+                unit = payloads[0]["payload"]
+                merge = payloads[1]["payload"]
+                self.assertEqual(
+                    unit["env"]["CHECK_FAIL_ON_FAILED_UNITS"],
+                    "true",
+                )
+                self.assertNotIn("CHECK_FAIL_ON_FAILED_UNITS", merge["env"])
 
-        overridden = run_dry_run(
-            argv,
-            {
-                "SELFTEST_REPS": "1",
-                "CHECK_FAIL_ON_FAILED_UNITS": "false",
-            },
-        )
-        self.assertEqual(
-            overridden[0]["payload"]["env"]["CHECK_FAIL_ON_FAILED_UNITS"],
-            "false",
-        )
+                overridden = run_dry_run(
+                    argv,
+                    {
+                        unit_env: unit_value,
+                        "CHECK_FAIL_ON_FAILED_UNITS": "false",
+                    },
+                )
+                self.assertEqual(
+                    overridden[0]["payload"]["env"][
+                        "CHECK_FAIL_ON_FAILED_UNITS"
+                    ],
+                    "false",
+                )
 
     def test_scalar_mode_emits_one_non_center_job_per_value_and_one_merge(self):
         values = "80 90 110 120"

@@ -36,7 +36,7 @@ CHECK_ALIASES = {
 DEFAULT_RUNTIME_PACKAGES = "none"
 DEFAULT_REPO_RUNTIME_PACKAGES = (
     "FLR4MFCL=PacificCommunity/ofp-sam-flr4mfcl@3faaf84a4867175bfea50d89e4d518c085e84739,"
-    "mfclkit=PacificCommunity/ofp-sam-mfclkit@25103916446d0395286afae28b5404bf361670fc,"
+    "mfclkit=PacificCommunity/ofp-sam-mfclkit@34c56de25afecdd13e9f8e94f2e421e37d9c2f9b,"
     "mfclshiny=PacificCommunity/mfclshiny@1fc0bb6bf4cf5349da6f6def54cc56c5a60e182a"
 )
 
@@ -1582,6 +1582,14 @@ def main() -> int:
                         continue
                     if key.startswith(env_prefixes) or key in passthrough_env or key == "program_path":
                         env[key] = value
+                if check.replace("_", "-").lower() in {"jitter", "selftest"}:
+                    # One failed split seed/replicate must remain visible as a
+                    # failed Kflow unit. The merge accepts failed inputs and
+                    # keeps the complete success/failure ledger.
+                    env["CHECK_FAIL_ON_FAILED_UNITS"] = (
+                        str(env.get("CHECK_FAIL_ON_FAILED_UNITS") or "").strip()
+                        or "true"
+                    )
                 if check.replace("_", "-").lower() == "selftest":
                     env.setdefault(
                         "SELFTEST_RUN_REFIT",
@@ -1611,10 +1619,6 @@ def main() -> int:
                     # viewer filters that diagnostic result later. Keep an
                     # explicit caller override, but do not depend on the
                     # registered task default being current.
-                    env["CHECK_FAIL_ON_FAILED_UNITS"] = (
-                        str(env.get("CHECK_FAIL_ON_FAILED_UNITS") or "").strip()
-                        or "true"
-                    )
                 env.update(unit.get("env", {}))
                 if check in {"profile", "hessian"}:
                     # Split profile and Hessian workers are intermediate
