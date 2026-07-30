@@ -211,13 +211,13 @@ local_apps:
       }
       canonical_model_dir <- function(folder) {
         folder <- normalize_loose(folder)
-        if (diagnostic_leaf_name(folder)) return(NA_character_)
-        parent <- parent_model_dir(folder)
-        if (!identical(parent, folder)) return(parent)
         if (basename(folder) %in% c("jitter", "retro", "aspm", "hessian", "profile", "selftest", "projection") &&
               file.exists(file.path(dirname(folder), "model_payload.rds"))) {
           return(normalize_loose(dirname(folder)))
         }
+        if (diagnostic_leaf_name(folder)) return(NA_character_)
+        parent <- parent_model_dir(folder)
+        if (!identical(parent, folder)) return(parent)
         folder
       }
       topmost_dirs <- function(paths) {
