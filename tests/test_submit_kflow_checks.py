@@ -514,7 +514,10 @@ class IntegerUnitSpecTests(unittest.TestCase):
                 self.assertEqual(merge["metadata"]["attached_work_parent_job"], "3001")
                 self.assertTrue(merge["metadata"]["attached_work_latest"])
                 self.assertTrue(merge["metadata"]["attached_output_overlay"])
-                self.assertTrue(merge["metadata"]["attached_output_overlay_preserve_payload"])
+                self.assertNotIn(
+                    "attached_output_overlay_preserve_payload",
+                    merge["metadata"],
+                )
                 self.assertEqual(
                     merge["metadata"]["attached_output_overlay_mode"],
                     "diagnostics_with_payload",
@@ -641,7 +644,10 @@ class IntegerUnitSpecTests(unittest.TestCase):
                 merge["metadata"]["attached_output_overlay_replace_names"],
                 [check],
             )
-            self.assertTrue(merge["metadata"]["attached_output_overlay_preserve_payload"])
+            self.assertNotIn(
+                "attached_output_overlay_preserve_payload",
+                merge["metadata"],
+            )
             self.assertTrue(merge["metadata"]["independent_diagnostic_merge"])
             slots.append(merge["metadata"]["attached_work_slot"])
 

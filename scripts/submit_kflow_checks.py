@@ -1852,7 +1852,6 @@ def main() -> int:
                 "attached_updated_check_types": [check],
                 "attached_output_overlay": True,
                 "attached_output_overlay_mode": "diagnostics_with_payload",
-                "attached_output_overlay_preserve_payload": True,
                 "attached_output_overlay_replace_payload": True,
                 "attached_output_overlay_replace_names": [check],
                 "attached_work_parent_job": base_input_job,
