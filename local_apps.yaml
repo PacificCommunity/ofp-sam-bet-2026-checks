@@ -209,12 +209,23 @@ local_apps:
         if (!is.finite(anchor) || anchor <= 1L) return(normalize_loose(folder))
         normalize_loose(path_from_parts(path_parts(folder)[seq_len(anchor - 1L)]))
       }
+      manifest_model_dir <- function(folder) {
+        folder <- normalize_loose(folder)
+        manifests <- file.path(folder, c("check_manifest.rds", "check_manifest.csv"))
+        if (!any(file.exists(manifests))) return(NA_character_)
+        current <- folder
+        repeat {
+          if (file.exists(file.path(current, "model_payload.rds"))) return(current)
+          parent <- normalize_loose(dirname(current))
+          if (identical(parent, current)) break
+          current <- parent
+        }
+        NA_character_
+      }
       canonical_model_dir <- function(folder) {
         folder <- normalize_loose(folder)
-        if (basename(folder) %in% c("jitter", "retro", "aspm", "hessian", "profile", "selftest", "projection") &&
-              file.exists(file.path(dirname(folder), "model_payload.rds"))) {
-          return(normalize_loose(dirname(folder)))
-        }
+        manifest_parent <- manifest_model_dir(folder)
+        if (!is.na(manifest_parent)) return(manifest_parent)
         if (diagnostic_leaf_name(folder)) return(NA_character_)
         parent <- parent_model_dir(folder)
         if (!identical(parent, folder)) return(parent)
