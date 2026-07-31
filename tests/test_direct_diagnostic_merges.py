@@ -869,6 +869,85 @@ mfk_close_quantity_profile <- function(
             self.assertEqual(bundle["output_mode"], "full")
             self.assertEqual(bundle["overlay_base_required"], "FALSE")
 
+    def test_jitter_nonconvergence_is_a_merged_diagnostic_outcome(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            input_root, output_dir, _ = self.make_case(root, "jitter")
+            unit_model = input_root / "4001" / "outputs" / "checks" / "jitter" / "model"
+            write_csv(
+                unit_model / "check-summary.csv",
+                [{
+                    "check_type": "jitter",
+                    "run_status": "model_run_failed",
+                    "run_completed": "FALSE",
+                    "convergence_status": "not_completed",
+                    "converged": "FALSE",
+                    "success": "FALSE",
+                    "failure_reason": "MFCL did not converge",
+                }],
+            )
+            write_csv(
+                unit_model / "check-unit-status.csv",
+                [{
+                    "check_type": "jitter",
+                    "check_unit_type": "seed",
+                    "check_unit": "1",
+                    "seed": "1",
+                    "run_status": "model_run_failed",
+                    "run_completed": "FALSE",
+                    "convergence_status": "not_completed",
+                    "converged": "FALSE",
+                    "success": "FALSE",
+                    "failure_reason": "MFCL did not converge",
+                }],
+            )
+            subprocess.run(
+                [
+                    "Rscript",
+                    "-e",
+                    (
+                        "saveRDS(list(seed=1L, has_output_rep=FALSE, "
+                        "state=list(run_status='model_run_failed', "
+                        "run_completed=FALSE, convergence_status='not_completed', "
+                        "converged=FALSE, obj_fun=NA_real_, max_grad=NA_real_, "
+                        "mfcl_exit_code=1L, failure_reason='MFCL did not converge')), "
+                        "commandArgs(TRUE)[1])"
+                    ),
+                    str(unit_model / "jitter" / "jitter_seed_1" / "jitter_info.rds"),
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+            result = self.run_merge(
+                input_root,
+                output_dir,
+                "jitter",
+                extra_env={
+                    "CHECK_EXPECTED_UNIT_TYPE": "seed",
+                    "CHECK_EXPECTED_UNITS": "1",
+                },
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+            published = output_dir / "models" / "model" / "jitter"
+            summary = read_csv(published / "check-summary.csv")[0]
+            self.assertEqual(summary["merge_status"], "complete_with_failed_units")
+            self.assertEqual(summary["has_failures"], "TRUE")
+            self.assertEqual(
+                summary["unit_failures_are_diagnostic_outcomes"],
+                "TRUE",
+            )
+            self.assertEqual(summary["all_expected_units_accounted_for"], "TRUE")
+            self.assertEqual(summary["all_required_units_successful"], "TRUE")
+            rows = read_csv(published / "check-unit-status.csv")
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["run_status"], "model_run_failed")
+            self.assertEqual(rows[0]["convergence_status"], "not_completed")
+            self.assertEqual(rows[0]["converged"], "FALSE")
+
     def test_missing_current_unit_attaches_failure_ledger_without_stale_result(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

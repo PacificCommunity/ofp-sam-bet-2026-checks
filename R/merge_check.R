@@ -1821,6 +1821,13 @@ collect_check_unit_status <- function(model_dir, check_type, source_dirs = chara
     )
     data.frame(stringsAsFactors = FALSE)
   })
+  if (!is.data.frame(out) || !nrow(out)) {
+    source_units <- lapply(source_dirs, function(src) {
+      path <- file.path(src, "check-unit-status.csv")
+      if (file.exists(path)) read_csv_safe(path) else data.frame(stringsAsFactors = FALSE)
+    })
+    out <- bind_rows_fill_local(source_units)
+  }
   if ((!is.data.frame(out) || !nrow(out)) && !isTRUE(expected_unit_ledger$present)) {
     summaries <- lapply(source_dirs, function(src) {
       path <- file.path(src, "check-summary.csv")
@@ -1900,10 +1907,20 @@ write_check_status_summary <- function(model_dir, check_type, source_dirs = char
     NA_integer_
   }
   requires_all_units <- check_type %in% c("hessian", "profile") || isTRUE(expected_unit_ledger$present)
+  unit_failures_are_diagnostic_outcomes <- check_type %in% c(
+    "jitter", "retro", "selftest", "aspm"
+  )
   total_failed <- n_failed + n_source_failed
+  missing_expected_units <- isTRUE(expected_unit_ledger$present) &&
+    is.finite(n_missing_expected) && n_missing_expected > 0L
+  all_expected_units_accounted_for <- !isTRUE(missing_expected_units)
+  blocking_failed_units <- total_failed > 0L &&
+    !isTRUE(unit_failures_are_diagnostic_outcomes)
   merge_status <- if (!n_units && !n_source_units) {
     "no_units"
-  } else if (requires_all_units && total_failed > 0L) {
+  } else if (missing_expected_units) {
+    "incomplete"
+  } else if (requires_all_units && blocking_failed_units) {
     "incomplete"
   } else if (total_failed > 0L) {
     "complete_with_failed_units"
@@ -1931,7 +1948,13 @@ write_check_status_summary <- function(model_dir, check_type, source_dirs = char
     },
     n_missing_expected = n_missing_expected,
     requires_all_units = requires_all_units,
-    all_required_units_successful = !requires_all_units || ((n_units > 0L || n_source_units > 0L) && total_failed == 0L),
+    all_expected_units_accounted_for = all_expected_units_accounted_for,
+    unit_failures_are_diagnostic_outcomes = unit_failures_are_diagnostic_outcomes,
+    all_required_units_successful = !requires_all_units || (
+      (n_units > 0L || n_source_units > 0L) &&
+        all_expected_units_accounted_for &&
+        (!blocking_failed_units)
+    ),
     merge_status = merge_status,
     created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
     stringsAsFactors = FALSE
