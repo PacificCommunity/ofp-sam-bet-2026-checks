@@ -430,7 +430,6 @@ mfk_close_quantity_profile <- function(
                 capture_output=True,
                 check=True,
             )
-
     def test_raw_final_par_footer_restores_fitted_anchor(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -906,20 +905,26 @@ mfk_close_quantity_profile <- function(
                     "Rscript",
                     "-e",
                     (
-                        "saveRDS(list(seed=1L, has_output_rep=FALSE, "
+                        "info <- list(seed=1L, has_output_rep=FALSE, "
                         "state=list(run_status='model_run_failed', "
                         "run_completed=FALSE, convergence_status='not_completed', "
                         "converged=FALSE, obj_fun=NA_real_, max_grad=NA_real_, "
-                        "mfcl_exit_code=1L, failure_reason='MFCL did not converge')), "
-                        "commandArgs(TRUE)[1])"
+                        "mfcl_exit_code=1L, failure_reason='MFCL did not converge')); "
+                        "saveRDS(info, commandArgs(TRUE)[1]); "
+                        "saveRDS(c(info, list(fitted_parameter_changes=list("
+                        "labels=data.frame(Index=1L, after=0.5)))), commandArgs(TRUE)[2])"
                     ),
                     str(unit_model / "jitter" / "jitter_seed_1" / "jitter_info.rds"),
+                    str(unit_model / "jitter" / "jitter_seed_1" / "jitter_result.rds"),
                 ],
                 cwd=ROOT,
                 text=True,
                 capture_output=True,
                 check=True,
             )
+            (
+                unit_model / "jitter" / "jitter_seed_1" / "mfcl_log.txt"
+            ).write_text("large raw MFCL log\n", encoding="utf-8")
 
             result = self.run_merge(
                 input_root,
@@ -928,6 +933,7 @@ mfk_close_quantity_profile <- function(
                 extra_env={
                     "CHECK_EXPECTED_UNIT_TYPE": "seed",
                     "CHECK_EXPECTED_UNITS": "1",
+                    "CHECK_COMPACT_OUTPUTS": "true",
                 },
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -947,6 +953,20 @@ mfk_close_quantity_profile <- function(
             self.assertEqual(rows[0]["run_status"], "model_run_failed")
             self.assertEqual(rows[0]["convergence_status"], "not_completed")
             self.assertEqual(rows[0]["converged"], "FALSE")
+            recovery = read_csv(published / "check-recovery-manifest.csv")
+            self.assertEqual(len(recovery), 1)
+            self.assertEqual(recovery[0]["unit"], "1")
+            self.assertEqual(recovery[0]["source_job_number"], "4001")
+            self.assertEqual(
+                recovery[0]["recovery_mode"],
+                "base_par_plus_payload_active_parameter_vector",
+            )
+            self.assertTrue(
+                (published / "jitter_seed_1" / "jitter_result.rds").is_file()
+            )
+            self.assertFalse(
+                (published / "jitter_seed_1" / "mfcl_log.txt").exists()
+            )
 
     def test_missing_current_unit_attaches_failure_ledger_without_stale_result(self):
         with tempfile.TemporaryDirectory() as tmpdir:

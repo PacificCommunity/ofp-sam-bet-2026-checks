@@ -2598,13 +2598,18 @@ compact_merged_check_outputs <- function() {
   if (!check_compact_outputs_enabled()) return(invisible(data.frame()))
 
   log_patterns <- c("(^|/).*log($|[.])", "(^|/)mfcl.*[.]txt$")
+  keep_unit_logs <- truthy(env("CHECK_KEEP_UNIT_LOGS", "false"), FALSE)
+  compact_log_patterns <- if (keep_unit_logs) log_patterns else character()
   deleted <- list()
   if (identical(check_type, "jitter")) {
     seed_dirs <- list.dirs(file.path(model_dir, "jitter"), recursive = FALSE, full.names = TRUE)
     seed_dirs <- seed_dirs[grepl("^jitter_seed_[0-9]+$", basename(seed_dirs))]
     deleted <- lapply(seed_dirs, compact_prune_files,
       keep_names = c("jitter_result.rds", "jitter_info.rds"),
-      keep_patterns = c(log_patterns, "^jitter_seed_[0-9]+_(label_changes|summary)[.]csv$"),
+      keep_patterns = c(
+        compact_log_patterns,
+        "^jitter_seed_[0-9]+_(label_changes|summary)[.]csv$"
+      ),
       recursive = TRUE
     )
   } else if (identical(check_type, "retro")) {
@@ -2650,6 +2655,191 @@ compact_merged_check_outputs <- function() {
     message("[checks] compacted merged ", check_type, " output: removed ", nrow(out), " raw/intermediate files")
   }
   invisible(out)
+}
+
+check_recovery_provenance_inputs <- function() {
+  if (!requireNamespace("jsonlite", quietly = TRUE)) {
+    return(data.frame(stringsAsFactors = FALSE))
+  }
+  candidates <- unique(c(
+    env("KFLOW_PROVENANCE_FILE", ""),
+    file.path(input_root, "kflow-provenance.json")
+  ))
+  candidates <- candidates[nzchar(candidates) & file.exists(candidates)]
+  if (!length(candidates)) return(data.frame(stringsAsFactors = FALSE))
+  provenance <- tryCatch(
+    jsonlite::read_json(candidates[[1L]], simplifyVector = TRUE),
+    error = function(e) NULL
+  )
+  inputs <- tryCatch(provenance$inputs, error = function(e) NULL)
+  if (is.data.frame(inputs)) return(inputs)
+  if (is.list(inputs)) return(bind_rows_fill_local(inputs))
+  data.frame(stringsAsFactors = FALSE)
+}
+
+write_check_recovery_manifest <- function() {
+  if (!isTRUE(expected_unit_ledger$present) ||
+      length(check_input_jobs) != length(expected_unit_ledger$units)) {
+    return(invisible(data.frame()))
+  }
+
+  status_file <- file.path(model_dir, "check-unit-status.csv")
+  statuses <- if (file.exists(status_file)) {
+    read_csv_safe(status_file)
+  } else {
+    data.frame(stringsAsFactors = FALSE)
+  }
+  provenance <- check_recovery_provenance_inputs()
+  provenance_value <- function(row, field, default = NA_character_) {
+    if (!is.data.frame(row) || !nrow(row) || !field %in% names(row)) {
+      return(default)
+    }
+    value <- as.character(row[[field]][[1L]])
+    if (is.na(value) || !nzchar(trimws(value))) default else value
+  }
+
+  rows <- lapply(seq_along(expected_unit_ledger$units), function(index) {
+    unit <- expected_unit_ledger$units[[index]]
+    source_job <- as.character(check_input_jobs[[index]])
+    status_row <- if (nrow(statuses) && "check_unit" %in% names(statuses)) {
+      statuses[as.character(statuses$check_unit) == unit, , drop = FALSE]
+    } else {
+      data.frame(stringsAsFactors = FALSE)
+    }
+    if (nrow(status_row) > 1L) status_row <- status_row[seq_len(1L), , drop = FALSE]
+    provenance_row <- if (nrow(provenance) && "job_number" %in% names(provenance)) {
+      provenance[as.character(provenance$job_number) == source_job, , drop = FALSE]
+    } else {
+      data.frame(stringsAsFactors = FALSE)
+    }
+    if (nrow(provenance_row) > 1L) {
+      provenance_row <- provenance_row[seq_len(1L), , drop = FALSE]
+    }
+
+    unit_dir_name <- switch(
+      expected_unit_ledger$type,
+      seed = paste0("jitter_seed_", unit),
+      peel = paste0("peel_", unit),
+      replicate = paste0("rep_", unit),
+      aspm = "aspm",
+      unit
+    )
+    unit_dir <- file.path(model_dir, check_type, unit_dir_name)
+    payload_name <- switch(
+      check_type,
+      jitter = "jitter_result.rds",
+      retro = "retro_info.rds",
+      selftest = "selftest_runs.rds",
+      aspm = "model_payload.rds",
+      NA_character_
+    )
+    payload_file <- if (!is.na(payload_name)) {
+      file.path(unit_dir, payload_name)
+    } else {
+      NA_character_
+    }
+    payload_relative <- if (!is.na(payload_file) && file.exists(payload_file)) {
+      relative_to(payload_file, model_dir)
+    } else {
+      NA_character_
+    }
+    payload_md5 <- if (!is.na(payload_file) && file.exists(payload_file)) {
+      unname(tools::md5sum(payload_file))
+    } else {
+      NA_character_
+    }
+
+    source_roots <- input_job_dirs(input_root, source_job)
+    raw_par_files <- if (identical(check_type, "jitter") && length(source_roots)) {
+      unique(unlist(lapply(source_roots, function(root) {
+        list.files(
+          root,
+          pattern = paste0("^jittered_out_", unit, "[.]par$"),
+          recursive = TRUE,
+          full.names = TRUE
+        )
+      }), use.names = FALSE))
+    } else {
+      character()
+    }
+    remote_dir <- provenance_value(provenance_row, "remote_dir")
+    source_archive <- if (!is.na(remote_dir)) {
+      paste0(sub("/+$", "", remote_dir), "/output_archive.tar.gz")
+    } else {
+      NA_character_
+    }
+    run_status <- provenance_value(status_row, "run_status", "unknown")
+    converged <- if (nrow(status_row) && "converged" %in% names(status_row)) {
+      isTRUE(suppressWarnings(as.logical(status_row$converged[[1L]])))
+    } else {
+      FALSE
+    }
+    raw_par_available <- length(raw_par_files) > 0L
+    recovery_mode <- if (raw_par_available) {
+      "source_job_archive_exact_par"
+    } else if (identical(check_type, "jitter") && !is.na(payload_relative)) {
+      "base_par_plus_payload_active_parameter_vector"
+    } else {
+      "source_job_archive_or_rerun"
+    }
+
+    data.frame(
+      check_type = check_type,
+      model_key = model_key,
+      unit_type = expected_unit_ledger$type,
+      unit = unit,
+      run_status = run_status,
+      converged = converged,
+      source_job_number = source_job,
+      source_job_id = provenance_value(provenance_row, "job_id"),
+      source_job_status = provenance_value(provenance_row, "status"),
+      source_archive = source_archive,
+      source_git_commit = provenance_value(provenance_row, "git_commit_sha"),
+      compact_payload = payload_relative,
+      compact_payload_md5 = payload_md5,
+      active_parameter_vector = if (identical(check_type, "jitter")) {
+        "jitter_result.rds:fitted_parameter_changes.labels.after"
+      } else {
+        NA_character_
+      },
+      exact_raw_par_in_source_archive = raw_par_available,
+      expected_raw_par_name = if (identical(check_type, "jitter")) {
+        paste0("jittered_out_", unit, ".par")
+      } else {
+        NA_character_
+      },
+      recovery_mode = recovery_mode,
+      base_model_job = original_base_input_job,
+      stringsAsFactors = FALSE
+    )
+  })
+
+  manifest <- bind_rows_fill_local(rows)
+  if (!nrow(manifest)) return(invisible(manifest))
+  csv_file <- file.path(model_dir, "check-recovery-manifest.csv")
+  rds_file <- file.path(model_dir, "check-recovery-manifest.rds")
+  write.csv(manifest, csv_file, row.names = FALSE)
+  saveRDS(manifest, rds_file, compress = "xz")
+  if (requireNamespace("jsonlite", quietly = TRUE)) {
+    jsonlite::write_json(
+      list(
+        schema = "ofp-sam-check-recovery.v1",
+        created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+        check_type = check_type,
+        model_key = model_key,
+        base_model_job = original_base_input_job,
+        compact_payload_first = check_compact_outputs_enabled(),
+        unit_logs_retained = truthy(env("CHECK_KEEP_UNIT_LOGS", "false"), FALSE),
+        rows = manifest
+      ),
+      file.path(model_dir, "check-recovery-manifest.json"),
+      dataframe = "rows",
+      auto_unbox = TRUE,
+      pretty = TRUE,
+      null = "null"
+    )
+  }
+  invisible(manifest)
 }
 
 check_input_roots <- if (length(check_input_jobs)) {
@@ -2870,6 +3060,7 @@ write_check_status_summary(model_dir, check_type, source_model_dirs)
 compact_merged_check_outputs()
 try(mfclkit::mfk_collect_diagnostics(model_dir, write_index = TRUE), silent = TRUE)
 write_check_status_summary(model_dir, check_type, source_model_dirs)
+write_check_recovery_manifest()
 copy_diagnostic_status_ledger(model_dir, check_type)
 if (requireNamespace("mfclshiny", quietly = TRUE)) {
   payload_index <- tryCatch(

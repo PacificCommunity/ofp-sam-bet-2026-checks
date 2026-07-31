@@ -1336,7 +1336,11 @@ compact_check_outputs <- function() {
     seed_dirs <- seed_dirs[grepl("^jitter_seed_[0-9]+$", basename(seed_dirs))]
     deleted <- lapply(seed_dirs, compact_prune_files,
       keep_names = c("jitter_result.rds", "jitter_info.rds"),
-      keep_patterns = c(log_patterns, "^jitter_seed_[0-9]+_(label_changes|summary)[.]csv$"),
+      keep_patterns = c(
+        log_patterns,
+        "^jittered_out_[0-9]+[.]par$",
+        "^jitter_seed_[0-9]+_(label_changes|summary)[.]csv$"
+      ),
       recursive = TRUE
     )
   } else if (identical(check_type, "retro")) {

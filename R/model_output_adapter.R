@@ -187,7 +187,9 @@ diagnostic_status_file_names <- function() {
     "check-unit-status.csv", "check-unit-status.rds",
     "check-summary.csv", "check-summary.rds",
     "check-source-status.csv", "check-source-status.rds",
-    "check_manifest.csv", "check_manifest.rds"
+    "check_manifest.csv", "check_manifest.rds",
+    "check-recovery-manifest.csv", "check-recovery-manifest.json",
+    "check-recovery-manifest.rds"
   )
 }
 

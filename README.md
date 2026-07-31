@@ -359,13 +359,22 @@ output without changing the original archive.
   control lines appended to the ASPM run. Use only for deliberate model-specific
   diagnostics.
 - `CHECK_COMPACT_OUTPUTS`: keep check archives payload-first by removing raw
-  MFCL case copies and intermediate files after the diagnostic payloads and logs
-  have been written. Default is `true`.
+  MFCL case copies and intermediate files after the diagnostic payloads have
+  been written. Default is `true`.
 - `CHECK_KEEP_RAW_OUTPUTS`: set to `true` for a one-off debugging run that needs
   every raw `.par`, `.rep`, `.frq`, and intermediate file in the Kflow archive.
   Default is `false`.
+- `CHECK_KEEP_UNIT_LOGS`: retain per-unit raw logs in a merged diagnostic
+  archive. Default is `false`; unit status, compact payloads, figures, and the
+  recovery manifest remain in the merge, while the source Kflow jobs retain
+  their full logs. This prevents MFCLShiny from staging hundreds of megabytes
+  of logs that it does not use.
 - `CHECK_ENRICH_PAYLOADS`: build compact mfclshiny payloads before raw outputs
   are removed. Default is `true`.
+- Jitter unit jobs retain `jittered_out_<seed>.par` in their own source
+  archives. Jitter merge/attach archives omit those raw PARs and record the
+  source job and payload reconstruction information in
+  `check-recovery-manifest.{csv,json,rds}`.
 - `SELFTEST_COMPACT_CLEANUP`: compact self-test replicate folders in the
   mfclkit runner. Default is `1`.
 - `SELFTEST_KEEP_MODEL_PAYLOAD`: keep full self-test truth/refit
