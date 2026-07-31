@@ -2546,6 +2546,48 @@ mfclshiny_payload_tool_env <- function(required_for) {
   tool_env
 }
 
+payload_has_artifact <- function(payload_file, role) {
+  if (!file.exists(payload_file)) return(FALSE)
+  payload <- tryCatch(readRDS(payload_file), error = function(e) NULL)
+  artifact <- tryCatch(payload$artifacts$files[[role]], error = function(e) NULL)
+  bytes <- tryCatch(artifact$bytes, error = function(e) NULL)
+  !is.null(artifact) && is.raw(bytes) && length(bytes) > 0L
+}
+
+build_merged_diagnostic_payload <- function(tool_env, dir, builder,
+                                            payload_name, payload_role) {
+  out_file <- file.path(dir, payload_name)
+  result <- tryCatch({
+    payload <- builder(dir)
+    saveRDS(payload, out_file, compress = "xz")
+    list(ok = TRUE, error = "")
+  }, error = function(e) {
+    list(ok = FALSE, error = conditionMessage(e))
+  })
+  if (!isTRUE(result$ok)) {
+    saveRDS(
+      list(
+        schema = "ofp-sam-check-payload-error.v1",
+        created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+        payload_role = payload_role,
+        error = result$error
+      ),
+      file.path(dir, "payload_build_error.rds"),
+      compress = "xz"
+    )
+  }
+  data.frame(
+    payload_role = payload_role,
+    folder = normalize_loose(dir),
+    payload = if (file.exists(out_file)) normalize_loose(out_file) else NA_character_,
+    payload_ok = isTRUE(result$ok) && file.exists(out_file),
+    par_recoverable = payload_has_artifact(out_file, "par"),
+    rep_recoverable = payload_has_artifact(out_file, "rep"),
+    error = result$error,
+    stringsAsFactors = FALSE
+  )
+}
+
 enrich_merged_check_payloads <- function() {
   if (!truthy(env("CHECK_ENRICH_PAYLOADS", "true"), TRUE)) return(invisible(data.frame()))
   if (identical(check_type, "jitter")) {
@@ -2554,25 +2596,51 @@ enrich_merged_check_payloads <- function() {
     if (!length(seed_dirs)) return(invisible(data.frame()))
     tool_env <- mfclshiny_payload_tool_env("jitter")
     rows <- lapply(seed_dirs, function(seed_dir) {
-      payload <- tool_env$mp_build_jitter_payload(seed_dir)
-      out_file <- file.path(seed_dir, "jitter_result.rds")
-      saveRDS(payload, out_file, compress = "xz")
-      data.frame(payload_role = "jitter_result", folder = normalize_loose(seed_dir),
-                 payload = normalize_loose(out_file), stringsAsFactors = FALSE)
+      build_merged_diagnostic_payload(
+        tool_env, seed_dir, tool_env$mp_build_jitter_payload,
+        "jitter_result.rds", "jitter_result"
+      )
     })
-    return(invisible(bind_rows_fill_local(rows)))
+    out <- bind_rows_fill_local(rows)
+    write.csv(out, file.path(model_dir, "jitter-payload-index.csv"), row.names = FALSE)
+    return(invisible(out))
   }
   if (identical(check_type, "profile")) {
     scalar_dirs <- list.dirs(file.path(model_dir, "profile"), recursive = TRUE, full.names = TRUE)
     scalar_dirs <- scalar_dirs[grepl("^scalar_", basename(scalar_dirs))]
-    missing <- scalar_dirs[!file.exists(file.path(scalar_dirs, "profile_payload.rds"))]
-    if (length(missing)) {
-      tool_env <- mfclshiny_payload_tool_env("profile")
-      for (scalar_dir in missing) {
-        payload <- tool_env$mp_build_profile_payload(scalar_dir)
-        saveRDS(payload, file.path(scalar_dir, "profile_payload.rds"), compress = "xz")
-      }
+    tool_env <- mfclshiny_payload_tool_env("profile")
+    rows <- lapply(scalar_dirs, function(scalar_dir) {
+      build_merged_diagnostic_payload(
+        tool_env, scalar_dir, tool_env$mp_build_profile_payload,
+        "profile_payload.rds", "profile_payload"
+      )
+    })
+    out <- bind_rows_fill_local(rows)
+    write.csv(out, file.path(model_dir, "profile-payload-index.csv"), row.names = FALSE)
+    return(invisible(out))
+  }
+  if (identical(check_type, "retro")) {
+    peel_dirs <- list.dirs(file.path(model_dir, "retro"), recursive = FALSE, full.names = TRUE)
+    peel_dirs <- peel_dirs[grepl("^peel_[0-9]+$", basename(peel_dirs))]
+    if (!length(peel_dirs)) return(invisible(data.frame()))
+    tool_env <- mfclshiny_payload_tool_env("retro")
+    if (!exists("mp_build_retro_payload", envir = tool_env, mode = "function")) {
+      warning(
+        "Installed mfclshiny does not provide mp_build_retro_payload(); ",
+        "raw retrospective outputs will be retained.",
+        call. = FALSE
+      )
+      return(invisible(data.frame()))
     }
+    rows <- lapply(peel_dirs, function(peel_dir) {
+      build_merged_diagnostic_payload(
+        tool_env, peel_dir, tool_env$mp_build_retro_payload,
+        "retro_info.rds", "retro_info"
+      )
+    })
+    out <- bind_rows_fill_local(rows)
+    write.csv(out, file.path(model_dir, "retro-payload-index.csv"), row.names = FALSE)
+    return(invisible(out))
   }
   if (identical(check_type, "aspm")) {
     aspm_dir <- file.path(model_dir, "aspm")
@@ -2594,6 +2662,30 @@ enrich_merged_check_payloads <- function() {
   invisible(data.frame())
 }
 
+safe_enrich_merged_check_payloads <- function() {
+  tryCatch(
+    enrich_merged_check_payloads(),
+    error = function(e) {
+      warning(
+        "Compact ", check_type, " payload enrichment failed; raw diagnostic ",
+        "outputs will be retained: ", conditionMessage(e),
+        call. = FALSE
+      )
+      saveRDS(
+        list(
+          schema = "ofp-sam-check-payload-error.v1",
+          created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+          check_type = check_type,
+          error = conditionMessage(e)
+        ),
+        file.path(model_dir, "payload_build_error.rds"),
+        compress = "xz"
+      )
+      invisible(data.frame())
+    }
+  )
+}
+
 compact_merged_check_outputs <- function() {
   if (!check_compact_outputs_enabled()) return(invisible(data.frame()))
 
@@ -2604,30 +2696,64 @@ compact_merged_check_outputs <- function() {
   if (identical(check_type, "jitter")) {
     seed_dirs <- list.dirs(file.path(model_dir, "jitter"), recursive = FALSE, full.names = TRUE)
     seed_dirs <- seed_dirs[grepl("^jitter_seed_[0-9]+$", basename(seed_dirs))]
-    deleted <- lapply(seed_dirs, compact_prune_files,
-      keep_names = c("jitter_result.rds", "jitter_info.rds"),
-      keep_patterns = c(
-        compact_log_patterns,
-        "^jitter_seed_[0-9]+_(label_changes|summary)[.]csv$"
-      ),
-      recursive = TRUE
-    )
+    deleted <- lapply(seed_dirs, function(seed_dir) {
+      payload_file <- file.path(seed_dir, "jitter_result.rds")
+      compact_prune_files(
+        seed_dir,
+        keep_names = c("jitter_result.rds", "jitter_info.rds", "payload_build_error.rds"),
+        keep_patterns = c(
+          compact_log_patterns,
+          if (!payload_has_artifact(payload_file, "par")) {
+            "^jittered_out_[0-9]+[.]par$"
+          } else {
+            character()
+          },
+          if (!payload_has_artifact(payload_file, "rep")) "[.]rep$" else character(),
+          "^jitter_seed_[0-9]+_(label_changes|summary)[.]csv$"
+        ),
+        recursive = TRUE
+      )
+    })
   } else if (identical(check_type, "retro")) {
     peel_dirs <- list.dirs(file.path(model_dir, "retro"), recursive = FALSE, full.names = TRUE)
     peel_dirs <- peel_dirs[grepl("^peel_[0-9]+$", basename(peel_dirs))]
-    deleted <- lapply(peel_dirs, compact_prune_files,
-      keep_names = c("retro_info.rds", "retro_metrics.rds", "retro_input_info.rds", "hessian_info.rds"),
-      keep_patterns = c(log_patterns, "(^|/)neigenvalues$", "[.]rep$"),
-      recursive = TRUE
-    )
+    deleted <- lapply(peel_dirs, function(peel_dir) {
+      payload_file <- file.path(peel_dir, "retro_info.rds")
+      compact_prune_files(
+        peel_dir,
+        keep_names = c(
+          "retro_info.rds", "retro_metrics.rds", "retro_input_info.rds",
+          "hessian_info.rds", "payload_build_error.rds"
+        ),
+        keep_patterns = c(
+          compact_log_patterns,
+          "(^|/)neigenvalues$",
+          if (!payload_has_artifact(payload_file, "par")) "[.]par[0-9]*$" else character(),
+          if (!payload_has_artifact(payload_file, "rep")) "[.]rep$" else character()
+        ),
+        recursive = TRUE
+      )
+    })
   } else if (identical(check_type, "profile")) {
     scalar_dirs <- list.dirs(file.path(model_dir, "profile"), recursive = TRUE, full.names = TRUE)
     scalar_dirs <- scalar_dirs[grepl("^scalar_", basename(scalar_dirs))]
-    deleted <- lapply(scalar_dirs, compact_prune_files,
-      keep_names = c("profile_payload.rds", "profile_point_info.rds", "info.rds", "test_plot_output", "hessian_info.rds"),
-      keep_patterns = c(log_patterns, "(^|/)neigenvalues$"),
-      recursive = TRUE
-    )
+    deleted <- lapply(scalar_dirs, function(scalar_dir) {
+      payload_file <- file.path(scalar_dir, "profile_payload.rds")
+      compact_prune_files(
+        scalar_dir,
+        keep_names = c(
+          "profile_payload.rds", "profile_point_info.rds", "info.rds",
+          "test_plot_output", "hessian_info.rds", "payload_build_error.rds"
+        ),
+        keep_patterns = c(
+          compact_log_patterns,
+          "(^|/)neigenvalues$",
+          if (!payload_has_artifact(payload_file, "par")) "[.]par[0-9]*$" else character(),
+          if (!payload_has_artifact(payload_file, "rep")) "[.]rep$" else character()
+        ),
+        recursive = TRUE
+      )
+    })
   } else if (identical(check_type, "aspm")) {
     deleted <- list(compact_prune_files(
       file.path(model_dir, "aspm"),
@@ -2748,6 +2874,10 @@ write_check_recovery_manifest <- function() {
     } else {
       NA_character_
     }
+    compact_par_recoverable <- !is.na(payload_file) &&
+      payload_has_artifact(payload_file, "par")
+    compact_rep_recoverable <- !is.na(payload_file) &&
+      payload_has_artifact(payload_file, "rep")
 
     source_roots <- input_job_dirs(input_root, source_job)
     raw_par_files <- if (identical(check_type, "jitter") && length(source_roots)) {
@@ -2775,7 +2905,9 @@ write_check_recovery_manifest <- function() {
       FALSE
     }
     raw_par_available <- length(raw_par_files) > 0L
-    recovery_mode <- if (raw_par_available) {
+    recovery_mode <- if (compact_par_recoverable) {
+      "compact_payload_par_artifact"
+    } else if (raw_par_available) {
       "source_job_archive_exact_par"
     } else if (identical(check_type, "jitter") && !is.na(payload_relative)) {
       "base_par_plus_payload_active_parameter_vector"
@@ -2797,6 +2929,8 @@ write_check_recovery_manifest <- function() {
       source_git_commit = provenance_value(provenance_row, "git_commit_sha"),
       compact_payload = payload_relative,
       compact_payload_md5 = payload_md5,
+      compact_par_recoverable = compact_par_recoverable,
+      compact_rep_recoverable = compact_rep_recoverable,
       active_parameter_vector = if (identical(check_type, "jitter")) {
         "jitter_result.rds:fitted_parameter_changes.labels.after"
       } else {
@@ -3054,7 +3188,7 @@ manifest <- data.frame(
 write.csv(manifest, file.path(model_dir, "check_manifest.csv"), row.names = FALSE)
 saveRDS(as.list(manifest), file.path(model_dir, "check_manifest.rds"), compress = "xz")
 
-enrich_merged_check_payloads()
+safe_enrich_merged_check_payloads()
 try(mfclkit::mfk_collect_diagnostics(model_dir, write_index = TRUE), silent = TRUE)
 write_check_status_summary(model_dir, check_type, source_model_dirs)
 compact_merged_check_outputs()

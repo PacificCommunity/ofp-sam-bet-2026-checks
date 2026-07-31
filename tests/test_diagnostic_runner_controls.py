@@ -84,7 +84,7 @@ class DiagnosticRunnerControlTests(unittest.TestCase):
         self.assertIn('env("SELFTEST_REFIT_MODE", "doitall")', runner)
         self.assertIn("par = check_start_par", runner)
 
-    def test_selftest_failed_units_fail_the_unit_task_by_default(self) -> None:
+    def test_failed_diagnostic_units_do_not_fail_the_unit_task_by_default(self) -> None:
         runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
         launcher = (ROOT / "run.sh").read_text(encoding="utf-8")
         task = (ROOT / "selftest" / "kflow.yaml").read_text(encoding="utf-8")
@@ -92,11 +92,8 @@ class DiagnosticRunnerControlTests(unittest.TestCase):
             encoding="utf-8"
         )
 
-        self.assertIn('CHECK_FAIL_ON_FAILED_UNITS: "true"', task)
-        self.assertIn(
-            'fail_on_failed_units_default <- identical(check_type, "selftest")',
-            runner,
-        )
+        self.assertIn('CHECK_FAIL_ON_FAILED_UNITS: "false"', task)
+        self.assertIn("fail_on_failed_units_default <- FALSE", runner)
         self.assertIn("(is.finite(n_failed) && n_failed > 0L)", runner)
         self.assertIn("set -euo pipefail", launcher)
         self.assertIn('Rscript R/run_check.R "$CHECK_TYPE"', launcher)
@@ -105,7 +102,7 @@ class DiagnosticRunnerControlTests(unittest.TestCase):
         jitter_task = (ROOT / "jitter" / "kflow.yaml").read_text(
             encoding="utf-8"
         )
-        self.assertIn('CHECK_FAIL_ON_FAILED_UNITS: "true"', jitter_task)
+        self.assertIn('CHECK_FAIL_ON_FAILED_UNITS: "false"', jitter_task)
 
         for check_type in ("retro", "profile", "aspm", "hessian"):
             unit_task = (ROOT / check_type / "kflow.yaml").read_text(

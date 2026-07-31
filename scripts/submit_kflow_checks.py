@@ -1583,12 +1583,13 @@ def main() -> int:
                     if key.startswith(env_prefixes) or key in passthrough_env or key == "program_path":
                         env[key] = value
                 if check.replace("_", "-").lower() in {"jitter", "selftest"}:
-                    # One failed split seed/replicate must remain visible as a
-                    # failed Kflow unit. The merge accepts failed inputs and
-                    # keeps the complete success/failure ledger.
+                    # Diagnostic completion and model convergence are separate
+                    # states. Keep every seed/replicate visible in the status
+                    # ledger without turning the Kflow unit itself into a
+                    # failed dependency.
                     env["CHECK_FAIL_ON_FAILED_UNITS"] = (
                         str(env.get("CHECK_FAIL_ON_FAILED_UNITS") or "").strip()
-                        or "true"
+                        or "false"
                     )
                 if check.replace("_", "-").lower() == "selftest":
                     env.setdefault(
@@ -1613,12 +1614,6 @@ def main() -> int:
                         "SELFTEST_REFIT_CONVERGENCE",
                         os.environ.get("SELFTEST_REFIT_CONVERGENCE", DEFAULT_SELFTEST_REFIT_CONVERGENCE),
                     )
-                    # A split self-test unit must surface an incomplete native
-                    # replicate as a failed Kflow job. A completed PAR remains
-                    # successful even when its convergence flag is false; the
-                    # viewer filters that diagnostic result later. Keep an
-                    # explicit caller override, but do not depend on the
-                    # registered task default being current.
                 env.update(unit.get("env", {}))
                 if check in {"profile", "hessian"}:
                     # Split profile and Hessian workers are intermediate

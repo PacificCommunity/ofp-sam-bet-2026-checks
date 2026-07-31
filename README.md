@@ -360,21 +360,27 @@ output without changing the original archive.
   diagnostics.
 - `CHECK_COMPACT_OUTPUTS`: keep check archives payload-first by removing raw
   MFCL case copies and intermediate files after the diagnostic payloads have
-  been written. Default is `true`.
+  been written. The compact jitter, retrospective, and profile `.rds` files
+  retain compressed core MFCL artifacts, including fitted `.par` and `.rep`
+  files when available. Raw files are pruned only after the matching payload
+  artifact has been verified. Default is `true`.
 - `CHECK_KEEP_RAW_OUTPUTS`: set to `true` for a one-off debugging run that needs
   every raw `.par`, `.rep`, `.frq`, and intermediate file in the Kflow archive.
   Default is `false`.
 - `CHECK_KEEP_UNIT_LOGS`: retain per-unit raw logs in a merged diagnostic
   archive. Default is `false`; unit status, compact payloads, figures, and the
-  recovery manifest remain in the merge, while the source Kflow jobs retain
-  their full logs. This prevents MFCLShiny from staging hundreds of megabytes
-  of logs that it does not use.
+  recovery manifest remain. Set it to `true` for a debugging submission that
+  must retain full unit logs. This prevents MFCLShiny from staging hundreds of
+  megabytes of logs that it does not use.
 - `CHECK_ENRICH_PAYLOADS`: build compact mfclshiny payloads before raw outputs
   are removed. Default is `true`.
-- Jitter unit jobs retain `jittered_out_<seed>.par` in their own source
-  archives. Jitter merge/attach archives omit those raw PARs and record the
-  source job and payload reconstruction information in
-  `check-recovery-manifest.{csv,json,rds}`.
+- `CHECK_FAIL_ON_FAILED_UNITS=false`: record non-converged or failed
+  diagnostic units in the status ledger without failing the Kflow job.
+  Payload-build errors likewise preserve raw unit output instead of deleting
+  it.
+- Merge/attach archives record payload recovery information in
+  `check-recovery-manifest.{csv,json,rds}`. mfclshiny reads the compact
+  diagnostic object directly and restores raw artifacts only on demand.
 - `SELFTEST_COMPACT_CLEANUP`: compact self-test replicate folders in the
   mfclkit runner. Default is `1`.
 - `SELFTEST_KEEP_MODEL_PAYLOAD`: keep full self-test truth/refit

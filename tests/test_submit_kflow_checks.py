@@ -253,7 +253,7 @@ class IntegerUnitSpecTests(unittest.TestCase):
             self.assertEqual(env["FLOW_SPECIES_LABEL"], "yellowfin tuna")
             self.assertEqual(env["FLOW_ASSESSMENT_YEAR"], "2027")
 
-    def test_jitter_and_selftest_units_surface_failed_runs_by_default(self):
+    def test_jitter_and_selftest_units_record_failed_runs_by_default(self):
         for check, unit_env, unit_value in (
             ("jitter", "JITTER_SEEDS", "1"),
             ("selftest", "SELFTEST_REPS", "1"),
@@ -274,7 +274,7 @@ class IntegerUnitSpecTests(unittest.TestCase):
                 merge = payloads[1]["payload"]
                 self.assertEqual(
                     unit["env"]["CHECK_FAIL_ON_FAILED_UNITS"],
-                    "true",
+                    "false",
                 )
                 self.assertNotIn("CHECK_FAIL_ON_FAILED_UNITS", merge["env"])
 
