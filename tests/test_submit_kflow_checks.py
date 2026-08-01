@@ -475,6 +475,60 @@ class IntegerUnitSpecTests(unittest.TestCase):
         self.assertTrue(all(spec["env"]["PROFILE_CHAIN"] == "true" for spec in specs))
         self.assertTrue(all(spec["env"]["PROFILE_EXECUTION_MODE"] == "continuation" for spec in specs))
 
+    def test_chain_extension_reuses_endpoint_job_and_submits_only_new_points(self):
+        payloads = run_dry_run(
+            [
+                "submit_kflow_checks.py",
+                "--checks", "profile",
+                "--models", "model",
+                "--input-jobs", "19835",
+                "--parallel-units", "true",
+                "--dry-run",
+            ],
+            {
+                "PROFILE_PARALLEL_MODE": "chains",
+                "PROFILE_EXECUTION_MODE": "continuation",
+                "PROFILE_VALUES": "57.5 55 142.5 145",
+                "PROFILE_EXPECTED_VALUES": "55 57.5 60 97.5 102.5 140 142.5 145",
+                "PROFILE_INCLUDE_BASE_ANCHOR": "false",
+                "PROFILE_CONTINUATION_SOURCE_JOBS": "19836 19837",
+                "PROFILE_REUSE_INPUT_JOBS": "19838",
+                "PROFILE_CONTINUATION_LOWER_SCALAR": "60",
+                "PROFILE_CONTINUATION_UPPER_SCALAR": "140",
+            },
+        )
+
+        self.assertEqual(len(payloads), 3)
+        lower, upper, merge = [item["payload"] for item in payloads]
+        self.assertEqual(lower["input_jobs"], ["19835", "19836", "19837"])
+        self.assertEqual(upper["input_jobs"], ["19835", "19836", "19837"])
+        self.assertEqual(lower["env"]["PROFILE_VALUES"], "57.5 55")
+        self.assertEqual(upper["env"]["PROFILE_VALUES"], "142.5 145")
+        self.assertEqual(lower["env"]["PROFILE_CONTINUATION_SOURCE_SCALAR"], "60")
+        self.assertEqual(upper["env"]["PROFILE_CONTINUATION_SOURCE_SCALAR"], "140")
+        self.assertEqual(lower["metadata"]["profile_continuation_source_scalar"], "60")
+        self.assertEqual(upper["metadata"]["profile_continuation_source_scalar"], "140")
+
+        lower_ref = "DRY-profile-model-downstream"
+        upper_ref = "DRY-profile-model-upstream"
+        self.assertEqual(
+            merge["input_jobs"],
+            ["19835", "19838", lower_ref, upper_ref],
+        )
+        self.assertEqual(merge["env"]["CHECK_INPUT_JOBS"], f"{lower_ref} {upper_ref}")
+        self.assertEqual(merge["env"]["PROFILE_REUSE_INPUT_JOBS"], "19838")
+        self.assertEqual(merge["metadata"]["profile_reuse_input_jobs"], ["19838"])
+
+    def test_chain_extension_requires_an_endpoint_for_every_submitted_arm(self):
+        with mock.patch.dict(os.environ, {
+            "PROFILE_PARALLEL_MODE": "chains",
+            "PROFILE_VALUES": "57.5 142.5",
+            "PROFILE_CONTINUATION_SOURCE_JOBS": "19838",
+            "PROFILE_CONTINUATION_LOWER_SCALAR": "60",
+        }, clear=True):
+            with self.assertRaisesRegex(SystemExit, "UPPER_SCALAR"):
+                submit.check_unit_specs("profile", parallel_units=True)
+
     def test_chain_merge_passes_explicit_repair_overrides(self):
         repair_env = {
             "PROFILE_PARALLEL_MODE": "chains",

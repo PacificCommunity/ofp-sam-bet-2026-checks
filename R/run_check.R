@@ -2368,6 +2368,75 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
       }
     }
 
+    profile_continuation_scalar <- split_numbers(env(
+      "MFK_PROFILE_CONTINUATION_SOURCE_SCALAR",
+      env("PROFILE_CONTINUATION_SOURCE_SCALAR", "")
+    ), default = numeric())
+    if (length(profile_continuation_scalar) > 1L) {
+      stop("PROFILE_CONTINUATION_SOURCE_SCALAR must contain one endpoint value.",
+           call. = FALSE)
+    }
+    profile_continuation_scalar <- if (length(profile_continuation_scalar)) {
+      profile_continuation_scalar[[1L]]
+    } else {
+      NULL
+    }
+    profile_continuation_payload_requested <- trimws(env(
+      "MFK_PROFILE_CONTINUATION_SOURCE_PAYLOAD",
+      env("PROFILE_CONTINUATION_SOURCE_PAYLOAD", "")
+    ))
+    resolve_profile_continuation_payload <- function(requested, scalar) {
+      payload_file <- function(path) {
+        if (dir.exists(path)) file.path(path, "profile_payload.rds") else path
+      }
+      if (nzchar(requested)) {
+        candidates <- unique(c(
+          requested,
+          file.path(default_input_root(), requested)
+        ))
+        candidates <- vapply(candidates, payload_file, character(1L))
+        candidates <- candidates[file.exists(candidates)]
+        if (length(candidates) != 1L) {
+          stop("Could not resolve exactly one PROFILE_CONTINUATION_SOURCE_PAYLOAD: ",
+               requested, call. = FALSE)
+        }
+        return(normalize_loose(candidates[[1L]]))
+      }
+      if (is.null(scalar)) return("")
+
+      candidates <- list.files(
+        default_input_root(), pattern = "^profile_payload[.]rds$",
+        recursive = TRUE, full.names = TRUE
+      )
+      matches <- candidates[vapply(candidates, function(path) {
+        payload <- tryCatch(readRDS(path), error = function(e) NULL)
+        if (!is.list(payload)) return(FALSE)
+        payload_profile <- tryCatch(as.character(payload$profile[[1L]]),
+                                    error = function(e) "")
+        payload_scalar <- tryCatch(suppressWarnings(as.numeric(payload$scalar[[1L]])),
+                                   error = function(e) NA_real_)
+        identical(payload_profile, profile_name) && is.finite(payload_scalar) &&
+          abs(payload_scalar - scalar) <=
+            sqrt(.Machine$double.eps) * max(1, abs(scalar))
+      }, logical(1L))]
+      if (length(matches)) {
+        hashes <- unname(tools::md5sum(matches))
+        matches <- matches[!duplicated(hashes)]
+      }
+      if (length(matches) != 1L) {
+        stop(
+          "Expected exactly one unique compact profile endpoint payload for ",
+          profile_name, " scalar ", scalar, "; found ", length(matches), ".",
+          call. = FALSE
+        )
+      }
+      normalize_loose(matches[[1L]])
+    }
+    profile_continuation_payload <- resolve_profile_continuation_payload(
+      profile_continuation_payload_requested,
+      profile_continuation_scalar
+    )
+
     profile <- mfk_quantity_profile_from_model(
       model_dir = prepared$case_dir,
       name = profile_name,
@@ -2422,6 +2491,13 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
       profile_side = profile_side,
       profile_center = profile_center,
       profile_expected_values = env("PROFILE_EXPECTED_VALUES", ""),
+      profile_continuation_source_scalar = profile_continuation_scalar %||% NA_real_,
+      profile_continuation_source_payload = profile_continuation_payload,
+      profile_continuation_source_payload_md5 = if (nzchar(profile_continuation_payload)) {
+        unname(tools::md5sum(profile_continuation_payload))
+      } else {
+        ""
+      },
       profile_penalties = paste(profile_penalties, collapse = " "),
       profile_ramp_reps = paste(profile_ramp_reps, collapse = " ")
     ))
@@ -2433,6 +2509,14 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
     }
     profile_runner <- getExportedValue("mfclkit", "mfk_run_quantity_profile")
     runner_formals <- names(formals(profile_runner))
+    if (nzchar(profile_continuation_payload) &&
+        !"continuation_start_payload" %in% runner_formals) {
+      stop(
+        "Profile endpoint continuation requires an updated mfclkit with ",
+        "continuation_start_payload support.",
+        call. = FALSE
+      )
+    }
     if (identical(profile_execution_mode, "doitall") &&
         !"execution" %in% runner_formals) {
       stop(
@@ -2510,6 +2594,10 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
       max_jagged_repairs = profile_max_jagged_repairs,
       run_messages = truthy(env("MFK_RUN_MESSAGES", "true"), TRUE)
     )
+    if (nzchar(profile_continuation_payload)) {
+      profile_args$continuation_start_payload <- profile_continuation_payload
+      profile_args$continuation_start_scalar <- profile_continuation_scalar
+    }
     if (!is.null(profile_repair_strictness)) {
       repair_formal <- intersect(
         c("repair_strictness", "repair_strict", "strict_repair"), runner_formals

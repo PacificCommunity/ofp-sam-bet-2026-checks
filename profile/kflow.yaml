@@ -13,7 +13,7 @@ env:
   MODEL_SOURCE_REF: main
   PROGRAM_PATH: /home/mfcl/mfclo64
   KFLOW_RUNTIME_PACKAGES: none
-  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@a594cfc5509e44b092a3dc08f0f5adf35f0f86ee,mfclshiny=PacificCommunity/mfclshiny@1fc0bb6bf4cf5349da6f6def54cc56c5a60e182a
+  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@e1af93d0b5cd69de5e78c3affd73fe19b26471df,mfclshiny=PacificCommunity/mfclshiny@1fc0bb6bf4cf5349da6f6def54cc56c5a60e182a
   KFLOW_REPO_RUNTIME_UPDATE: always
   KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
   KFLOW_RUNTIME_UPDATE: always
@@ -41,6 +41,16 @@ env:
   # the model-specific phase sequence in its own job.
   PROFILE_PARALLEL_MODE: chains
   PROFILE_EXECUTION_MODE: continuation
+  # Optional endpoint continuation. Source jobs are mounted only on profile
+  # workers; each arm restores the compact payload at its declared endpoint.
+  PROFILE_CONTINUATION_SOURCE_JOBS: ""
+  PROFILE_CONTINUATION_SOURCE_PAYLOAD: ""
+  PROFILE_CONTINUATION_SOURCE_SCALAR: ""
+  PROFILE_CONTINUATION_LOWER_SCALAR: ""
+  PROFILE_CONTINUATION_UPPER_SCALAR: ""
+  # Prior merged profiles can be supplied separately to the merge job so old
+  # scalar points are reused without exposing that bundle to the workers.
+  PROFILE_REUSE_INPUT_JOBS: ""
   PROFILE_DOITALL_PENALTY: "10000000"
   PROFILE_DOITALL_SCRIPT: doitall.sh
   # Used when PROFILE_EXECUTION_MODE=doitall. This replaces only the last
@@ -125,6 +135,12 @@ metadata:
       - PROFILE_USE_RAMP
       - PROFILE_PARALLEL_MODE
       - PROFILE_EXECUTION_MODE
+      - PROFILE_CONTINUATION_SOURCE_JOBS
+      - PROFILE_CONTINUATION_SOURCE_PAYLOAD
+      - PROFILE_CONTINUATION_SOURCE_SCALAR
+      - PROFILE_CONTINUATION_LOWER_SCALAR
+      - PROFILE_CONTINUATION_UPPER_SCALAR
+      - PROFILE_REUSE_INPUT_JOBS
       - PROFILE_DOITALL_PENALTY
       - PROFILE_DOITALL_SCRIPT
       - PROFILE_CHAIN

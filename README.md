@@ -282,6 +282,22 @@ output without changing the original archive.
   phase sequence for every point, so total CPU use is higher even when elapsed
   time is much lower. `doitall` with chain mode is rejected because independent
   INI-based rebuilds have no neighbouring fitted PAR to continue from.
+- Existing quantity profiles can be extended without rerunning their old grid.
+  Set `PROFILE_CONTINUATION_SOURCE_JOBS` to jobs containing recoverable compact
+  endpoint payloads and identify the inward endpoints with
+  `PROFILE_CONTINUATION_LOWER_SCALAR` and
+  `PROFILE_CONTINUATION_UPPER_SCALAR`. Each new chain validates the matching
+  profile/scalar and fitted-point status, restores its embedded PAR exactly,
+  and continues outward from that endpoint. `PROFILE_VALUES` should contain
+  only the new scalar points. `PROFILE_CONTINUATION_SOURCE_PAYLOAD` and
+  `PROFILE_CONTINUATION_SOURCE_SCALAR` provide the equivalent single-arm,
+  direct-payload interface.
+- Set `PROFILE_REUSE_INPUT_JOBS` to the prior profile merge whose completed
+  points should be combined with the new chains. These inputs are mounted only
+  on the merge job, while `PROFILE_EXPECTED_VALUES` declares the complete old
+  plus new grid. Missing or invalid old/new points therefore remain visible in
+  the merged QC ledger. Endpoint source jobs and profile-reuse jobs are kept
+  separate because a compact merged payload need not retain the endpoint PAR.
 - `PROFILE_DOITALL_PENALTY`: constraint weight carried through each full
   doitall profile, default `1e7`. `PROFILE_DOITALL_SCRIPT` names the staged
   model-specific script and defaults to `doitall.sh`.

@@ -36,7 +36,7 @@ CHECK_ALIASES = {
 DEFAULT_RUNTIME_PACKAGES = "none"
 DEFAULT_REPO_RUNTIME_PACKAGES = (
     "FLR4MFCL=PacificCommunity/ofp-sam-flr4mfcl@3faaf84a4867175bfea50d89e4d518c085e84739,"
-    "mfclkit=PacificCommunity/ofp-sam-mfclkit@a594cfc5509e44b092a3dc08f0f5adf35f0f86ee,"
+    "mfclkit=PacificCommunity/ofp-sam-mfclkit@e1af93d0b5cd69de5e78c3affd73fe19b26471df,"
     "mfclshiny=PacificCommunity/mfclshiny@1fc0bb6bf4cf5349da6f6def54cc56c5a60e182a"
 )
 
@@ -501,6 +501,31 @@ def resolved_profile_env(values: list[float] | None = None) -> dict[str, str]:
             else env_first("PROFILE_PARALLEL_MODE") or "chains"
         ),
         "PROFILE_EXECUTION_MODE": execution_mode,
+        "PROFILE_CONTINUATION_SOURCE_JOBS": env_first(
+            "MFK_PROFILE_CONTINUATION_SOURCE_JOBS",
+            "PROFILE_CONTINUATION_SOURCE_JOBS",
+            "PROFILE_CONTINUATION_SOURCE_JOB",
+        ) or "",
+        "PROFILE_REUSE_INPUT_JOBS": env_first(
+            "MFK_PROFILE_REUSE_INPUT_JOBS",
+            "PROFILE_REUSE_INPUT_JOBS",
+        ) or "",
+        "PROFILE_CONTINUATION_SOURCE_PAYLOAD": env_first(
+            "MFK_PROFILE_CONTINUATION_SOURCE_PAYLOAD",
+            "PROFILE_CONTINUATION_SOURCE_PAYLOAD",
+        ) or "",
+        "PROFILE_CONTINUATION_SOURCE_SCALAR": env_first(
+            "MFK_PROFILE_CONTINUATION_SOURCE_SCALAR",
+            "PROFILE_CONTINUATION_SOURCE_SCALAR",
+        ) or "",
+        "PROFILE_CONTINUATION_LOWER_SCALAR": env_first(
+            "MFK_PROFILE_CONTINUATION_LOWER_SCALAR",
+            "PROFILE_CONTINUATION_LOWER_SCALAR",
+        ) or "",
+        "PROFILE_CONTINUATION_UPPER_SCALAR": env_first(
+            "MFK_PROFILE_CONTINUATION_UPPER_SCALAR",
+            "PROFILE_CONTINUATION_UPPER_SCALAR",
+        ) or "",
         "MFCL_LIVE_LOG": env_first("MFCL_LIVE_LOG") or "true",
         "MFK_RUN_MESSAGES": env_first("MFK_RUN_MESSAGES") or "true",
         "MFK_STREAM_LOGS": env_first("MFK_STREAM_LOGS") or "true",
@@ -740,17 +765,37 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
                 if common_env["PROFILE_VALUE_MODE"] == "absolute"
                 else "PROFILE_VALUES"
             )
-            return [
-                {
+            specs = []
+            continuation_requested = bool(
+                common_env.get("PROFILE_CONTINUATION_SOURCE_JOBS")
+                or common_env.get("PROFILE_CONTINUATION_SOURCE_PAYLOAD")
+            )
+            for side, chain_values in chains.items():
+                source_scalar = common_env.get(
+                    "PROFILE_CONTINUATION_LOWER_SCALAR"
+                    if side == "downstream"
+                    else "PROFILE_CONTINUATION_UPPER_SCALAR",
+                    "",
+                ) or common_env.get("PROFILE_CONTINUATION_SOURCE_SCALAR", "")
+                if continuation_requested and not source_scalar:
+                    raise SystemExit(
+                        "Profile endpoint continuation requires "
+                        f"PROFILE_CONTINUATION_{'LOWER' if side == 'downstream' else 'UPPER'}_SCALAR "
+                        f"for the {side} chain."
+                    )
+                unit_env = {
+                    **common_env,
+                    values_key: " ".join(format_number(value) for value in chain_values),
+                    "PROFILE_CHAIN": "true",
+                    "PROFILE_CHAIN_SIDE": side,
+                    "PROFILE_CENTER": center,
+                    "PROFILE_INCLUDE_BASE_ANCHOR": "false",
+                }
+                if source_scalar:
+                    unit_env["PROFILE_CONTINUATION_SOURCE_SCALAR"] = source_scalar
+                specs.append({
                     "label": f"{side} chain",
-                    "env": {
-                        **common_env,
-                        values_key: " ".join(format_number(value) for value in chain_values),
-                        "PROFILE_CHAIN": "true",
-                        "PROFILE_CHAIN_SIDE": side,
-                        "PROFILE_CENTER": center,
-                        "PROFILE_INCLUDE_BASE_ANCHOR": "false",
-                    },
+                    "env": unit_env,
                     "metadata": {
                         "check_unit_type": "profile_chain",
                         "check_unit": side,
@@ -763,10 +808,10 @@ def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
                         "profile_doitall_script": common_env["PROFILE_DOITALL_SCRIPT"],
                         "profile_expected_values": common_env["PROFILE_EXPECTED_VALUES"],
                         "profile_chain_values": " ".join(format_number(value) for value in chain_values),
+                        "profile_continuation_source_scalar": source_scalar,
                     },
-                }
-                for side, chain_values in chains.items()
-            ]
+                })
+            return specs
         if mode in {"scalar", "scalars", "point", "points", *HBASE_PROFILE_MODES}:
             if is_hbase_profile_mode(mode) and execution_mode not in {"continuation", "ramp", "legacy"}:
                 raise SystemExit(
@@ -1395,6 +1440,29 @@ def main() -> int:
             requested_prep_job = env_first("PROFILE_HBASE_PREP_JOB").lstrip("#")
             prep_job_id = ""
             unit_input_jobs = list(input_jobs)
+            profile_reuse_jobs = []
+            if check == "profile":
+                profile_continuation_jobs = [
+                    job.lstrip("#")
+                    for job in split_values(
+                        profile_submit_env.get("PROFILE_CONTINUATION_SOURCE_JOBS", "")
+                    )
+                ]
+                profile_continuation_jobs = list(dict.fromkeys(
+                    job for job in profile_continuation_jobs if job
+                ))
+                profile_reuse_jobs = [
+                    job.lstrip("#")
+                    for job in split_values(
+                        profile_submit_env.get("PROFILE_REUSE_INPUT_JOBS", "")
+                    )
+                ] or list(profile_continuation_jobs)
+                profile_reuse_jobs = list(dict.fromkeys(
+                    job for job in profile_reuse_jobs if job
+                ))
+                unit_input_jobs = list(dict.fromkeys([
+                    *unit_input_jobs, *profile_continuation_jobs,
+                ]))
             if is_hbase and requested_prep_job:
                 if not base_input_job:
                     raise SystemExit("h-base profile submission requires the fitted base job first.")
@@ -1720,6 +1788,7 @@ def main() -> int:
                     "expected_units": expected_units,
                     "is_hbase": is_hbase,
                     "prep_job_id": prep_job_id,
+                    "profile_reuse_jobs": profile_reuse_jobs,
                 }
             )
 
@@ -1733,6 +1802,7 @@ def main() -> int:
             continue
         model = group["model"]
         is_hbase = bool(group.get("is_hbase"))
+        profile_reuse_jobs = list(group.get("profile_reuse_jobs") or [])
         task = (
             f"{args.task_prefix}-profile-h-base-merge"
             if is_hbase else f"{args.task_prefix}-{merge_check}"
@@ -1795,6 +1865,8 @@ def main() -> int:
             profile_merge_env = resolved_profile_env(profile_values_from_env())
             profile_merge_env.pop("PROFILE_CHAIN_SIDE", None)
             env.update(profile_merge_env)
+            if profile_reuse_jobs:
+                env["PROFILE_REUSE_INPUT_JOBS"] = " ".join(profile_reuse_jobs)
             if is_hbase:
                 env.update({
                     "PROFILE_HBASE_ENABLED": "true",
@@ -1855,6 +1927,8 @@ def main() -> int:
                 "original_base_job": base_input_job,
                 "attach_base_input_job": base_input_job,
                 "check_input_jobs": list(unit_job_ids),
+                **({"profile_reuse_input_jobs": profile_reuse_jobs}
+                   if profile_reuse_jobs else {}),
                 "attach_check_types": [check],
                 "attached_check_types": [check],
                 "attached_updated_check_types": [check],
@@ -1883,9 +1957,11 @@ def main() -> int:
             }
             direct_attach_tags = {"base_job": base_input_job, "attached_output_overlay": "true"}
 
-        merge_input_jobs = list(unit_job_ids)
+        merge_input_jobs = list(dict.fromkeys([*profile_reuse_jobs, *unit_job_ids]))
         if direct_merge_attach or is_hbase:
-            merge_input_jobs = list(dict.fromkeys([base_input_job, *unit_job_ids]))
+            merge_input_jobs = list(dict.fromkeys([
+                base_input_job, *profile_reuse_jobs, *unit_job_ids,
+            ]))
 
         payload = {
             **submitter_fields,
@@ -1920,6 +1996,7 @@ def main() -> int:
                     "profile_doitall_script": profile_merge_env.get("PROFILE_DOITALL_SCRIPT", ""),
                     "profile_expected_values": profile_merge_env.get("PROFILE_EXPECTED_VALUES", ""),
                     "profile_spec_version": profile_merge_env.get("PROFILE_SPEC_VERSION", ""),
+                    "profile_reuse_input_jobs": profile_reuse_jobs,
                 } if check == "profile" else {}),
                 "previous_attached_output_job": previous_attached_job_for_base,
                 "previous_check_merge_jobs": previous_merge_jobs,

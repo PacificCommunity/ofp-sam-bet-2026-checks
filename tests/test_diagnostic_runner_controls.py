@@ -178,6 +178,16 @@ class DiagnosticRunnerControlTests(unittest.TestCase):
         self.assertIn('profile_args$doitall_penalty <- profile_doitall_penalty', runner)
         self.assertIn('profile_args$parallel_points <- FALSE', runner)
         self.assertIn("PROFILE_EXECUTION_MODE: continuation", task)
+
+    def test_profile_endpoint_payload_continuation_is_fail_closed(self) -> None:
+        runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
+        task = (ROOT / "profile" / "kflow.yaml").read_text(encoding="utf-8")
+
+        self.assertIn("PROFILE_CONTINUATION_SOURCE_SCALAR", runner)
+        self.assertIn("PROFILE_CONTINUATION_SOURCE_PAYLOAD", runner)
+        self.assertIn("Expected exactly one unique compact profile endpoint payload", runner)
+        self.assertIn("profile_args$continuation_start_payload", runner)
+        self.assertIn("profile_args$continuation_start_scalar", runner)
         self.assertIn('PROFILE_DOITALL_PENALTY: "10000000"', task)
 
     def test_profile_keeps_only_the_restart_par_needed_by_merge_repair(self) -> None:
