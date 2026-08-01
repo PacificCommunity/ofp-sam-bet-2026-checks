@@ -14,7 +14,7 @@ env:
   MODEL_SOURCE_REF: main
   PROGRAM_PATH: /home/mfcl/mfclo64
   KFLOW_RUNTIME_PACKAGES: none
-  KFLOW_REPO_RUNTIME_PACKAGES: FLR4MFCL=PacificCommunity/ofp-sam-flr4mfcl@3faaf84a4867175bfea50d89e4d518c085e84739,mfclkit=PacificCommunity/ofp-sam-mfclkit@25103916446d0395286afae28b5404bf361670fc,mfclshiny=PacificCommunity/mfclshiny@1fc0bb6bf4cf5349da6f6def54cc56c5a60e182a
+  KFLOW_REPO_RUNTIME_PACKAGES: FLR4MFCL=PacificCommunity/ofp-sam-flr4mfcl@3faaf84a4867175bfea50d89e4d518c085e84739,mfclkit=PacificCommunity/ofp-sam-mfclkit@3dc691619f628b61070fe8243463383b80a676de,mfclshiny=PacificCommunity/mfclshiny@1fc0bb6bf4cf5349da6f6def54cc56c5a60e182a
   KFLOW_REPO_RUNTIME_UPDATE: always
   KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
   KFLOW_RUNTIME_UPDATE: always

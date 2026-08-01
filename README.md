@@ -369,9 +369,10 @@ output without changing the original archive.
   `doitall.sh` attempt. When explicitly enabled and the script's declared
   terminal PAR is absent, mfclkit identifies the last completed PAR on the
   parsed fitted phase chain, perturbs it, and resumes only the remaining
-  phases. `RETRO_DOITALL_FALLBACK_SEEDS` is required when enabled and controls
-  the ordered recovery attempts; `RETRO_DOITALL_FALLBACK_CV` defaults to
-  `0.1`. No phase number or PAR filename is assumed.
+  phases. `RETRO_DOITALL_FALLBACK_SEEDS` controls the ordered recovery
+  attempts and defaults to `1 2 3 4 5`; `RETRO_DOITALL_FALLBACK_CV` defaults
+  to `0.1`. A failed perturbation or numerical fit advances to the next seed.
+  No phase number or PAR filename is assumed.
 - `CHECK_KEEP_RAW_OUTPUTS`: set to `true` for a one-off debugging run that needs
   every raw `.par`, `.rep`, `.frq`, and intermediate file in the Kflow archive.
   Default is `false`.

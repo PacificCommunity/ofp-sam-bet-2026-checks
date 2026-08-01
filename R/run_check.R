@@ -1937,7 +1937,7 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
     env("RETRO_DOITALL_FALLBACK", "false"), FALSE
   )
   retro_doitall_fallback_seeds_raw <- trimws(env(
-    "RETRO_DOITALL_FALLBACK_SEEDS", ""
+    "RETRO_DOITALL_FALLBACK_SEEDS", "1 2 3 4 5"
   ))
   retro_doitall_fallback_seeds <- if (
       nzchar(retro_doitall_fallback_seeds_raw)) {
@@ -1946,14 +1946,7 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
       option = "RETRO_DOITALL_FALLBACK_SEEDS"
     )
   } else {
-    integer()
-  }
-  if (isTRUE(retro_doitall_fallback) &&
-      !length(retro_doitall_fallback_seeds)) {
-    stop(
-      "RETRO_DOITALL_FALLBACK=true requires explicit ",
-      "RETRO_DOITALL_FALLBACK_SEEDS.", call. = FALSE
-    )
+    seq_len(5L)
   }
   if (anyDuplicated(retro_doitall_fallback_seeds)) {
     stop("RETRO_DOITALL_FALLBACK_SEEDS must not contain duplicates.",
