@@ -183,6 +183,8 @@ class DiagnosticRunnerControlTests(unittest.TestCase):
         runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
         task = (ROOT / "profile" / "kflow.yaml").read_text(encoding="utf-8")
 
+        self.assertIn("model_base_input_root(prepared_input_root)", runner)
+        self.assertIn('MODEL_BASE_INPUT_JOB: ""', task)
         self.assertIn("PROFILE_CONTINUATION_SOURCE_SCALAR", runner)
         self.assertIn("PROFILE_CONTINUATION_SOURCE_PAYLOAD", runner)
         self.assertIn("Expected exactly one unique compact profile endpoint payload", runner)

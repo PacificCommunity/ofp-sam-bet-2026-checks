@@ -166,6 +166,22 @@ input_job_dirs <- function(root, job) {
   normalize_loose(dirs[provenance_matches])
 }
 
+model_base_input_root <- function(root,
+                                  job = env("MODEL_BASE_INPUT_JOB",
+                                            env("BASE_MODEL_JOB", ""))) {
+  job <- trimws(as.character(job %||% "")[[1L]])
+  if (!nzchar(job)) return(normalize_loose(root))
+  matches <- unique(input_job_dirs(root, job))
+  if (length(matches) != 1L) {
+    stop(
+      "Expected exactly one mounted base-model input for MODEL_BASE_INPUT_JOB=",
+      job, "; found ", length(matches), ".",
+      call. = FALSE
+    )
+  }
+  normalize_loose(matches[[1L]])
+}
+
 copy_dir <- function(from, to) {
   if (!dir.exists(from)) stop("Directory not found: ", from, call. = FALSE)
   if (dir.exists(to)) unlink(to, recursive = TRUE, force = TRUE)

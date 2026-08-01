@@ -502,6 +502,8 @@ class IntegerUnitSpecTests(unittest.TestCase):
         lower, upper, merge = [item["payload"] for item in payloads]
         self.assertEqual(lower["input_jobs"], ["19835", "19836", "19837"])
         self.assertEqual(upper["input_jobs"], ["19835", "19836", "19837"])
+        self.assertEqual(lower["env"]["MODEL_BASE_INPUT_JOB"], "19835")
+        self.assertEqual(upper["env"]["MODEL_BASE_INPUT_JOB"], "19835")
         self.assertEqual(lower["env"]["PROFILE_VALUES"], "57.5 55")
         self.assertEqual(upper["env"]["PROFILE_VALUES"], "142.5 145")
         self.assertEqual(lower["env"]["PROFILE_CONTINUATION_SOURCE_SCALAR"], "60")

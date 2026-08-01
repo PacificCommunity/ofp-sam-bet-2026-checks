@@ -11,6 +11,7 @@ env:
   CHECK_TYPE: profile
   MODEL_SOURCE_REPO: PacificCommunity/ofp-sam-bet-2026-stepwise
   MODEL_SOURCE_REF: main
+  MODEL_BASE_INPUT_JOB: ""
   PROGRAM_PATH: /home/mfcl/mfclo64
   KFLOW_RUNTIME_PACKAGES: none
   KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@e1af93d0b5cd69de5e78c3affd73fe19b26471df,mfclshiny=PacificCommunity/mfclshiny@1fc0bb6bf4cf5349da6f6def54cc56c5a60e182a
@@ -105,6 +106,7 @@ metadata:
     optional:
       - CHECK_TYPE
       - MODEL_SELECTOR
+      - MODEL_BASE_INPUT_JOB
       - MODEL_INPUT_ROOT
       - MODEL_SOURCE_REPO
       - MODEL_SOURCE_REF

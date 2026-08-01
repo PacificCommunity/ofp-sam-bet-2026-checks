@@ -1613,6 +1613,9 @@ def main() -> int:
                 env = {
                     "CHECK_TYPE": check,
                     "MODEL_SELECTOR": model,
+                    "MODEL_BASE_INPUT_JOB": (
+                        base_input_job if len(unit_input_jobs) > 1 else ""
+                    ),
                     "KFLOW_JOB_TITLE": title,
                     "KFLOW_JOB_DESCRIPTION": description,
                     "MODEL_SOURCE_REPO": args.model_source_repo,
@@ -1642,6 +1645,7 @@ def main() -> int:
                     "CHECK_EXPECTED_UNIT_TYPE",
                     "CHECK_EXPECTED_UNITS",
                     "MODEL_SELECTOR",
+                    "MODEL_BASE_INPUT_JOB",
                     "KFLOW_JOB_TITLE",
                     "KFLOW_JOB_DESCRIPTION",
                 }

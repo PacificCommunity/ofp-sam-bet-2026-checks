@@ -18,6 +18,11 @@ if (identical(profile_hbase_role_initial, "prep")) {
     stop("h-base base-job input directory was not mounted: ", base_job_root, call. = FALSE)
   }
   prepared_input_root <- base_job_root
+} else {
+  # Auxiliary diagnostic inputs can contain copies of the same model. Restrict
+  # model discovery to the explicitly declared fitted base while leaving the
+  # full input root available to endpoint/payload discovery later in the run.
+  prepared_input_root <- model_base_input_root(prepared_input_root)
 }
 prepared <- prepare_model_for_check(input_root = prepared_input_root)
 
