@@ -1933,6 +1933,48 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
       retro_convergence != floor(retro_convergence)) {
     stop("RETRO_CONVERGENCE must be one finite whole-number exponent.")
   }
+  retro_doitall_fallback <- truthy(
+    env("RETRO_DOITALL_FALLBACK", "false"), FALSE
+  )
+  retro_doitall_fallback_seeds_raw <- trimws(env(
+    "RETRO_DOITALL_FALLBACK_SEEDS", ""
+  ))
+  retro_doitall_fallback_seeds <- if (
+      nzchar(retro_doitall_fallback_seeds_raw)) {
+    positive_integer_values(
+      retro_doitall_fallback_seeds_raw,
+      option = "RETRO_DOITALL_FALLBACK_SEEDS"
+    )
+  } else {
+    integer()
+  }
+  if (isTRUE(retro_doitall_fallback) &&
+      !length(retro_doitall_fallback_seeds)) {
+    stop(
+      "RETRO_DOITALL_FALLBACK=true requires explicit ",
+      "RETRO_DOITALL_FALLBACK_SEEDS.", call. = FALSE
+    )
+  }
+  if (anyDuplicated(retro_doitall_fallback_seeds)) {
+    stop("RETRO_DOITALL_FALLBACK_SEEDS must not contain duplicates.",
+         call. = FALSE)
+  }
+  retro_doitall_fallback_cv_raw <- trimws(env(
+    "RETRO_DOITALL_FALLBACK_CV", "0.1"
+  ))
+  retro_doitall_fallback_cv <- suppressWarnings(as.numeric(
+    retro_doitall_fallback_cv_raw
+  ))
+  if (length(retro_doitall_fallback_cv) != 1L ||
+      !is.finite(retro_doitall_fallback_cv) ||
+      retro_doitall_fallback_cv <= 0) {
+    stop("RETRO_DOITALL_FALLBACK_CV must be one finite number greater than zero.",
+         call. = FALSE)
+  }
+  if (isTRUE(retro_doitall_fallback) && !isTRUE(retro_use_doitall)) {
+    stop("RETRO_DOITALL_FALLBACK=true requires RETRO_USE_DOITALL=true.",
+         call. = FALSE)
+  }
   write_run_manifest(list(
     retro_peels = paste(peels, collapse = " "),
     n_mixing_periods = n_mixing_periods,
@@ -1943,7 +1985,12 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
     retro_start_par_name = if (nzchar(retro_start_par_name)) retro_start_par_name else "auto",
     retro_rewrite_par = if (is.na(retro_rewrite_par)) "auto" else retro_rewrite_par,
     retro_start_strategy = retro_start_strategy,
-    retro_convergence_exponent = as.integer(retro_convergence)
+    retro_convergence_exponent = as.integer(retro_convergence),
+    retro_doitall_fallback = retro_doitall_fallback,
+    retro_doitall_fallback_seeds = paste(
+      retro_doitall_fallback_seeds, collapse = " "
+    ),
+    retro_doitall_fallback_cv = retro_doitall_fallback_cv
   ))
   retro_args <- list(
     backend = backend,
@@ -1974,6 +2021,26 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
   } else if (!isTRUE(retro_use_doitall)) {
     retro_input_par <- if (nzchar(retro_start_par_name)) retro_start_par_name else start_par_name
     retro_args$command <- mfcl_command(input_par = retro_input_par, output_par = "retro.par")
+  }
+  if (isTRUE(retro_doitall_fallback)) {
+    retro_runner_formals <- names(formals(mfk_run_retro))
+    required_fallback_formals <- c(
+      "doitall_fallback", "doitall_fallback_seeds", "doitall_fallback_cv"
+    )
+    missing_fallback_formals <- setdiff(
+      required_fallback_formals, retro_runner_formals
+    )
+    if (length(missing_fallback_formals)) {
+      stop(
+        "RETRO_DOITALL_FALLBACK=true requires an updated mfclkit with ",
+        "generic doitall resume support; missing mfk_run_retro arguments: ",
+        paste(missing_fallback_formals, collapse = ", "), ".",
+        call. = FALSE
+      )
+    }
+    retro_args$doitall_fallback <- TRUE
+    retro_args$doitall_fallback_seeds <- retro_doitall_fallback_seeds
+    retro_args$doitall_fallback_cv <- retro_doitall_fallback_cv
   }
   result <- tryCatch(
     do.call(mfk_run_retro, retro_args),
