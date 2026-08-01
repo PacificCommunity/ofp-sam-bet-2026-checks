@@ -14,7 +14,7 @@ env:
   PROGRAM_PATH: /home/mfcl/mfclo64
   SELFTEST_PROGRAM_PATH: /home/mfcl/mfclo64
   KFLOW_RUNTIME_PACKAGES: none
-  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@3dc691619f628b61070fe8243463383b80a676de,mfclshiny=PacificCommunity/mfclshiny@1fc0bb6bf4cf5349da6f6def54cc56c5a60e182a
+  KFLOW_REPO_RUNTIME_PACKAGES: mfclkit=PacificCommunity/ofp-sam-mfclkit@a594cfc5509e44b092a3dc08f0f5adf35f0f86ee,mfclshiny=PacificCommunity/mfclshiny@1fc0bb6bf4cf5349da6f6def54cc56c5a60e182a
   KFLOW_REPO_RUNTIME_UPDATE: always
   KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
   KFLOW_RUNTIME_UPDATE: always
@@ -32,7 +32,7 @@ env:
   SELFTEST_SOURCE_MODE: last_par
   SELFTEST_REFIT_MODE: doitall
   SELFTEST_REFIT_FEVALS: "5000"
-  SELFTEST_REFIT_CONVERGENCE: "-3"
+  SELFTEST_REFIT_CONVERGENCE: "-4"
   SELFTEST_TAG_SIMULATION: conditional_postmixing
   SELFTEST_REQUIRE_NATIVE_TAGS: "auto"
   SELFTEST_UPDATE_TAGS: "auto"

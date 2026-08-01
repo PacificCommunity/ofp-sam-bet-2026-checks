@@ -1926,8 +1926,8 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
     retro_start_strategy_raw
   }
   retro_convergence <- split_numbers(
-    env("RETRO_CONVERGENCE", env("RETRO_CONVERGENCE_EXPONENT", "-3")),
-    default = -3
+    env("RETRO_CONVERGENCE", env("RETRO_CONVERGENCE_EXPONENT", "-4")),
+    default = -4
   )[[1L]]
   if (!is.finite(retro_convergence) ||
       retro_convergence != floor(retro_convergence)) {
@@ -2810,7 +2810,7 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
     selftest_tag_simulation = env("SELFTEST_TAG_SIMULATION", "conditional_postmixing"),
     selftest_program_path = env("SELFTEST_PROGRAM_PATH", "/home/mfcl/mfclo64"),
     selftest_refit_fevals = env("SELFTEST_REFIT_FEVALS", ""),
-    selftest_refit_convergence = env("SELFTEST_REFIT_CONVERGENCE", "-3"),
+    selftest_refit_convergence = env("SELFTEST_REFIT_CONVERGENCE", "-4"),
     selftest_require_native_tags = env("SELFTEST_REQUIRE_NATIVE_TAGS", "auto"),
     selftest_update_tags = env("SELFTEST_UPDATE_TAGS", "auto"),
     selftest_update_catch = env("SELFTEST_UPDATE_CATCH", "auto"),

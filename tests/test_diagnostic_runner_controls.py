@@ -88,6 +88,28 @@ class DiagnosticRunnerControlTests(unittest.TestCase):
         self.assertIn("required_fallback_formals", runner)
         self.assertIn("retro_args$doitall_fallback <- TRUE", runner)
 
+    def test_retro_and_selftest_default_to_one_e_minus_four(self) -> None:
+        runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
+        retro_task = (ROOT / "retro" / "kflow.yaml").read_text(encoding="utf-8")
+        selftest_task = (ROOT / "selftest" / "kflow.yaml").read_text(
+            encoding="utf-8"
+        )
+        submitter = (ROOT / "scripts" / "submit_kflow_checks.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('RETRO_CONVERGENCE: "-4"', retro_task)
+        self.assertIn(
+            'env("RETRO_CONVERGENCE", env("RETRO_CONVERGENCE_EXPONENT", "-4"))',
+            runner,
+        )
+        self.assertIn('SELFTEST_REFIT_CONVERGENCE: "-4"', selftest_task)
+        self.assertIn(
+            'selftest_refit_convergence = env("SELFTEST_REFIT_CONVERGENCE", "-4")',
+            runner,
+        )
+        self.assertIn('DEFAULT_SELFTEST_REFIT_CONVERGENCE = "-4"', submitter)
+
     def test_selftest_uses_fitted_truth_then_refits_the_full_doitall(self) -> None:
         runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
         task = (ROOT / "selftest" / "kflow.yaml").read_text(encoding="utf-8")

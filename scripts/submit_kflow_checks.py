@@ -36,7 +36,7 @@ CHECK_ALIASES = {
 DEFAULT_RUNTIME_PACKAGES = "none"
 DEFAULT_REPO_RUNTIME_PACKAGES = (
     "FLR4MFCL=PacificCommunity/ofp-sam-flr4mfcl@3faaf84a4867175bfea50d89e4d518c085e84739,"
-    "mfclkit=PacificCommunity/ofp-sam-mfclkit@3dc691619f628b61070fe8243463383b80a676de,"
+    "mfclkit=PacificCommunity/ofp-sam-mfclkit@a594cfc5509e44b092a3dc08f0f5adf35f0f86ee,"
     "mfclshiny=PacificCommunity/mfclshiny@1fc0bb6bf4cf5349da6f6def54cc56c5a60e182a"
 )
 
@@ -45,7 +45,7 @@ DEFAULT_PROFILE_CENTER = "100"
 DEFAULT_JITTER_SEEDS = [str(value) for value in range(1, 31)]
 DEFAULT_RETRO_PEELS = [str(value) for value in range(1, 7)]
 DEFAULT_SELFTEST_REPS = [str(value) for value in range(1, 31)]
-DEFAULT_SELFTEST_REFIT_CONVERGENCE = "-3"
+DEFAULT_SELFTEST_REFIT_CONVERGENCE = "-4"
 DEFAULT_CHECK_CPUS = "2"
 DEFAULT_CHECK_MEMORY = "8GB"
 DEFAULT_CHECK_DISK = "10GB"

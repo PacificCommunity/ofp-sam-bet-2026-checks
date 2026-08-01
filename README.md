@@ -208,6 +208,10 @@ output without changing the original archive.
   phase's declared input PAR, jitters its declared output PAR, then resumes
   the remaining phases. No numeric PAR filename convention is assumed. Use
   `simple` to run the older direct fitted-par jitter path.
+- `RETRO_CONVERGENCE`: convergence exponent for retrospective doitall refits.
+  The default is `-4` (`1e-4`). Both ordinary retrospective fits and the
+  opt-in seeded-resume fallback use that same value for their maximum-gradient
+  convergence decision.
 - `JITTER_SLOTS`: optional comma/space list of `MFCLPar` slots to perturb. If
   unset, the runner uses a conservative set of continuous dev/coefficient slots
   and leaves structural metadata untouched. This is used by the `simple`
@@ -342,8 +346,9 @@ output without changing the original archive.
 - `SELFTEST_REFIT_MODE`: refit each simulated data set through the complete
   staged model-specific `doitall.sh`. Default is `doitall`.
 - `SELFTEST_REFIT_CONVERGENCE`: convergence exponent for self-test doitall
-  refits. The default `-3` updates only the last model-defined mgc/pf50 control
-  in the copied `doitall.sh`; set `-4` for a stricter 1e-4 refit.
+  refits. The default `-4` updates only the last model-defined mgc/pf50 control
+  in the copied `doitall.sh` and records convergence at the matching `1e-4`
+  maximum-gradient threshold. Override it only for a deliberate sensitivity.
 - `selftest_update_tags` / `SELFTEST_UPDATE_TAGS`: `auto` by default. Tag
   pseudo-data are generated only when the staged MFCL case has a `.tag` file.
 - `selftest_require_native_tags` / `SELFTEST_REQUIRE_NATIVE_TAGS`: `auto` by
