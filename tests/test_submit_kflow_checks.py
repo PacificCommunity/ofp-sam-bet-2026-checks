@@ -292,6 +292,37 @@ class IntegerUnitSpecTests(unittest.TestCase):
                     "false",
                 )
 
+    def test_selftest_workers_defer_figures_to_merge(self):
+        payloads = run_dry_run(
+            [
+                "submit_kflow_checks.py",
+                "--checks", "selftest",
+                "--models", "model",
+                "--input-jobs", "3001",
+                "--parallel-units", "true",
+                "--dry-run",
+            ],
+            {
+                "SELFTEST_REPS": "1 2 3",
+                "CHECK_BUILD_PAYLOADS": "true",
+                "CHECK_BUILD_REPORT_FIGURES": "false",
+                "CHECK_ENRICH_PAYLOADS": "true",
+            },
+        )
+
+        self.assertEqual(len(payloads), 4)
+        units, merge = payloads[:-1], payloads[-1]
+        for item in units:
+            env = item["payload"]["env"]
+            self.assertEqual(env["CHECK_BUILD_PAYLOADS"], "true")
+            self.assertEqual(env["CHECK_ENRICH_PAYLOADS"], "true")
+            self.assertEqual(env["CHECK_BUILD_REPORT_FIGURES"], "false")
+
+        merge_env = merge["payload"]["env"]
+        self.assertEqual(merge_env["CHECK_BUILD_PAYLOADS"], "true")
+        self.assertEqual(merge_env["CHECK_ENRICH_PAYLOADS"], "true")
+        self.assertEqual(merge_env["CHECK_BUILD_REPORT_FIGURES"], "true")
+
     def test_scalar_mode_emits_one_non_center_job_per_value_and_one_merge(self):
         values = "80 90 110 120"
         expected_values = "80 90 100 110 120"

@@ -1592,6 +1592,11 @@ def main() -> int:
                         or "false"
                     )
                 if check.replace("_", "-").lower() == "selftest":
+                    # Self-test workers publish compact, recoverable replicate
+                    # payloads only.  Rendering is a fan-in responsibility so
+                    # every requested figure is produced once from the merged
+                    # 1..N ledger rather than once per replicate.
+                    env["CHECK_BUILD_REPORT_FIGURES"] = "false"
                     env.setdefault(
                         "SELFTEST_RUN_REFIT",
                         os.environ.get("SELFTEST_RUN_REFIT", os.environ.get("CHECK_SELFTEST_RUN_REFIT", "true")),
@@ -1802,6 +1807,10 @@ def main() -> int:
                 })
         if check == "hessian":
             env["CHECK_TYPE"] = "hessian_merge"
+        if check == "selftest":
+            # A caller-level CHECK_BUILD_REPORT_FIGURES=false is appropriate
+            # for workers but must not suppress the final merged report.
+            env["CHECK_BUILD_REPORT_FIGURES"] = "true"
 
         if direct_merge_attach:
             env.update({

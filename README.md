@@ -394,6 +394,10 @@ output without changing the original archive.
 - `SELFTEST_KEEP_MODEL_PAYLOAD`: keep full self-test truth/refit
   `model_payload.rds` files. Default is `0`; recovery tables and model-info
   payloads are kept either way.
+- Parallel self-test workers retain compact recoverable payloads but defer
+  report figures to the merge job. The merge always enables report-figure
+  generation so a worker-level figure override cannot suppress the complete
+  merged figure set.
 - `HESSIAN_COMPACT`: compact Hessian part jobs while preserving the `.hes` files
   required by `hessian-merge`. Default is `true`.
 - `HESSIAN_KEEP_MATRIX`: keep final merged Hessian matrix files in the
