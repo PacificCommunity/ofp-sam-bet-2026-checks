@@ -788,6 +788,45 @@ mfk_close_quantity_profile <- function(
                 self.assertEqual(summary["merge_status"], "incomplete")
                 self.assertTrue((output_dir / "models/model/model_payload.rds").is_file())
 
+    def test_profile_qc_outcomes_can_be_published_without_refitting(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            input_root, output_dir, base_model = self.make_case(root, "profile")
+            unit_model = input_root / "4001/outputs/checks/profile/model"
+            self.write_compact_base_payload(base_model, "base fitted par\n")
+            self.write_profile_point(unit_model, 80, 120)
+            self.write_profile_point(unit_model, 85, 110, valid=False)
+            self.write_profile_point(unit_model, 90, 80)
+            self.write_profile_point(unit_model, 110, 120)
+
+            self.run_merge(
+                input_root,
+                output_dir,
+                "profile",
+                extra_env={
+                    **self.mock_env(),
+                    "CHECK_SMOKE_ONLY": "false",
+                    "CHECK_DIAGNOSTIC_FAILURES_ARE_OUTCOMES": "true",
+                    "PROFILE_INCLUDE_BASE_ANCHOR": "true",
+                    "PROFILE_EXPECTED_VALUES": "80 85 90 100 110",
+                    "PROFILE_POST_MERGE_REPAIR": "false",
+                },
+            )
+
+            published = output_dir / "models/model/profile"
+            diagnostics = read_csv(published / "profile-merge-diagnostics.csv")
+            self.assertIn(
+                "invalid_profile_point", {row["code"] for row in diagnostics}
+            )
+            self.assertTrue(any(row["blocking"] == "TRUE" for row in diagnostics))
+            summary = read_csv(published / "check-summary.csv")[0]
+            self.assertEqual(summary["merge_status"], "complete_with_failed_units")
+            self.assertEqual(
+                summary["unit_failures_are_diagnostic_outcomes"], "TRUE"
+            )
+            self.assertEqual(summary["all_required_units_successful"], "TRUE")
+            self.assertEqual(summary["profile_diagnostics_blocking"], "TRUE")
+
     def test_profile_closure_defaults_and_env_are_wired_to_standalone_api(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

@@ -31,6 +31,9 @@ env:
   CHECK_COMPACT_OUTPUTS: "true"
   CHECK_ENRICH_PAYLOADS: "true"
   CHECK_KEEP_RAW_OUTPUTS: "false"
+  # Opt in only when every completed profile point should remain an explicit
+  # QC outcome and must not prevent publication of the merged profile.
+  CHECK_DIAGNOSTIC_FAILURES_ARE_OUTCOMES: "false"
   PROFILE_INCLUDE_BASE_ANCHOR: "true"
   PROFILE_PRESET: robust_fast
   PROFILE_VALUE_MODE: percent
@@ -57,6 +60,7 @@ metadata:
       - CHECK_COMPACT_OUTPUTS
       - CHECK_ENRICH_PAYLOADS
       - CHECK_KEEP_RAW_OUTPUTS
+      - CHECK_DIAGNOSTIC_FAILURES_ARE_OUTCOMES
       - MODEL_SELECTOR
       - CHECK_SOURCE_MODEL_SELECTORS
       - MODEL_BASE_INPUT_JOB

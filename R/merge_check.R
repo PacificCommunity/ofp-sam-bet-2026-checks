@@ -1916,7 +1916,7 @@ write_check_status_summary <- function(model_dir, check_type, source_dirs = char
   requires_all_units <- check_type %in% c("hessian", "profile") || isTRUE(expected_unit_ledger$present)
   unit_failures_are_diagnostic_outcomes <- check_type %in% c(
     "jitter", "retro", "selftest", "aspm"
-  )
+  ) || truthy(env("CHECK_DIAGNOSTIC_FAILURES_ARE_OUTCOMES", "false"), FALSE)
   total_failed <- n_failed + n_source_failed
   missing_expected_units <- isTRUE(expected_unit_ledger$present) &&
     is.finite(n_missing_expected) && n_missing_expected > 0L
@@ -2319,6 +2319,9 @@ merge_profile_add_summary_diagnostics <- function(model_dir) {
   warning_count <- sum(diagnostics$level == "warning", na.rm = TRUE)
   critical_count <- sum(diagnostics$level == "critical", na.rm = TRUE)
   blocking <- any(diagnostics$blocking %in% TRUE, na.rm = TRUE)
+  diagnostic_failures_are_outcomes <- truthy(env(
+    "CHECK_DIAGNOSTIC_FAILURES_ARE_OUTCOMES", "false"
+  ), FALSE)
   fields <- list(
     profile_diagnostic_status = if (blocking || critical_count) {
       "critical"
@@ -2338,7 +2341,7 @@ merge_profile_add_summary_diagnostics <- function(model_dir) {
     summary <- tryCatch(readRDS(rds_path), error = function(e) NULL)
     if (is.list(summary)) {
       for (field in names(fields)) summary[[field]] <- fields[[field]]
-      if (blocking) {
+      if (blocking && !diagnostic_failures_are_outcomes) {
         summary$has_failures <- TRUE
         summary$all_required_units_successful <- FALSE
         summary$merge_status <- "incomplete"
@@ -2351,7 +2354,7 @@ merge_profile_add_summary_diagnostics <- function(model_dir) {
     summary <- tryCatch(read.csv(csv_path, stringsAsFactors = FALSE), error = function(e) NULL)
     if (is.data.frame(summary)) {
       for (field in names(fields)) summary[[field]] <- fields[[field]]
-      if (blocking) {
+      if (blocking && !diagnostic_failures_are_outcomes) {
         summary$has_failures <- TRUE
         summary$all_required_units_successful <- FALSE
         summary$merge_status <- "incomplete"

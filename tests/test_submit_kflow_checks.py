@@ -783,6 +783,13 @@ class AttachedTaskDefaultsTests(unittest.TestCase):
                 self.assertIn('PROFILE_MAX_GRAD_THRESHOLD: ""', task)
                 self.assertEqual(task.count("PROFILE_MAX_GRAD_THRESHOLD"), 2)
 
+    def test_profile_merge_can_publish_qc_outcomes_explicitly(self):
+        task = (ROOT / "profile-merge" / "kflow.yaml").read_text(encoding="utf-8")
+        self.assertIn(
+            'CHECK_DIAGNOSTIC_FAILURES_ARE_OUTCOMES: "false"', task
+        )
+        self.assertEqual(task.count("CHECK_DIAGNOSTIC_FAILURES_ARE_OUTCOMES"), 2)
+
     def test_profile_task_keeps_chain_continuation_defaults(self):
         task = (ROOT / "profile" / "kflow.yaml").read_text(encoding="utf-8")
         self.assertIn("PROFILE_PARALLEL_MODE: chains", task)
