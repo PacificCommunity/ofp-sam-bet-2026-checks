@@ -370,6 +370,10 @@ output without changing the original archive.
   default. Native tag simulation output is required only when tag pseudo-data
   are enabled for a model that actually has tag inputs.
 - `ASPM_MAX_EVALS`: maximum evaluations for the ASPM refit, default `10000`.
+- `ASPM_RECRUITMENT_MODES`: optional space- or comma-separated ASPM variants.
+  Each of `constant`, `fitted`, and `estimated` runs independently and is
+  retained under its own output folder before one combined merge. If unset,
+  the existing single `ASPM_RECRUITMENT_MODE` behaviour is unchanged.
 - `ASPM_FIX_SELECTIVITY`: fix selectivity to the fitted values before excluding
   composition data. Default is `true`.
 - `ASPM_MIN_LF_SAMPLE_SIZE` and `ASPM_MIN_WF_SAMPLE_SIZE`: high minimum sample

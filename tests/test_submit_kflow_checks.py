@@ -698,6 +698,71 @@ class IntegerUnitSpecTests(unittest.TestCase):
         self.assertEqual(attach["metadata"]["attached_output_overlay_replace_names"], [])
 
 
+class AspmUnitSpecTests(unittest.TestCase):
+    def test_multiple_recruitment_modes_are_independent_named_units(self) -> None:
+        with mock.patch.dict(
+            os.environ,
+            {"ASPM_RECRUITMENT_MODES": "constant fitted estimated fitted"},
+            clear=True,
+        ):
+            specs = submit.check_unit_specs("aspm", parallel_units=True)
+
+        self.assertEqual(
+            [spec["metadata"]["check_unit"] for spec in specs],
+            ["constant", "fitted", "estimated"],
+        )
+        self.assertEqual(
+            [spec["env"]["ASPM_VARIANT_SUBDIR"] for spec in specs],
+            ["constant", "fitted", "estimated"],
+        )
+        self.assertEqual(
+            [spec["env"]["ASPM_DIAGNOSTIC_DEFINITION"] for spec in specs],
+            ["strict", "nonstandard", "nonstandard"],
+        )
+        self.assertEqual(
+            submit.expected_unit_ledger(specs),
+            ("aspm", ["constant", "fitted", "estimated"]),
+        )
+
+    def test_single_aspm_default_remains_legacy_compatible(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=True):
+            specs = submit.check_unit_specs("aspm", parallel_units=True)
+        self.assertEqual(len(specs), 1)
+        self.assertEqual(specs[0]["env"], {})
+        self.assertEqual(specs[0]["metadata"]["check_unit"], "aspm")
+
+    def test_multiple_modes_feed_one_complete_aspm_merge(self) -> None:
+        payloads = run_dry_run(
+            [
+                "submit_kflow_checks.py",
+                "--checks", "aspm",
+                "--models", "Diagnostic-model",
+                "--input-jobs", "19835",
+                "--dry-run",
+            ],
+            {"ASPM_RECRUITMENT_MODES": "constant fitted"},
+        )
+        self.assertEqual(len(payloads), 3)
+        units = [item["payload"] for item in payloads[:2]]
+        merge = payloads[2]["payload"]
+        self.assertEqual(
+            [unit["env"]["ASPM_RECRUITMENT_MODE"] for unit in units],
+            ["constant", "fitted"],
+        )
+        self.assertEqual(
+            merge["env"]["CHECK_EXPECTED_UNIT_TYPE"],
+            "aspm",
+        )
+        self.assertEqual(
+            merge["env"]["CHECK_EXPECTED_UNITS"],
+            "constant fitted",
+        )
+        self.assertEqual(
+            merge["metadata"]["attached_work_slot"],
+            "diagnostics:Diagnostic-model:aspm",
+        )
+
+
 class AttachedOutputDiscoveryTests(unittest.TestCase):
     def test_latest_attached_output_is_used_only_when_child_is_safe(self):
         parent = {"metadata": {"attached_work_latest": {"output_job": "2999"}}}

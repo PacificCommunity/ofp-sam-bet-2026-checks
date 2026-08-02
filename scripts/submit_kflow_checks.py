@@ -36,7 +36,7 @@ CHECK_ALIASES = {
 DEFAULT_RUNTIME_PACKAGES = "none"
 DEFAULT_REPO_RUNTIME_PACKAGES = (
     "FLR4MFCL=PacificCommunity/ofp-sam-flr4mfcl@3faaf84a4867175bfea50d89e4d518c085e84739,"
-    "mfclkit=PacificCommunity/ofp-sam-mfclkit@34c56de25afecdd13e9f8e94f2e421e37d9c2f9b,"
+    "mfclkit=PacificCommunity/ofp-sam-mfclkit@cf786007b5261f84faac8f3d24f7084bd323119d,"
     "mfclshiny=PacificCommunity/mfclshiny@1fc0bb6bf4cf5349da6f6def54cc56c5a60e182a"
 )
 
@@ -637,6 +637,42 @@ def resolved_profile_unit_env(values: list[float] | None = None) -> dict[str, st
 def check_unit_specs(check: str, parallel_units: bool) -> list[dict[str, Any]]:
     check_key = normalize_check_name(check)
     if check_key == "aspm":
+        requested_modes = env_first("ASPM_RECRUITMENT_MODES")
+        if requested_modes:
+            modes = list(dict.fromkeys(
+                value.strip().lower() for value in split_values(requested_modes)
+                if value.strip()
+            ))
+            allowed = {"constant", "fitted", "estimated"}
+            invalid = [mode for mode in modes if mode not in allowed]
+            if invalid:
+                raise SystemExit(
+                    "ASPM_RECRUITMENT_MODES must contain only constant, fitted, "
+                    f"or estimated; got {', '.join(invalid)}."
+                )
+            labels = {
+                "constant": "constant recruitment",
+                "fitted": "ASPMfix diagnostic recruitment fixed",
+                "estimated": "ASPMrec recruitment estimated",
+            }
+            return [
+                {
+                    "label": labels[mode],
+                    "env": {
+                        "ASPM_RECRUITMENT_MODE": mode,
+                        "ASPM_DIAGNOSTIC_DEFINITION": (
+                            "strict" if mode == "constant" else "nonstandard"
+                        ),
+                        "ASPM_VARIANT_SUBDIR": mode,
+                    },
+                    "metadata": {
+                        "check_unit_type": "aspm",
+                        "check_unit": mode,
+                        "aspm_recruitment_mode": mode,
+                    },
+                }
+                for mode in modes
+            ]
         return [{
             "label": "",
             "env": {},

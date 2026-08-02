@@ -1431,29 +1431,47 @@ enrich_retro_payloads <- function() {
 }
 
 enrich_aspm_payload <- function() {
-  aspm_dir <- file.path(model_dir, "aspm")
-  if (!dir.exists(aspm_dir)) return(invisible(data.frame()))
+  aspm_root <- file.path(model_dir, "aspm")
+  if (!dir.exists(aspm_root)) return(invisible(data.frame()))
   if (!requireNamespace("mfclshiny", quietly = TRUE)) {
     stop("mfclshiny is required to build compact ASPM payloads.", call. = FALSE)
   }
 
   tool_env <- mfclshiny_payload_tool_env("ASPM")
-  payload <- tool_env$mp_build_model_payload(aspm_dir)
-  payload_file <- file.path(aspm_dir, "model_payload.rds")
-  saveRDS(payload, payload_file, compress = "xz")
-  if ("write_model_payload_manifest" %in% getNamespaceExports("mfclshiny")) {
-    mfclshiny::write_model_payload_manifest(payload = payload, folder = aspm_dir, payload_file = payload_file)
-  }
-
-  out <- data.frame(
-    check_type = check_type,
-    model_key = model_key,
-    payload_role = "aspm_model_payload",
-    folder = normalize_loose(aspm_dir),
-    payload = normalize_loose(payload_file),
-    bytes = suppressWarnings(as.numeric(file.info(payload_file)$size)),
-    stringsAsFactors = FALSE
-  )
+  info_files <- unique(c(
+    file.path(aspm_root, "aspm_info.rds"),
+    list.files(
+      aspm_root, pattern = "^aspm_info[.]rds$", recursive = TRUE,
+      full.names = TRUE
+    )
+  ))
+  result_dirs <- unique(dirname(info_files[file.exists(info_files)]))
+  if (!length(result_dirs)) return(invisible(data.frame()))
+  rows <- lapply(result_dirs, function(aspm_dir) {
+    payload <- tool_env$mp_build_model_payload(aspm_dir)
+    payload_file <- file.path(aspm_dir, "model_payload.rds")
+    saveRDS(payload, payload_file, compress = "xz")
+    if ("write_model_payload_manifest" %in% getNamespaceExports("mfclshiny")) {
+      mfclshiny::write_model_payload_manifest(
+        payload = payload, folder = aspm_dir, payload_file = payload_file
+      )
+    }
+    data.frame(
+      check_type = check_type,
+      model_key = model_key,
+      payload_role = "aspm_model_payload",
+      variant = if (identical(normalize_loose(aspm_dir), normalize_loose(aspm_root))) {
+        "aspm"
+      } else {
+        basename(aspm_dir)
+      },
+      folder = normalize_loose(aspm_dir),
+      payload = normalize_loose(payload_file),
+      bytes = suppressWarnings(as.numeric(file.info(payload_file)$size)),
+      stringsAsFactors = FALSE
+    )
+  })
+  out <- bind_rows_fill(rows)
   write.csv(out, file.path(model_dir, "aspm-payload-index.csv"), row.names = FALSE)
   invisible(out)
 }
@@ -2611,7 +2629,20 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
   recruitment_mode <- tolower(env("ASPM_RECRUITMENT_MODE", "constant"))
   diagnostic_definition <- tolower(env("ASPM_DIAGNOSTIC_DEFINITION", "strict"))
   output_par <- env("ASPM_OUTPUT_PAR", "aspm.par")
-  aspm_dir <- file.path(model_dir, "aspm")
+  variant_subdir <- trimws(env("ASPM_VARIANT_SUBDIR", ""))
+  if (nzchar(variant_subdir)) {
+    safe_variant_subdir <- gsub("[^A-Za-z0-9_.-]+", "_", variant_subdir)
+    if (!identical(safe_variant_subdir, variant_subdir)) {
+      stop(
+        "ASPM_VARIANT_SUBDIR must contain only letters, numbers, dots, ",
+        "underscores, or hyphens.",
+        call. = FALSE
+      )
+    }
+    aspm_dir <- file.path(model_dir, "aspm", safe_variant_subdir)
+  } else {
+    aspm_dir <- file.path(model_dir, "aspm")
+  }
   write_run_manifest(list(
     aspm_max_evals = max_evals,
     aspm_restart_passes = restart_passes,
@@ -2620,6 +2651,9 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
     aspm_lf_flag_311 = lf_flag_311,
     aspm_wf_flag_301 = wf_flag_301,
     aspm_fix_selectivity = fix_selectivity,
+    aspm_recruitment_mode = recruitment_mode,
+    aspm_diagnostic_definition = diagnostic_definition,
+    aspm_variant_subdir = variant_subdir,
     aspm_output_par = output_par
   ))
   restart_output_par <- function(pass) {

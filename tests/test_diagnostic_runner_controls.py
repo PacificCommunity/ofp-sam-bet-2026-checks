@@ -177,14 +177,17 @@ class DiagnosticRunnerControlTests(unittest.TestCase):
 
     def test_aspm_defaults_to_the_strict_constant_recruitment_definition(self) -> None:
         runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
+        merger = (ROOT / "R" / "merge_check.R").read_text(encoding="utf-8")
         task = (ROOT / "aspm" / "kflow.yaml").read_text(encoding="utf-8")
 
         self.assertIn('env("ASPM_RECRUITMENT_MODE", "constant")', runner)
         self.assertIn('env("ASPM_DIAGNOSTIC_DEFINITION", "strict")', runner)
+        self.assertIn('env("ASPM_VARIANT_SUBDIR", "")', runner)
         self.assertIn("recruitment_mode = recruitment_mode", runner)
         self.assertIn("diagnostic_definition = diagnostic_definition", runner)
         self.assertIn("ASPM_RECRUITMENT_MODE: constant", task)
         self.assertIn("ASPM_DIAGNOSTIC_DEFINITION: strict", task)
+        self.assertIn('if ("variant" %in% names(dat))', merger)
 
     def test_hessian_units_preserve_regional_scaling_for_later_stitching(self) -> None:
         runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")

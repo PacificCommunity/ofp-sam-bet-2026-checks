@@ -452,9 +452,17 @@ observed_check_unit_values <- function(dat, ledger = expected_unit_ledger) {
       field <- intersect(c("rep", "replicate", "selftest_rep"), names(dat))
       if (length(field)) dat[[field[[1L]]]] else rep(NA_character_, nrow(dat))
     },
-    aspm = if ("folder" %in% names(dat)) {
+    aspm = if ("variant" %in% names(dat)) {
+      dat$variant
+    } else if ("recruitment_mode" %in% names(dat)) {
+      dat$recruitment_mode
+    } else if ("folder" %in% names(dat)) {
       folder <- trimws(as.character(dat$folder))
-      ifelse(!is.na(folder) & nzchar(folder), "aspm", NA_character_)
+      ifelse(
+        !is.na(folder) & nzchar(folder),
+        ifelse(basename(folder) == "aspm", "aspm", basename(folder)),
+        NA_character_
+      )
     } else {
       rep(NA_character_, nrow(dat))
     },
@@ -2690,21 +2698,39 @@ enrich_merged_check_payloads <- function() {
     return(invisible(out))
   }
   if (identical(check_type, "aspm")) {
-    aspm_dir <- file.path(model_dir, "aspm")
-    if (!dir.exists(aspm_dir)) return(invisible(data.frame()))
+    aspm_root <- file.path(model_dir, "aspm")
+    if (!dir.exists(aspm_root)) return(invisible(data.frame()))
     tool_env <- mfclshiny_payload_tool_env("aspm")
-    payload <- tool_env$mp_build_model_payload(aspm_dir)
-    payload_file <- file.path(aspm_dir, "model_payload.rds")
-    saveRDS(payload, payload_file, compress = "xz")
-    if ("write_model_payload_manifest" %in% getNamespaceExports("mfclshiny")) {
-      mfclshiny::write_model_payload_manifest(payload = payload, folder = aspm_dir, payload_file = payload_file)
-    }
-    return(invisible(data.frame(
-      payload_role = "aspm_model_payload",
-      folder = normalize_loose(aspm_dir),
-      payload = normalize_loose(payload_file),
-      stringsAsFactors = FALSE
-    )))
+    info_files <- unique(c(
+      file.path(aspm_root, "aspm_info.rds"),
+      list.files(
+        aspm_root, pattern = "^aspm_info[.]rds$", recursive = TRUE,
+        full.names = TRUE
+      )
+    ))
+    result_dirs <- unique(dirname(info_files[file.exists(info_files)]))
+    rows <- lapply(result_dirs, function(aspm_dir) {
+      payload <- tool_env$mp_build_model_payload(aspm_dir)
+      payload_file <- file.path(aspm_dir, "model_payload.rds")
+      saveRDS(payload, payload_file, compress = "xz")
+      if ("write_model_payload_manifest" %in% getNamespaceExports("mfclshiny")) {
+        mfclshiny::write_model_payload_manifest(
+          payload = payload, folder = aspm_dir, payload_file = payload_file
+        )
+      }
+      data.frame(
+        payload_role = "aspm_model_payload",
+        variant = if (identical(normalize_loose(aspm_dir), normalize_loose(aspm_root))) {
+          "aspm"
+        } else {
+          basename(aspm_dir)
+        },
+        folder = normalize_loose(aspm_dir),
+        payload = normalize_loose(payload_file),
+        stringsAsFactors = FALSE
+      )
+    })
+    return(invisible(bind_rows_fill_local(rows)))
   }
   invisible(data.frame())
 }
