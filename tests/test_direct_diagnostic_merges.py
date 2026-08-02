@@ -960,6 +960,37 @@ mfk_close_quantity_profile <- function(
                 check=True,
             )
 
+    def test_profile_extension_reuses_attached_model_profile(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            input_root, output_dir, _ = self.make_case(root, "profile")
+            reuse_model = input_root / "3999/outputs/models/model"
+            self.write_profile_point(reuse_model, 60, 130)
+            current_model = input_root / "4001/outputs/checks/profile/model"
+            self.write_profile_point(current_model, 57.5, 135)
+
+            self.run_merge(
+                input_root,
+                output_dir,
+                "profile",
+                extra_env={
+                    **self.mock_env(),
+                    "PROFILE_NAME": "adult_biomass",
+                    "PROFILE_EXPECTED_VALUES": "57.5 60",
+                    "PROFILE_REUSE_INPUT_JOBS": "3999",
+                    "PROFILE_POST_MERGE_REPAIR": "false",
+                    "CHECK_SMOKE_ONLY": "false",
+                },
+            )
+
+            profile = output_dir / "models/model/profile/adult_biomass"
+            self.assertTrue((profile / "scalar_60/profile_payload.rds").is_file())
+            self.assertTrue((profile / "scalar_57.5/profile_payload.rds").is_file())
+            manifest = read_csv(
+                output_dir / "models/model/profile/check_manifest.csv"
+            )[0]
+            self.assertEqual(manifest["n_source_model_dirs"], "2")
+
     def test_each_merge_job_can_publish_its_own_independent_delta(self):
         for check_type in self.updated_paths:
             with self.subTest(check_type=check_type), tempfile.TemporaryDirectory() as tmpdir:

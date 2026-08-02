@@ -554,8 +554,36 @@ discover_check_model_dirs <- function(root, check_type, include_unmanifested = F
     }), use.names = FALSE))
     dirs <- unique(c(dirs, unmanifested))
   }
+  # A completed profile merge attached to a model is published under
+  # outputs/models/<model>/profile rather than outputs/checks/profile/<model>.
+  # Explicit PROFILE_REUSE_INPUT_JOBS inputs must be able to reuse that
+  # attached result without requiring its original worker jobs to remain
+  # available.  Identify the model root from the canonical scalar payload
+  # layout and leave ordinary discovery unchanged for all other inputs.
+  attached_profile_dirs <- character()
+  if (isTRUE(include_prior_merges) && identical(check_type, "profile")) {
+    point_files <- unique(unlist(lapply(roots, function(one_root) {
+      list.files(
+        one_root,
+        pattern = "^profile_point_info[.]rds$",
+        recursive = TRUE,
+        full.names = TRUE
+      )
+    }), use.names = FALSE))
+    if (length(point_files)) {
+      scalar_dirs <- dirname(point_files)
+      profile_roots <- dirname(scalar_dirs)
+      profile_dirs <- dirname(profile_roots)
+      candidate_models <- dirname(profile_dirs)
+      keep <- grepl("^scalar_", basename(scalar_dirs)) &
+        basename(profile_dirs) == "profile" &
+        grepl("/models/", normalize_loose(candidate_models), fixed = TRUE)
+      attached_profile_dirs <- candidate_models[keep]
+    }
+  }
   marker <- paste0("/checks/", check_type, "/")
   dirs <- dirs[grepl(marker, normalize_loose(dirs), fixed = TRUE)]
+  dirs <- unique(c(dirs, attached_profile_dirs))
   # A prior merge can be present in an attached-output bundle.  It is a
   # derivative of profile side jobs, not an input unit for this merge, and
   # must not hide a failed current-side point with an older valid copy.
