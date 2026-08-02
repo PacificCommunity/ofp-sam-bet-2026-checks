@@ -827,6 +827,64 @@ mfk_close_quantity_profile <- function(
             self.assertEqual(summary["all_required_units_successful"], "TRUE")
             self.assertEqual(summary["profile_diagnostics_blocking"], "TRUE")
 
+    def test_profile_extension_merge_reuses_a_completed_prior_merge(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            input_root, output_dir, _ = self.make_case(root, "profile")
+            reuse_model = input_root / "3999/outputs/checks/profile/model"
+            self.write_profile_point(reuse_model, 60, 130)
+            subprocess.run(
+                [
+                    "Rscript", "-e",
+                    (
+                        "saveRDS(list(source_model_dirs='old-chain'), "
+                        "commandArgs(TRUE)[1])"
+                    ),
+                    str(reuse_model / "check_manifest.rds"),
+                ],
+                cwd=ROOT, text=True, capture_output=True, check=True,
+            )
+            write_csv(
+                reuse_model.parent / "model-index.csv",
+                [{
+                    "check_type": "profile", "model_key": "model",
+                    "model_label": "model", "step_id": "model",
+                    "model_dir": "model", "model_folder": "model",
+                    "payload_role": "check_model_root",
+                }],
+            )
+            current_model = input_root / "4001/outputs/checks/profile/model"
+            self.write_profile_point(current_model, 57.5, 135)
+
+            self.run_merge(
+                input_root,
+                output_dir,
+                "profile",
+                extra_env={
+                    **self.mock_env(),
+                    "PROFILE_NAME": "adult_biomass",
+                    "PROFILE_EXPECTED_VALUES": "57.5 60",
+                    "PROFILE_REUSE_INPUT_JOBS": "3999",
+                    "PROFILE_POST_MERGE_REPAIR": "false",
+                    "CHECK_SMOKE_ONLY": "false",
+                },
+            )
+
+            profile = output_dir / "models/model/profile/adult_biomass"
+            self.assertTrue((profile / "scalar_60/profile_payload.rds").is_file())
+            self.assertTrue((profile / "scalar_57.5/profile_payload.rds").is_file())
+            subprocess.run(
+                [
+                    "Rscript", "-e",
+                    (
+                        "x <- readRDS(commandArgs(TRUE)[1]); "
+                        "stopifnot(identical(x$reused_profile_input_jobs, '3999'))"
+                    ),
+                    str(profile / "profile_spec.rds"),
+                ],
+                cwd=ROOT, text=True, capture_output=True, check=True,
+            )
+
     def test_profile_closure_defaults_and_env_are_wired_to_standalone_api(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

@@ -42,6 +42,11 @@ attach_output_mode <- normalize_attached_output_mode()
 base_input_job <- env("MODEL_BASE_INPUT_JOB", env("BASE_MODEL_JOB", ""))
 original_base_input_job <- env("MODEL_ORIGINAL_BASE_INPUT_JOB", base_input_job)
 check_input_jobs <- split_values(env("CHECK_INPUT_JOBS", ""))
+profile_reuse_input_jobs <- if (identical(check_type, "profile")) {
+  split_values(env("PROFILE_REUSE_INPUT_JOBS", ""))
+} else {
+  character()
+}
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 canonical_check_unit_values <- function(values, unit_type) {
@@ -520,7 +525,8 @@ relative_to <- function(path, root = output_dir) {
   if (startsWith(path, prefix)) substring(path, nchar(prefix) + 1L) else path
 }
 
-discover_check_model_dirs <- function(root, check_type, include_unmanifested = FALSE) {
+discover_check_model_dirs <- function(root, check_type, include_unmanifested = FALSE,
+                                      include_prior_merges = FALSE) {
   root <- as.character(root %||% character())
   root <- root[!is.na(root) & nzchar(trimws(root))]
   if (!length(root)) return(character())
@@ -553,17 +559,19 @@ discover_check_model_dirs <- function(root, check_type, include_unmanifested = F
   # A prior merge can be present in an attached-output bundle.  It is a
   # derivative of profile side jobs, not an input unit for this merge, and
   # must not hide a failed current-side point with an older valid copy.
-  dirs <- dirs[!vapply(dirs, function(dir) {
-    manifest_file <- file.path(dir, "check_manifest.rds")
-    manifest <- if (file.exists(manifest_file)) {
-      tryCatch(readRDS(manifest_file), error = function(e) NULL)
-    } else {
-      NULL
-    }
-    is.list(manifest) && !is.null(manifest$source_model_dirs) &&
-      length(manifest$source_model_dirs) &&
-      nzchar(as.character(manifest$source_model_dirs[[1L]]))
-  }, logical(1L))]
+  if (!isTRUE(include_prior_merges)) {
+    dirs <- dirs[!vapply(dirs, function(dir) {
+      manifest_file <- file.path(dir, "check_manifest.rds")
+      manifest <- if (file.exists(manifest_file)) {
+        tryCatch(readRDS(manifest_file), error = function(e) NULL)
+      } else {
+        NULL
+      }
+      is.list(manifest) && !is.null(manifest$source_model_dirs) &&
+        length(manifest$source_model_dirs) &&
+        nzchar(as.character(manifest$source_model_dirs[[1L]]))
+    }, logical(1L))]
+  }
   unique(normalize_loose(dirs))
 }
 
@@ -966,6 +974,7 @@ write_merged_profile_spec <- function(root, points = NULL) {
     doitall_script = env(
       "PROFILE_DOITALL_SCRIPT", env("MFK_PROFILE_DOITALL_SCRIPT", "doitall.sh")
     ),
+    reused_profile_input_jobs = profile_reuse_input_jobs,
     created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
   )
   saveRDS(spec, file.path(profile_dir, "profile_spec.rds"), compress = "xz")
@@ -2994,12 +3003,38 @@ check_input_roots <- if (length(check_input_jobs)) {
 } else {
   character()
 }
+profile_reuse_roots <- if (length(profile_reuse_input_jobs)) {
+  unique(unlist(lapply(
+    profile_reuse_input_jobs,
+    function(job) input_job_dirs(input_root, job)
+  ), use.names = FALSE))
+} else {
+  character()
+}
+if (length(profile_reuse_input_jobs) && !length(profile_reuse_roots)) {
+  stop(
+    "No mounted input roots matched PROFILE_REUSE_INPUT_JOBS=",
+    paste(profile_reuse_input_jobs, collapse = " "),
+    call. = FALSE
+  )
+}
 source_search_roots <- if (length(check_input_jobs)) check_input_roots else input_root
-source_model_dirs <- discover_check_model_dirs(
+current_source_model_dirs <- discover_check_model_dirs(
   source_search_roots,
   check_type,
   include_unmanifested = isTRUE(expected_unit_ledger$present)
 )
+reuse_source_model_dirs <- if (length(profile_reuse_roots)) {
+  discover_check_model_dirs(
+    profile_reuse_roots,
+    check_type,
+    include_unmanifested = TRUE,
+    include_prior_merges = TRUE
+  )
+} else {
+  character()
+}
+source_model_dirs <- unique(c(reuse_source_model_dirs, current_source_model_dirs))
 source_model_dirs <- source_model_dirs[vapply(source_model_dirs, function(model_dir) {
   if (!length(source_model_selectors)) return(TRUE)
   any(vapply(
@@ -3194,6 +3229,7 @@ manifest <- data.frame(
   base_input_job = base_input_job,
   original_base_input_job = original_base_input_job,
   check_input_jobs = paste(check_input_jobs, collapse = " "),
+  profile_reuse_input_jobs = paste(profile_reuse_input_jobs, collapse = " "),
   source_model_selectors = paste(source_model_selectors, collapse = " "),
   attach_output_mode = attach_output_mode,
   source_model_dirs = paste(source_model_dirs, collapse = " "),
