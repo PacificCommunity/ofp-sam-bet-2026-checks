@@ -861,9 +861,12 @@ class AttachedTaskDefaultsTests(unittest.TestCase):
     def test_manual_attach_task_defaults_to_standalone_full_output(self):
         task = (ROOT / "attach-checks" / "kflow.yaml").read_text(encoding="utf-8")
         self.assertIn("ATTACH_OUTPUT_MODE: full", task)
+        self.assertIn('ATTACH_JITTER_INCLUDE_BASE_AS_RUN: "false"', task)
+        self.assertIn('ATTACH_JITTER_BASE_RUN_SEED: "0"', task)
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertNotIn("KFLOW_DIRECT_MERGE_ATTACH", readme)
         self.assertIn("`attach-checks` Kflow task defaults to `full`", readme)
+        self.assertIn("`is_base_fit_reference=TRUE`", readme)
 
 
 if __name__ == "__main__":

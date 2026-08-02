@@ -175,6 +175,302 @@ candidate_rows_from_roots <- function(roots) {
   bind_rows_fill(rows)
 }
 
+jitter_base_reference_rep <- function(model_dir, final_par) {
+  final_stem <- sub("[.]par$", "", basename(final_par), ignore.case = TRUE)
+  preferred <- c(
+    file.path(model_dir, paste0("plot-", basename(final_par), ".rep")),
+    file.path(model_dir, paste0("plot-", final_stem, ".par.rep")),
+    file.path(model_dir, "plot-final.par.rep")
+  )
+  preferred <- unique(preferred[file.exists(preferred)])
+  if (length(preferred)) return(normalize_loose(preferred[[1L]]))
+
+  candidates <- list.files(
+    model_dir,
+    pattern = "^plot-[0-9]+[.]par[.]rep$",
+    full.names = TRUE
+  )
+  if (length(candidates)) {
+    phase <- suppressWarnings(as.integer(sub(
+      "^plot-([0-9]+)[.]par[.]rep$", "\\1", basename(candidates)
+    )))
+    candidates <- candidates[order(phase, decreasing = TRUE, na.last = TRUE)]
+    return(normalize_loose(candidates[[1L]]))
+  }
+
+  candidates <- list.files(
+    model_dir,
+    pattern = "^plot-.*[.]par[.]rep$",
+    full.names = TRUE
+  )
+  if (length(candidates)) {
+    info <- file.info(candidates)
+    candidates <- candidates[order(info$mtime, decreasing = TRUE, na.last = TRUE)]
+    return(normalize_loose(candidates[[1L]]))
+  }
+  ""
+}
+
+read_status_pair <- function(root, stem) {
+  rds <- file.path(root, paste0(stem, ".rds"))
+  csv <- file.path(root, paste0(stem, ".csv"))
+  out <- if (file.exists(rds)) {
+    tryCatch(readRDS(rds), error = function(e) NULL)
+  } else {
+    NULL
+  }
+  if (is.null(out) && file.exists(csv)) out <- read_csv_safe(csv)
+  as.data.frame(out %||% data.frame(), stringsAsFactors = FALSE)
+}
+
+write_status_pair <- function(value, root, stem) {
+  value <- as.data.frame(value, stringsAsFactors = FALSE)
+  write.csv(value, file.path(root, paste0(stem, ".csv")), row.names = FALSE)
+  saveRDS(value, file.path(root, paste0(stem, ".rds")), compress = "xz")
+  invisible(value)
+}
+
+annotate_base_reference_frame <- function(value, label, source_job) {
+  if (!is.data.frame(value) || !nrow(value)) return(value)
+  value$run_role <- "base_fit_reference"
+  value$is_base_fit_reference <- TRUE
+  value$display_label <- label
+  value$source_job <- source_job
+  value
+}
+
+attach_jitter_base_reference <- function(target_dir, input_root, selector) {
+  if (!truthy(env("ATTACH_JITTER_INCLUDE_BASE_AS_RUN", "false"), FALSE)) {
+    return(invisible(NULL))
+  }
+  if (!"jitter" %in% requested_types) {
+    stop(
+      "ATTACH_JITTER_INCLUDE_BASE_AS_RUN=true requires ATTACH_CHECK_TYPES to include jitter.",
+      call. = FALSE
+    )
+  }
+
+  source_job <- env("ATTACH_JITTER_BASE_SOURCE_JOB", "")
+  if (!nzchar(source_job)) {
+    stop(
+      "ATTACH_JITTER_BASE_SOURCE_JOB is required when including a base fit as a jitter run.",
+      call. = FALSE
+    )
+  }
+  seed_text <- env("ATTACH_JITTER_BASE_RUN_SEED", "0")
+  if (!grepl("^[0-9]+$", seed_text)) {
+    stop("ATTACH_JITTER_BASE_RUN_SEED must be a non-negative integer.", call. = FALSE)
+  }
+  seed <- suppressWarnings(as.integer(seed_text))
+  if (!is.finite(seed) || seed < 0L) {
+    stop("ATTACH_JITTER_BASE_RUN_SEED must be a non-negative integer.", call. = FALSE)
+  }
+  label <- env(
+    "ATTACH_JITTER_BASE_DISPLAY_LABEL",
+    paste0("Base fit (source job ", source_job, ")")
+  )
+
+  source_roots <- job_dir(input_root, source_job)
+  if (!length(source_roots)) {
+    stop("Jitter base-reference input job directory was not found: ", source_job, call. = FALSE)
+  }
+  source_candidates <- candidate_rows_from_roots(source_roots)
+  source_selected <- select_model_output(source_candidates, selector)
+  source_model_dir <- as.character(source_selected$compact_dir %||% "")
+  if (!nzchar(source_model_dir) || !dir.exists(source_model_dir)) {
+    stop("Selected jitter base-reference model directory was not found.", call. = FALSE)
+  }
+  source_par <- find_final_par(source_selected)
+  if (!nzchar(source_par) || !file.exists(source_par)) {
+    stop("Completed PAR was not found for jitter base-reference job ", source_job, ".", call. = FALSE)
+  }
+  source_rep <- jitter_base_reference_rep(source_model_dir, source_par)
+  if (!nzchar(source_rep) || !file.exists(source_rep)) {
+    stop("Final REP was not found for jitter base-reference job ", source_job, ".", call. = FALSE)
+  }
+
+  jitter_root <- file.path(target_dir, "jitter")
+  seed_dir <- file.path(jitter_root, paste0("jitter_seed_", seed))
+  if (dir.exists(seed_dir)) {
+    stop(
+      "Jitter base-reference seed collides with an existing run: ", seed,
+      ". Choose ATTACH_JITTER_BASE_RUN_SEED explicitly.",
+      call. = FALSE
+    )
+  }
+  dir.create(seed_dir, recursive = TRUE, showWarnings = FALSE)
+  output_par <- file.path(seed_dir, paste0("jittered_out_", seed, ".par"))
+  output_rep <- file.path(seed_dir, paste0("plot-jittered_out_", seed, ".par.rep"))
+  if (!isTRUE(file.copy(source_par, output_par, overwrite = TRUE, copy.date = TRUE))) {
+    stop("Could not stage base-reference PAR: ", source_par, call. = FALSE)
+  }
+  if (!isTRUE(file.copy(source_rep, output_rep, overwrite = TRUE, copy.date = TRUE))) {
+    stop("Could not stage base-reference REP: ", source_rep, call. = FALSE)
+  }
+
+  state <- list(
+    run_status = "completed",
+    run_completed = TRUE,
+    convergence_status = "converged",
+    converged = TRUE,
+    obj_fun = NA_real_,
+    max_grad = NA_real_,
+    exit_status = 0L,
+    mfcl_exit_code = 0L,
+    failure_reason = NA_character_,
+    jitter_cv = 0
+  )
+  info <- list(
+    schema = "ofp-sam.jitter-base-reference.v1",
+    engine = "base_fit_reference",
+    method = "base_fit_passthrough",
+    seed = seed,
+    jitter_cv = 0,
+    run_role = "base_fit_reference",
+    is_base_fit_reference = TRUE,
+    display_label = label,
+    source_job = source_job,
+    source_model_key = as.character(source_selected$model_key %||% selector),
+    source_model_dir = normalize_loose(source_model_dir),
+    output_par = basename(output_par),
+    output_rep = basename(output_rep),
+    has_output_rep = TRUE,
+    state = state
+  )
+  saveRDS(info, file.path(seed_dir, "jitter_info.rds"), compress = "xz")
+
+  if (!requireNamespace("mfclshiny", quietly = TRUE)) {
+    stop("mfclshiny is required to build the base-reference jitter payload.", call. = FALSE)
+  }
+  if (!requireNamespace("FLR4MFCL", quietly = TRUE)) {
+    stop("FLR4MFCL is required to read the base-reference PAR and REP.", call. = FALSE)
+  }
+  # model_payload.R deliberately uses the established FLR4MFCL reader names.
+  # Attach the namespace explicitly because this helper may run before the
+  # ordinary model-payload refresh has attached FLR4MFCL in a fresh container.
+  suppressPackageStartupMessages(library("FLR4MFCL", character.only = TRUE))
+  tool <- system.file("app", "tools", "model_payload.R", package = "mfclshiny")
+  if (!nzchar(tool) || !file.exists(tool)) {
+    stop("Could not find mfclshiny model_payload.R for base-reference jitter payload.", call. = FALSE)
+  }
+  tool_env <- new.env(parent = globalenv())
+  sys.source(tool, envir = tool_env, keep.source = FALSE)
+  payload <- tool_env$mp_build_jitter_payload(seed_dir, seed = seed)
+  payload$run_role <- "base_fit_reference"
+  payload$is_base_fit_reference <- TRUE
+  payload$display_label <- label
+  payload$source_job <- source_job
+  payload$source_model_key <- info$source_model_key
+  payload$derived_quantities <- annotate_base_reference_frame(
+    payload$derived_quantities, label, source_job
+  )
+  payload$age_curves <- annotate_base_reference_frame(
+    payload$age_curves, label, source_job
+  )
+  saveRDS(payload, file.path(seed_dir, "jitter_result.rds"), compress = "xz")
+
+  info$state$obj_fun <- suppressWarnings(as.numeric(payload$obj_fun %||% NA_real_))
+  info$state$max_grad <- suppressWarnings(as.numeric(payload$max_grad %||% NA_real_))
+  info$derived_quantities <- payload$derived_quantities
+  info$age_curves <- payload$age_curves
+  info$has_derived_quantities <- is.data.frame(payload$derived_quantities) && nrow(payload$derived_quantities) > 0L
+  info$has_age_curves <- is.data.frame(payload$age_curves) && nrow(payload$age_curves) > 0L
+  saveRDS(info, file.path(seed_dir, "jitter_info.rds"), compress = "xz")
+
+  status <- read_status_pair(jitter_root, "check-unit-status")
+  if (nrow(status) && "check_unit" %in% names(status) &&
+      any(as.character(status$check_unit) == seed_text)) {
+    stop("Jitter status ledger already contains base-reference seed ", seed, ".", call. = FALSE)
+  }
+  base_status <- data.frame(
+    model = basename(normalize_loose(target_dir)),
+    seed = seed,
+    run_status = "completed",
+    run_completed = TRUE,
+    convergence_status = "converged",
+    converged = TRUE,
+    obj_fun = info$state$obj_fun,
+    max_grad = info$state$max_grad,
+    mfcl_exit_code = 0L,
+    failure_reason = NA_character_,
+    jitter_cv = 0,
+    output_rep = basename(output_rep),
+    has_output_rep = TRUE,
+    has_derived_quantities = info$has_derived_quantities,
+    has_age_curves = info$has_age_curves,
+    folder = normalize_loose(seed_dir),
+    check_type = "jitter",
+    check_unit_type = "seed",
+    check_unit = seed_text,
+    unit = seed_text,
+    success = TRUE,
+    run_role = "base_fit_reference",
+    is_base_fit_reference = TRUE,
+    display_label = label,
+    source_job = source_job,
+    stringsAsFactors = FALSE
+  )
+  status <- bind_rows_fill(list(status, base_status))
+  if ("seed" %in% names(status)) {
+    status <- status[order(suppressWarnings(as.numeric(status$seed))), , drop = FALSE]
+  }
+  write_status_pair(status, jitter_root, "check-unit-status")
+
+  summary <- read_status_pair(jitter_root, "check-summary")
+  if (!nrow(summary)) {
+    summary <- data.frame(check_type = "jitter", stringsAsFactors = FALSE)
+  }
+  success <- if ("success" %in% names(status)) {
+    suppressWarnings(as.logical(status$success))
+  } else if ("converged" %in% names(status)) {
+    suppressWarnings(as.logical(status$converged))
+  } else {
+    rep(FALSE, nrow(status))
+  }
+  success[is.na(success)] <- FALSE
+  expected <- unique(as.character(status$check_unit %||% status$seed))
+  expected <- expected[nzchar(expected)]
+  expected_num <- suppressWarnings(as.numeric(expected))
+  expected <- expected[order(expected_num, na.last = TRUE)]
+  summary$model_key <- basename(normalize_loose(target_dir))
+  summary$n_units <- nrow(status)
+  summary$n_success <- sum(success)
+  summary$n_failed <- sum(!success)
+  summary$has_failures <- any(!success)
+  summary$n_source_model_dirs <- nrow(status)
+  summary$n_source_units <- nrow(status)
+  summary$n_source_failed <- sum(!success)
+  summary$expected_unit_type <- "seed"
+  summary$expected_units <- paste(expected, collapse = " ")
+  summary$n_expected_units <- length(expected)
+  summary$n_missing_expected <- 0L
+  summary$all_expected_units_accounted_for <- TRUE
+  summary$all_required_units_successful <- all(success)
+  summary$merge_status <- "complete"
+  summary$base_fit_included <- TRUE
+  summary$base_fit_seed <- seed
+  summary$base_fit_source_job <- source_job
+  summary$base_fit_display_label <- label
+  write_status_pair(summary, jitter_root, "check-summary")
+
+  manifest <- data.frame(
+    schema = "ofp-sam.jitter-base-reference.v1",
+    created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+    seed = seed,
+    run_role = "base_fit_reference",
+    is_base_fit_reference = TRUE,
+    display_label = label,
+    source_job = source_job,
+    source_model_key = info$source_model_key,
+    source_par = normalize_loose(source_par),
+    source_rep = normalize_loose(source_rep),
+    payload = normalize_loose(file.path(seed_dir, "jitter_result.rds")),
+    stringsAsFactors = FALSE
+  )
+  write_status_pair(manifest, jitter_root, "base-fit-reference")
+  invisible(manifest)
+}
+
 base_roots <- if (nzchar(base_input_job)) {
   job_dir(input_root, base_input_job)
 } else {
@@ -337,6 +633,8 @@ for (i in seq_len(nrow(check_candidates))) {
     stringsAsFactors = FALSE
   )
 }
+
+attach_jitter_base_reference(target_dir, input_root, model_selector)
 
 updated_attached <- bind_rows_fill(attached_rows)
 if (!nrow(updated_attached)) {

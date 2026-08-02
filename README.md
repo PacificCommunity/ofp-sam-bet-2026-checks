@@ -198,6 +198,15 @@ output without changing the original archive.
 - `ATTACH_OUTPUT_MODE`: `delta` publishes only the refreshed payload/index plus
   the current diagnostic folder for overlay on the base job; `full` preserves a
   standalone base-model bundle. Direct diagnostic merges use `delta`.
+- `ATTACH_JITTER_INCLUDE_BASE_AS_RUN`: opt-in flag that adds a completed fitted
+  model as one extra jitter-series reference without rerunning or perturbing it.
+  Set `ATTACH_JITTER_BASE_SOURCE_JOB` to that fitted-model input job. The
+  reference defaults to seed `0` (configurable with
+  `ATTACH_JITTER_BASE_RUN_SEED`) and is labelled with
+  `ATTACH_JITTER_BASE_DISPLAY_LABEL`.
+  Its payload rows and manifest carry `run_role=base_fit_reference` and
+  `is_base_fit_reference=TRUE`, so viewers can give it a distinct colour or
+  line style without relying on the seed number.
 - `JITTER_SEEDS`: comma/space list of seeds, default `1`.
 - `JITTER_CV`: jitter CV, default `0.1`.
 - `JITTER_CONVERGENCE`: convergence exponent applied by replacing the last
