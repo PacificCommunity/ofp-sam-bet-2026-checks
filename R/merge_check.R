@@ -1659,7 +1659,25 @@ copy_check_units <- function(source_dirs, target_dir, check_type) {
     for (src in source_dirs) {
       src_root <- file.path(src, "aspm")
       if (!dir.exists(src_root)) next
-      copied <- c(copied, copy_dir_contents_checked(src_root, file.path(target_dir, "aspm")))
+      # Named ASPM variants are independent check units beneath the common
+      # aspm/ container.  Merge each variant directory, not the container
+      # itself, so constant/ and fitted/ outputs from separate jobs can be
+      # combined without treating their shared parent as a duplicate.
+      variant_dirs <- list.dirs(src_root, recursive = FALSE, full.names = TRUE)
+      if (length(variant_dirs)) {
+        for (variant_dir in variant_dirs) {
+          copied <- c(copied, copy_dir_contents_checked(
+            variant_dir,
+            file.path(target_dir, "aspm", basename(variant_dir))
+          ))
+        }
+      } else {
+        # Preserve the historical single-ASPM flat layout.
+        copied <- c(copied, copy_dir_contents_checked(
+          src_root,
+          file.path(target_dir, "aspm")
+        ))
+      }
     }
   } else if (identical(check_type, "selftest")) {
     selftest_rows <- list()

@@ -1048,6 +1048,74 @@ mfk_close_quantity_profile <- function(
                     (published / "model_payload.rds").stat().st_size,
                 )
 
+    def test_aspm_merge_combines_named_variant_directories(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            input_root, output_dir, _ = self.make_case(root, "aspm")
+
+            first_model = input_root / "4001/outputs/checks/aspm/model"
+            legacy_result = first_model / "aspm/current-result.txt"
+            constant_result = first_model / "aspm/constant/current-result.txt"
+            constant_result.parent.mkdir(parents=True)
+            legacy_result.replace(constant_result)
+
+            second_model = input_root / "4002/outputs/checks/aspm/model"
+            fitted_result = second_model / "aspm/fitted/current-result.txt"
+            fitted_result.parent.mkdir(parents=True)
+            fitted_result.write_text("current fitted\n", encoding="utf-8")
+            subprocess.run(
+                [
+                    "Rscript", "-e",
+                    "saveRDS(list(check_type='aspm'), commandArgs(TRUE)[1])",
+                    str(second_model / "check_manifest.rds"),
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            write_csv(
+                second_model / "check_manifest.csv",
+                [{"check_type": "aspm", "model_key": "model"}],
+            )
+            write_csv(
+                second_model / "check-summary.csv",
+                [{"check_type": "aspm", "run_status": "completed", "success": "TRUE"}],
+            )
+            write_csv(
+                second_model.parent / "model-index.csv",
+                [{
+                    "check_type": "aspm",
+                    "model_key": "model",
+                    "model_label": "model",
+                    "step_id": "model",
+                    "model_dir": "model",
+                    "model_folder": "model",
+                    "payload_role": "check_model_root",
+                }],
+            )
+
+            self.run_merge(
+                input_root,
+                output_dir,
+                "aspm",
+                extra_env={
+                    "CHECK_INPUT_JOBS": "4001 4002",
+                    "CHECK_EXPECTED_UNIT_TYPE": "aspm",
+                    "CHECK_EXPECTED_UNITS": "constant fitted",
+                },
+            )
+
+            attached = output_dir / "models/model/aspm"
+            self.assertEqual(
+                (attached / "constant/current-result.txt").read_text(encoding="utf-8"),
+                "current aspm\n",
+            )
+            self.assertEqual(
+                (attached / "fitted/current-result.txt").read_text(encoding="utf-8"),
+                "current fitted\n",
+            )
+
     def test_full_mode_preserves_a_standalone_case(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
