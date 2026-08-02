@@ -234,6 +234,7 @@ annotate_base_reference_frame <- function(value, label, source_job) {
   if (!is.data.frame(value) || !nrow(value)) return(value)
   value$run_role <- "base_fit_reference"
   value$is_base_fit_reference <- TRUE
+  value$count_as_jitter <- FALSE
   value$display_label <- label
   value$source_job <- source_job
   value
@@ -328,6 +329,7 @@ attach_jitter_base_reference <- function(target_dir, input_root, selector) {
     jitter_cv = 0,
     run_role = "base_fit_reference",
     is_base_fit_reference = TRUE,
+    count_as_jitter = FALSE,
     display_label = label,
     source_job = source_job,
     source_model_key = as.character(source_selected$model_key %||% selector),
@@ -358,6 +360,7 @@ attach_jitter_base_reference <- function(target_dir, input_root, selector) {
   payload <- tool_env$mp_build_jitter_payload(seed_dir, seed = seed)
   payload$run_role <- "base_fit_reference"
   payload$is_base_fit_reference <- TRUE
+  payload$count_as_jitter <- FALSE
   payload$display_label <- label
   payload$source_job <- source_job
   payload$source_model_key <- info$source_model_key
@@ -377,77 +380,13 @@ attach_jitter_base_reference <- function(target_dir, input_root, selector) {
   info$has_age_curves <- is.data.frame(payload$age_curves) && nrow(payload$age_curves) > 0L
   saveRDS(info, file.path(seed_dir, "jitter_info.rds"), compress = "xz")
 
-  status <- read_status_pair(jitter_root, "check-unit-status")
-  if (nrow(status) && "check_unit" %in% names(status) &&
-      any(as.character(status$check_unit) == seed_text)) {
-    stop("Jitter status ledger already contains base-reference seed ", seed, ".", call. = FALSE)
-  }
-  base_status <- data.frame(
-    model = basename(normalize_loose(target_dir)),
-    seed = seed,
-    run_status = "completed",
-    run_completed = TRUE,
-    convergence_status = "converged",
-    converged = TRUE,
-    obj_fun = info$state$obj_fun,
-    max_grad = info$state$max_grad,
-    mfcl_exit_code = 0L,
-    failure_reason = NA_character_,
-    jitter_cv = 0,
-    output_rep = basename(output_rep),
-    has_output_rep = TRUE,
-    has_derived_quantities = info$has_derived_quantities,
-    has_age_curves = info$has_age_curves,
-    folder = normalize_loose(seed_dir),
-    check_type = "jitter",
-    check_unit_type = "seed",
-    check_unit = seed_text,
-    unit = seed_text,
-    success = TRUE,
-    run_role = "base_fit_reference",
-    is_base_fit_reference = TRUE,
-    display_label = label,
-    source_job = source_job,
-    stringsAsFactors = FALSE
-  )
-  status <- bind_rows_fill(list(status, base_status))
-  if ("seed" %in% names(status)) {
-    status <- status[order(suppressWarnings(as.numeric(status$seed))), , drop = FALSE]
-  }
-  write_status_pair(status, jitter_root, "check-unit-status")
-
   summary <- read_status_pair(jitter_root, "check-summary")
   if (!nrow(summary)) {
-    summary <- data.frame(check_type = "jitter", stringsAsFactors = FALSE)
+    stop("Jitter check summary is required before adding a base reference.", call. = FALSE)
   }
-  success <- if ("success" %in% names(status)) {
-    suppressWarnings(as.logical(status$success))
-  } else if ("converged" %in% names(status)) {
-    suppressWarnings(as.logical(status$converged))
-  } else {
-    rep(FALSE, nrow(status))
-  }
-  success[is.na(success)] <- FALSE
-  expected <- unique(as.character(status$check_unit %||% status$seed))
-  expected <- expected[nzchar(expected)]
-  expected_num <- suppressWarnings(as.numeric(expected))
-  expected <- expected[order(expected_num, na.last = TRUE)]
   summary$model_key <- basename(normalize_loose(target_dir))
-  summary$n_units <- nrow(status)
-  summary$n_success <- sum(success)
-  summary$n_failed <- sum(!success)
-  summary$has_failures <- any(!success)
-  summary$n_source_model_dirs <- nrow(status)
-  summary$n_source_units <- nrow(status)
-  summary$n_source_failed <- sum(!success)
-  summary$expected_unit_type <- "seed"
-  summary$expected_units <- paste(expected, collapse = " ")
-  summary$n_expected_units <- length(expected)
-  summary$n_missing_expected <- 0L
-  summary$all_expected_units_accounted_for <- TRUE
-  summary$all_required_units_successful <- all(success)
-  summary$merge_status <- "complete"
   summary$base_fit_included <- TRUE
+  summary$n_reference_runs <- 1L
   summary$base_fit_seed <- seed
   summary$base_fit_source_job <- source_job
   summary$base_fit_display_label <- label
@@ -459,6 +398,7 @@ attach_jitter_base_reference <- function(target_dir, input_root, selector) {
     seed = seed,
     run_role = "base_fit_reference",
     is_base_fit_reference = TRUE,
+    count_as_jitter = FALSE,
     display_label = label,
     source_job = source_job,
     source_model_key = info$source_model_key,

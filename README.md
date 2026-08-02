@@ -206,7 +206,9 @@ output without changing the original archive.
   `ATTACH_JITTER_BASE_DISPLAY_LABEL`.
   Its payload rows and manifest carry `run_role=base_fit_reference` and
   `is_base_fit_reference=TRUE`, so viewers can give it a distinct colour or
-  line style without relying on the seed number.
+  line style without relying on the seed number. It is not added to the jitter
+  unit ledger or the jitter success/total counts. Compatible mfclshiny viewers
+  render it as a separate black dashed line.
 - `JITTER_SEEDS`: comma/space list of seeds, default `1`.
 - `JITTER_CV`: jitter CV, default `0.1`.
 - `JITTER_CONVERGENCE`: convergence exponent applied by replacing the last
