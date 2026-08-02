@@ -18,7 +18,7 @@ local_apps:
       - name: mfclshiny
         type: github
         repo: PacificCommunity/mfclshiny
-        ref: 2a4781bf03b7cfc52acd7bb23c3a6ae53af22a15
+        ref: 2a49729ae1203b4182c7b6d51d4ee11c52497228
     container_port: 3838
     env:
       OMP_NUM_THREADS: "1"
@@ -158,7 +158,7 @@ local_apps:
       install_github_package(
         "mfclshiny",
         "PacificCommunity/mfclshiny",
-        "2a4781bf03b7cfc52acd7bb23c3a6ae53af22a15"
+        "2a49729ae1203b4182c7b6d51d4ee11c52497228"
       )
       library(mfclshiny)
 
