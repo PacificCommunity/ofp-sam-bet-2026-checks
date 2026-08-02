@@ -430,6 +430,72 @@ mfk_close_quantity_profile <- function(
                 capture_output=True,
                 check=True,
             )
+
+    def test_retro_merge_accepts_explicit_older_source_model_label(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            input_root, output_dir, _ = self.make_case(root, "retro")
+
+            older_model = (
+                input_root / "4002" / "outputs" / "checks" / "retro" /
+                "older-model-label"
+            )
+            older_peel = older_model / "retro" / "peel_3"
+            older_peel.mkdir(parents=True)
+            (older_peel / "current-result.txt").write_text(
+                "replacement peel 3\n", encoding="utf-8"
+            )
+            subprocess.run(
+                [
+                    "Rscript", "-e",
+                    "saveRDS(list(check_type='retro'), commandArgs(TRUE)[1])",
+                    str(older_model / "check_manifest.rds"),
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            write_csv(
+                older_model / "check_manifest.csv",
+                [{"check_type": "retro", "model_key": "older-model-label"}],
+            )
+            write_csv(
+                older_model.parent / "model-index.csv",
+                [{
+                    "check_type": "retro",
+                    "model_key": "older-model-label",
+                    "model_label": "older-model-label",
+                    "step_id": "older-model-label",
+                    "model_dir": "older-model-label",
+                    "model_folder": "older-model-label",
+                    "payload_role": "check_model_root",
+                }],
+            )
+            write_csv(
+                older_model / "check-summary.csv",
+                [{"check_type": "retro", "run_status": "completed", "success": "TRUE"}],
+            )
+
+            self.run_merge(
+                input_root,
+                output_dir,
+                "retro",
+                extra_env={
+                    "CHECK_INPUT_JOBS": "4001 4002",
+                    "CHECK_SOURCE_MODEL_SELECTORS": "model older-model-label",
+                    "CHECK_EXPECTED_UNIT_TYPE": "peel",
+                    "CHECK_EXPECTED_UNITS": "1 3",
+                },
+            )
+
+            self.assertEqual(
+                (output_dir / "models/model/retro/peel_3/current-result.txt").read_text(
+                    encoding="utf-8"
+                ),
+                "replacement peel 3\n",
+            )
+
     def test_raw_final_par_footer_restores_fitted_anchor(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

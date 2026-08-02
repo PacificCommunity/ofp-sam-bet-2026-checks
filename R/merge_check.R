@@ -30,6 +30,13 @@ message("[checks] merging split ", check_type, " jobs")
 input_root <- env("MODEL_INPUT_ROOT", default_input_root())
 output_dir <- env("OUTPUT_DIR", "outputs")
 model_selector <- env("MODEL_SELECTOR", "")
+source_model_selectors <- unique(split_values(env(
+  "CHECK_SOURCE_MODEL_SELECTORS",
+  model_selector
+)))
+if (!length(source_model_selectors) && nzchar(model_selector)) {
+  source_model_selectors <- model_selector
+}
 smoke_only <- truthy(env("CHECK_SMOKE_ONLY", env("CHECK_DRY_RUN", "false")), FALSE)
 attach_output_mode <- normalize_attached_output_mode()
 base_input_job <- env("MODEL_BASE_INPUT_JOB", env("BASE_MODEL_JOB", ""))
@@ -2990,7 +2997,14 @@ source_model_dirs <- discover_check_model_dirs(
   check_type,
   include_unmanifested = isTRUE(expected_unit_ledger$present)
 )
-source_model_dirs <- source_model_dirs[vapply(source_model_dirs, matches_model, logical(1), selector = model_selector)]
+source_model_dirs <- source_model_dirs[vapply(source_model_dirs, function(model_dir) {
+  if (!length(source_model_selectors)) return(TRUE)
+  any(vapply(
+    source_model_selectors,
+    function(selector) matches_model(model_dir, selector),
+    logical(1L)
+  ))
+}, logical(1L))]
 if (!length(source_model_dirs) && !isTRUE(expected_unit_ledger$present) &&
     !nzchar(base_input_job)) {
   stop("No ", check_type, " check model folders found under ", input_root, call. = FALSE)
@@ -3177,6 +3191,7 @@ manifest <- data.frame(
   base_input_job = base_input_job,
   original_base_input_job = original_base_input_job,
   check_input_jobs = paste(check_input_jobs, collapse = " "),
+  source_model_selectors = paste(source_model_selectors, collapse = " "),
   attach_output_mode = attach_output_mode,
   source_model_dirs = paste(source_model_dirs, collapse = " "),
   n_source_model_dirs = length(source_model_dirs),

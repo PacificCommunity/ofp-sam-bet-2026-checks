@@ -155,6 +155,15 @@ The independent-merge environment contract is:
 - `CHECK_INPUT_JOBS`: only the current diagnostic's unit jobs;
 - `ATTACH_CHECK_TYPES`: the current merge diagnostic.
 
+`CHECK_SOURCE_MODEL_SELECTORS` is an optional space/comma-separated allowlist
+for recovery or hybrid merges whose completed unit archives were produced
+under an older model label. `MODEL_SELECTOR` still selects the fitted base and
+therefore the name of the published model; only diagnostic unit discovery uses
+the source allowlist. Pair it with ordered `CHECK_EXPECTED_UNITS` and
+`CHECK_INPUT_JOBS` so the recovery manifest records the exact source job for
+each seed, peel, or replicate. The default is `MODEL_SELECTOR`, so ordinary
+merges remain strict.
+
 The original fitted job remains the single owner of `.frq`, `.ini`, `.par`,
 reports, and other runnable/static files; independent deltas do not duplicate
 them or claim diagnostics produced by sibling jobs.
