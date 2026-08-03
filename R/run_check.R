@@ -104,6 +104,34 @@ if (!identical(check_type, "jitter")) {
   )
   if (file.exists(latest_candidate)) check_start_par <- latest_candidate
 }
+profile_chain_start <- NULL
+profile_chain_start_scalar_raw <- trimws(env(
+  "MFK_PROFILE_CHAIN_START_SCALAR", env("PROFILE_CHAIN_START_SCALAR", "")
+))
+if (identical(check_type, "profile") && nzchar(profile_chain_start_scalar_raw)) {
+  profile_chain_start_values <- split_numbers(
+    profile_chain_start_scalar_raw, default = numeric()
+  )
+  if (length(profile_chain_start_values) != 1L) {
+    stop("PROFILE_CHAIN_START_SCALAR must contain exactly one value.", call. = FALSE)
+  }
+  profile_chain_start <- restore_profile_chain_start_payload(
+    input_root = prepared_input_root,
+    scalar = profile_chain_start_values[[1L]],
+    profile_name = env(
+      "MFK_PROFILE_NAME",
+      env("PROFILE_NAME", "total_average_biomass")
+    ),
+    selector = env("MODEL_SELECTOR", ""),
+    dest = file.path(prepared$case_dir, "profile-chain-start.par")
+  )
+  check_start_par <- profile_chain_start$par
+  message(
+    "[checks] extending profile from completed scalar ",
+    profile_chain_start$scalar,
+    " using ", profile_chain_start$payload
+  )
+}
 start_par_name <- basename(check_start_par)
 if (!identical(normalize_loose(check_start_par), normalize_loose(prepared$start_par))) {
   message("[checks] using fitted start par ", start_par_name,
@@ -1667,7 +1695,27 @@ write_run_manifest <- function(extra = list()) {
       staged_start_par_source = as.character(input_manifest$start_par_source %||% ""),
       staged_start_par_selection = as.character(input_manifest$start_par_selection %||% ""),
       staged_input_file_manifest = as.character(input_manifest$input_file_manifest %||% ""),
-      staged_input_file_manifest_md5 = as.character(input_manifest$input_file_manifest_md5 %||% "")
+      staged_input_file_manifest_md5 = as.character(input_manifest$input_file_manifest_md5 %||% ""),
+      profile_chain_start_scalar = if (is.null(profile_chain_start)) {
+        NA_real_
+      } else {
+        profile_chain_start$scalar
+      },
+      profile_chain_start_payload = if (is.null(profile_chain_start)) {
+        ""
+      } else {
+        profile_chain_start$payload
+      },
+      profile_chain_start_payload_md5 = if (is.null(profile_chain_start)) {
+        ""
+      } else {
+        profile_chain_start$payload_md5
+      },
+      profile_chain_reference_quantity = if (is.null(profile_chain_start)) {
+        NA_real_
+      } else {
+        profile_chain_start$reference_quantity
+      }
     ),
     extra
   )
@@ -2139,6 +2187,19 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
       "MFK_PROFILE_BASE_QUANTITY", env("PROFILE_BASE_QUANTITY", NA_character_)
     )))
     if (!is.finite(base_quantity)) base_quantity <- NULL
+    if (!is.null(profile_chain_start)) {
+      endpoint_reference <- profile_chain_start$reference_quantity
+      if (is.null(base_quantity)) {
+        base_quantity <- endpoint_reference
+      } else if (abs(base_quantity - endpoint_reference) >
+                 1e-10 * max(1, abs(endpoint_reference))) {
+        stop(
+          "PROFILE_BASE_QUANTITY does not match the endpoint payload reference_quantity: ",
+          base_quantity, " versus ", endpoint_reference,
+          call. = FALSE
+        )
+      }
+    }
     profile_center_raw <- if (identical(profile_value_mode, "absolute")) {
       env("MFK_PROFILE_TARGET_CENTER", env("PROFILE_TARGET_CENTER", ""))
     } else {
@@ -2352,6 +2413,25 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
         "upper"
       } else {
         "both"
+      }
+    }
+    if (!is.null(profile_chain_start)) {
+      endpoint_scalar <- profile_chain_start$scalar
+      if (identical(profile_side, "lower") &&
+          any(profile_values >= endpoint_scalar)) {
+        stop(
+          "A lower profile extension must contain only values below its endpoint scalar ",
+          endpoint_scalar, ".",
+          call. = FALSE
+        )
+      }
+      if (identical(profile_side, "upper") &&
+          any(profile_values <= endpoint_scalar)) {
+        stop(
+          "An upper profile extension must contain only values above its endpoint scalar ",
+          endpoint_scalar, ".",
+          call. = FALSE
+        )
       }
     }
 

@@ -344,6 +344,11 @@ output without changing the original archive.
   1 CPU/4 GB.
 - `PROFILE_CHAIN`: run profile values sequentially within a job. Scalar jobs
   force this to `false`; chain mode forces it to `true`.
+- `PROFILE_CHAIN_START_SCALAR`: extend a completed continuation chain from an
+  existing endpoint without rerunning its earlier points. Stage the endpoint
+  profile Job as an input; the runner restores that scalar's compact
+  `profile_payload.rds` PAR, requires a completed and converged endpoint, and
+  preserves its original `reference_quantity` for all new percent targets.
 - `PROFILE_NAME`: profile folder name.
 - `PROFILE_QUANTITY`: quantity profile target, for example `avg_bio` or
   `relative_depletion`.

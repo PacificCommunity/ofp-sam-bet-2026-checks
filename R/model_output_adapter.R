@@ -1413,6 +1413,105 @@ restore_payload_par <- function(payload_file, dest) {
   ))
 }
 
+restore_profile_chain_start_payload <- function(
+    input_root,
+    scalar,
+    profile_name = "total_average_biomass",
+    selector = "",
+    dest) {
+  scalar <- suppressWarnings(as.numeric(scalar[[1L]]))
+  if (!is.finite(scalar)) {
+    stop("PROFILE_CHAIN_START_SCALAR must be one finite number.", call. = FALSE)
+  }
+
+  payload_files <- list.files(
+    input_root,
+    pattern = "^profile_payload[.]rds$",
+    recursive = TRUE,
+    full.names = TRUE
+  )
+  payload_files <- normalize_loose(payload_files[file.exists(payload_files)])
+  if (nzchar(selector)) {
+    payload_files <- payload_files[grepl(selector, payload_files, fixed = TRUE)]
+  }
+
+  payloads <- lapply(payload_files, function(path) {
+    payload <- tryCatch(readRDS(path), error = function(e) NULL)
+    if (!is.list(payload)) return(NULL)
+    payload_scalar <- suppressWarnings(as.numeric(payload$scalar %||% payload$scaler))
+    payload_profile <- as.character(payload$profile %||% "")
+    run_status <- tolower(trimws(as.character(payload$run_status %||% "")))
+    run_completed <- isTRUE(payload$mfclkit$run_completed %||% FALSE)
+    converged <- isTRUE(payload$mfclkit$converged %||% FALSE)
+    par_bytes <- tryCatch(payload$artifacts$files$par$bytes, error = function(e) NULL)
+    scalar_matches <- length(payload_scalar) && is.finite(payload_scalar[[1L]]) &&
+      abs(payload_scalar[[1L]] - scalar) <= 1e-8 * max(1, abs(scalar))
+    profile_matches <- !nzchar(profile_name) || identical(payload_profile, profile_name)
+    if (!isTRUE(scalar_matches) || !isTRUE(profile_matches) ||
+        !identical(run_status, "completed") || !isTRUE(run_completed) ||
+        !isTRUE(converged) || !is.raw(par_bytes) || !length(par_bytes)) {
+      return(NULL)
+    }
+    list(path = path, payload = payload)
+  })
+  payloads <- payloads[!vapply(payloads, is.null, logical(1L))]
+  if (!length(payloads)) {
+    stop(
+      "No completed, converged profile payload matched scalar ", scalar,
+      if (nzchar(profile_name)) paste0(" for ", profile_name) else "",
+      if (nzchar(selector)) paste0(" and MODEL_SELECTOR=", selector) else "",
+      ". Stage the completed endpoint profile job as an input.",
+      call. = FALSE
+    )
+  }
+
+  hashes <- unname(tools::md5sum(vapply(payloads, `[[`, character(1L), "path")))
+  unique_hashes <- unique(hashes[nzchar(hashes)])
+  if (length(unique_hashes) != 1L) {
+    stop(
+      "Multiple distinct completed profile payloads matched scalar ", scalar,
+      ": ",
+      paste(vapply(payloads, `[[`, character(1L), "path"), collapse = ", "),
+      call. = FALSE
+    )
+  }
+  selected <- payloads[[which(hashes == unique_hashes[[1L]])[[1L]]]]
+  restored <- restore_payload_artifact(
+    selected$path, role = "par", dest = dest, required = TRUE
+  )
+  if (!par_is_completed_fit(restored)) {
+    stop(
+      "Profile endpoint payload did not restore a completed fitted PAR: ",
+      selected$path,
+      call. = FALSE
+    )
+  }
+  reference_quantity <- suppressWarnings(as.numeric(
+    selected$payload$reference_quantity %||%
+      selected$payload$mfclkit$reference_quantity %||% NA_real_
+  ))
+  if (!length(reference_quantity) || !is.finite(reference_quantity[[1L]]) ||
+      reference_quantity[[1L]] <= 0) {
+    stop(
+      "Profile endpoint payload has no valid reference_quantity: ",
+      selected$path,
+      call. = FALSE
+    )
+  }
+
+  list(
+    par = normalize_loose(restored),
+    payload = selected$path,
+    payload_md5 = unique_hashes[[1L]],
+    par_md5 = file_md5(restored),
+    scalar = scalar,
+    profile = as.character(selected$payload$profile %||% profile_name),
+    reference_quantity = reference_quantity[[1L]],
+    obj_fun = suppressWarnings(as.numeric(selected$payload$obj_fun %||% NA_real_)),
+    max_grad = suppressWarnings(as.numeric(selected$payload$max_grad %||% NA_real_))
+  )
+}
+
 stage_selected_model <- function(row, work_dir = env("WORK_DIR", "work"), output_dir = env("OUTPUT_DIR", "outputs")) {
   stage_dir <- file.path(work_dir, "case")
   source_root <- ""
