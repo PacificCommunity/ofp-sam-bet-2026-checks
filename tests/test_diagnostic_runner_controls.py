@@ -177,7 +177,8 @@ class DiagnosticRunnerControlTests(unittest.TestCase):
     def test_split_profile_worker_defers_report_payload_to_merge(self) -> None:
         runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
 
-        self.assertIn('split_diagnostic_worker <-', runner)
+        self.assertIn('diagnostic_unit_worker <-', runner)
+        self.assertIn('check_type %in% c("jitter", "retro")', runner)
         self.assertIn('identical(check_type, "profile")', runner)
         self.assertIn('identical(check_type, "hessian")', runner)
         self.assertIn('env("HESSIAN_PART", env("HESSIAN_PARTS", ""))', runner)

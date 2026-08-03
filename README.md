@@ -409,6 +409,10 @@ output without changing the original archive.
   convergence flag, native exit code, failure reason, and compact diagnostic
   result remain available to the merge job and mfclshiny for QC. Payload-build
   errors likewise preserve raw unit output instead of deleting it.
+- Parallel jitter and retrospective unit jobs publish compact diagnostic
+  fragments only. Their final merge job combines those fragments with the
+  fitted base model and builds the report-ready mfclshiny payload once, so a
+  redundant standalone payload refresh cannot invalidate a completed run.
 - Merge/attach archives record payload recovery information in
   `check-recovery-manifest.{csv,json,rds}`. mfclshiny reads the compact
   diagnostic object directly and restores raw artifacts only on demand.
