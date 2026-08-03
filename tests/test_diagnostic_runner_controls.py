@@ -104,6 +104,18 @@ class DiagnosticRunnerControlTests(unittest.TestCase):
         self.assertIn('CHECK_FAIL_ON_FAILED_UNITS: "false"', task)
         self.assertIn("fail_on_failed_units_default <- FALSE", runner)
         self.assertIn("(is.finite(n_failed) && n_failed > 0L)", runner)
+        self.assertIn(
+            'Sys.setenv(CHECK_REQUIRE_PAYLOAD_REFRESH = "false")',
+            runner,
+        )
+        self.assertIn(
+            '" failed/non-converged unit as QC output"',
+            runner,
+        )
+        self.assertLess(
+            runner.index('Sys.setenv(CHECK_REQUIRE_PAYLOAD_REFRESH = "false")'),
+            runner.index("payload_index <- build_report_payloads()"),
+        )
         self.assertIn("set -euo pipefail", launcher)
         self.assertIn('Rscript R/run_check.R "$CHECK_TYPE"', launcher)
         self.assertNotIn("CHECK_FAIL_ON_FAILED_UNITS:", merge_task)

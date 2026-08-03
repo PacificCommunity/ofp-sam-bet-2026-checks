@@ -405,8 +405,10 @@ output without changing the original archive.
   are removed. Default is `true`.
 - `CHECK_FAIL_ON_FAILED_UNITS=false`: record non-converged or failed
   diagnostic units in the status ledger without failing the Kflow job.
-  Payload-build errors likewise preserve raw unit output instead of deleting
-  it.
+  For a failed unit, the standalone model-payload refresh is non-fatal; its
+  convergence flag, native exit code, failure reason, and compact diagnostic
+  result remain available to the merge job and mfclshiny for QC. Payload-build
+  errors likewise preserve raw unit output instead of deleting it.
 - Merge/attach archives record payload recovery information in
   `check-recovery-manifest.{csv,json,rds}`. mfclshiny reads the compact
   diagnostic object directly and restores raw artifacts only on demand.

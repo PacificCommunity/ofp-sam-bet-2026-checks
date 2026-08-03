@@ -2872,18 +2872,12 @@ write_check_status_summary(model_dir, check_type)
 compact_check_outputs()
 try(mfclkit::mfk_collect_diagnostics(model_dir, write_index = TRUE), silent = TRUE)
 write_check_status_summary(model_dir, check_type)
-payload_index <- build_report_payloads()
-write_check_payload_index(payload_index)
-build_report_ready_figures()
-write_attached_model_output(
-  check_model_dir = model_dir,
-  output_dir = output_dir,
-  model_key = model_key,
-  index = prepared$row,
-  check_type = check_type
-)
-message("[checks] wrote outputs under ", model_dir)
 
+# A failed/non-converged diagnostic unit is still a valid QC observation.  If
+# the task is configured to retain failed units, do not let the subsequent
+# model-payload refresh turn that recorded outcome back into a failed Kflow
+# dependency.  The status ledger and compact diagnostic result remain in the
+# output for the merge job and mfclshiny to display.
 final_summary <- tryCatch(
   readRDS(file.path(model_dir, "check-summary.rds")),
   error = function(e) NULL
@@ -2904,6 +2898,26 @@ fail_on_failed_units <- truthy(
   ),
   fail_on_failed_units_default
 )
+if (isTRUE(has_failed_units) && !isTRUE(fail_on_failed_units)) {
+  Sys.setenv(CHECK_REQUIRE_PAYLOAD_REFRESH = "false")
+  message(
+    "[checks] retaining ", check_type,
+    " failed/non-converged unit as QC output",
+    if (is.finite(n_failed)) paste0(": ", n_failed) else ""
+  )
+}
+
+payload_index <- build_report_payloads()
+write_check_payload_index(payload_index)
+build_report_ready_figures()
+write_attached_model_output(
+  check_model_dir = model_dir,
+  output_dir = output_dir,
+  model_key = model_key,
+  index = prepared$row,
+  check_type = check_type
+)
+message("[checks] wrote outputs under ", model_dir)
 if (isTRUE(fail_on_failed_units) && isTRUE(has_failed_units)) {
   message("[checks] failing task because ", check_type, " has failed diagnostic unit(s)",
           if (is.finite(n_failed)) paste0(": ", n_failed) else "")
