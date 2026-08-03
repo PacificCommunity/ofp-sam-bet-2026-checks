@@ -263,6 +263,11 @@ output without changing the original archive.
 - `RETRO_REWRITE_PAR`: explicit PAR-windowing override. Default `auto` lets the
   selected strategy window supplied starts and leave active-makepar starts to
   the model script.
+- `RETRO_INI_FILE`: optional source INI filename for retrospective peeling.
+  With the default `auto`, a single INI is used directly; when a staged fit
+  contains both a source INI and a generated INI, the INI sharing the FRQ
+  basename is selected and generated/alternate INIs are isolated before the
+  peel is prepared.
 - `HESSIAN_NSPLIT`: number of Hessian parts, default `30`.
 - `HESSIAN_PARTS`: comma/space list of Hessian parts. If unset, all parts are
   submitted as parallel Kflow jobs when parallel units are enabled.
@@ -339,6 +344,11 @@ output without changing the original archive.
   1 CPU/4 GB.
 - `PROFILE_CHAIN`: run profile values sequentially within a job. Scalar jobs
   force this to `false`; chain mode forces it to `true`.
+- `PROFILE_CHAIN_START_SCALAR`: extend a completed continuation chain from an
+  existing endpoint without rerunning its earlier points. Stage the endpoint
+  profile Job as an input; the runner restores that scalar's compact
+  `profile_payload.rds` PAR, requires a completed and converged endpoint, and
+  preserves its original `reference_quantity` for all new percent targets.
 - `PROFILE_NAME`: profile folder name.
 - `PROFILE_QUANTITY`: quantity profile target, for example `avg_bio` or
   `relative_depletion`.
@@ -400,8 +410,14 @@ output without changing the original archive.
   are removed. Default is `true`.
 - `CHECK_FAIL_ON_FAILED_UNITS=false`: record non-converged or failed
   diagnostic units in the status ledger without failing the Kflow job.
-  Payload-build errors likewise preserve raw unit output instead of deleting
-  it.
+  For a failed unit, the standalone model-payload refresh is non-fatal; its
+  convergence flag, native exit code, failure reason, and compact diagnostic
+  result remain available to the merge job and mfclshiny for QC. Payload-build
+  errors likewise preserve raw unit output instead of deleting it.
+- Parallel jitter and retrospective unit jobs publish compact diagnostic
+  fragments only. Their final merge job combines those fragments with the
+  fitted base model and builds the report-ready mfclshiny payload once, so a
+  redundant standalone payload refresh cannot invalidate a completed run.
 - Merge/attach archives record payload recovery information in
   `check-recovery-manifest.{csv,json,rds}`. mfclshiny reads the compact
   diagnostic object directly and restores raw artifacts only on demand.

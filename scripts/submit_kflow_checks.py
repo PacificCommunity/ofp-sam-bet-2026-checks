@@ -35,9 +35,9 @@ CHECK_ALIASES = {
 
 DEFAULT_RUNTIME_PACKAGES = "none"
 DEFAULT_REPO_RUNTIME_PACKAGES = (
-    "FLR4MFCL=PacificCommunity/ofp-sam-flr4mfcl@3faaf84a4867175bfea50d89e4d518c085e84739,"
+    "FLR4MFCL=PacificCommunity/ofp-sam-flr4mfcl@ff8367fcec19baff98333170c0f1bca3f9903029,"
     "mfclkit=PacificCommunity/ofp-sam-mfclkit@cf786007b5261f84faac8f3d24f7084bd323119d,"
-    "mfclshiny=PacificCommunity/mfclshiny@1fc0bb6bf4cf5349da6f6def54cc56c5a60e182a"
+    "mfclshiny=PacificCommunity/mfclshiny@c665f579a9e63f5252918fb9cab034f0c1e33d5b"
 )
 
 DEFAULT_PROFILE_VALUES = [float(value) for value in range(60, 141, 2)]
@@ -1581,6 +1581,10 @@ def main() -> int:
                 env = {
                     "CHECK_TYPE": check,
                     "MODEL_SELECTOR": model,
+                    # MODEL_SELECTOR identifies the fitted artifact to the
+                    # checks runner. Model-specific doitall scripts commonly
+                    # use MODEL_ID instead, so keep both identities aligned.
+                    "MODEL_ID": model,
                     "KFLOW_JOB_TITLE": title,
                     "KFLOW_JOB_DESCRIPTION": description,
                     "MODEL_SOURCE_REPO": args.model_source_repo,
@@ -1610,6 +1614,7 @@ def main() -> int:
                     "CHECK_EXPECTED_UNIT_TYPE",
                     "CHECK_EXPECTED_UNITS",
                     "MODEL_SELECTOR",
+                    "MODEL_ID",
                     "KFLOW_JOB_TITLE",
                     "KFLOW_JOB_DESCRIPTION",
                 }

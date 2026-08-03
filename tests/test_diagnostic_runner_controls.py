@@ -6,6 +6,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class DiagnosticRunnerControlTests(unittest.TestCase):
+    def test_model_selector_is_exported_as_model_id_for_doitall(self) -> None:
+        runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
+
+        self.assertIn('Sys.setenv(MODEL_ID = model_selector_identity)', runner)
+        self.assertIn(
+            '"MODEL_ID must match MODEL_SELECTOR for a model-specific diagnostic run: "',
+            runner,
+        )
+
     def test_runtime_git_avoids_http2_stalls_and_has_a_deadline(self) -> None:
         launcher = (ROOT / "run.sh").read_text(encoding="utf-8")
 
@@ -95,6 +104,18 @@ class DiagnosticRunnerControlTests(unittest.TestCase):
         self.assertIn('CHECK_FAIL_ON_FAILED_UNITS: "false"', task)
         self.assertIn("fail_on_failed_units_default <- FALSE", runner)
         self.assertIn("(is.finite(n_failed) && n_failed > 0L)", runner)
+        self.assertIn(
+            'Sys.setenv(CHECK_REQUIRE_PAYLOAD_REFRESH = "false")',
+            runner,
+        )
+        self.assertIn(
+            '" failed/non-converged unit as QC output"',
+            runner,
+        )
+        self.assertLess(
+            runner.index('Sys.setenv(CHECK_REQUIRE_PAYLOAD_REFRESH = "false")'),
+            runner.index("payload_index <- build_report_payloads()"),
+        )
         self.assertIn("set -euo pipefail", launcher)
         self.assertIn('Rscript R/run_check.R "$CHECK_TYPE"', launcher)
         self.assertNotIn("CHECK_FAIL_ON_FAILED_UNITS:", merge_task)
@@ -156,7 +177,8 @@ class DiagnosticRunnerControlTests(unittest.TestCase):
     def test_split_profile_worker_defers_report_payload_to_merge(self) -> None:
         runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
 
-        self.assertIn('split_diagnostic_worker <-', runner)
+        self.assertIn('diagnostic_unit_worker <-', runner)
+        self.assertIn('check_type %in% c("jitter", "retro")', runner)
         self.assertIn('identical(check_type, "profile")', runner)
         self.assertIn('identical(check_type, "hessian")', runner)
         self.assertIn('env("HESSIAN_PART", env("HESSIAN_PARTS", ""))', runner)

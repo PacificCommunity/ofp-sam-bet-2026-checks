@@ -5,6 +5,19 @@ check_type <- tolower(check_type)
 source("R/model_output_adapter.R")
 suppressPackageStartupMessages(library(mfclkit))
 
+model_selector_identity <- trimws(env("MODEL_SELECTOR", ""))
+model_id_identity <- trimws(env("MODEL_ID", ""))
+if (!nzchar(model_id_identity) && nzchar(model_selector_identity)) {
+  Sys.setenv(MODEL_ID = model_selector_identity)
+} else if (nzchar(model_id_identity) && nzchar(model_selector_identity) &&
+           !identical(model_id_identity, model_selector_identity)) {
+  stop(
+    "MODEL_ID must match MODEL_SELECTOR for a model-specific diagnostic run: ",
+    model_id_identity, " != ", model_selector_identity, ".",
+    call. = FALSE
+  )
+}
+
 message("[checks] preparing model input")
 profile_hbase_role_initial <- tolower(trimws(env("PROFILE_HBASE_ROLE", "")))
 prepared_input_root <- default_input_root()
@@ -20,6 +33,22 @@ if (identical(profile_hbase_role_initial, "prep")) {
   prepared_input_root <- base_job_root
 }
 prepared <- prepare_model_for_check(input_root = prepared_input_root)
+if (identical(check_type, "retro")) {
+  retro_ini_selection <- prepare_retro_ini_case(
+    prepared$case_dir,
+    prepared$frq,
+    output_dir = env("OUTPUT_DIR", "outputs")
+  )
+  message(
+    "[checks] retrospective INI: ", retro_ini_selection$selected_ini[[1L]],
+    if (nzchar(retro_ini_selection$isolated_ini[[1L]])) {
+      paste0(" (isolated derived/alternate INI: ",
+             retro_ini_selection$isolated_ini[[1L]], ")")
+    } else {
+      ""
+    }
+  )
+}
 
 program_path <- env("PROGRAM_PATH", prepared$program_path)
 if (!nzchar(program_path)) program_path <- prepared$program_path
@@ -74,6 +103,34 @@ if (!identical(check_type, "jitter")) {
     error = function(e) NA_character_
   )
   if (file.exists(latest_candidate)) check_start_par <- latest_candidate
+}
+profile_chain_start <- NULL
+profile_chain_start_scalar_raw <- trimws(env(
+  "MFK_PROFILE_CHAIN_START_SCALAR", env("PROFILE_CHAIN_START_SCALAR", "")
+))
+if (identical(check_type, "profile") && nzchar(profile_chain_start_scalar_raw)) {
+  profile_chain_start_values <- split_numbers(
+    profile_chain_start_scalar_raw, default = numeric()
+  )
+  if (length(profile_chain_start_values) != 1L) {
+    stop("PROFILE_CHAIN_START_SCALAR must contain exactly one value.", call. = FALSE)
+  }
+  profile_chain_start <- restore_profile_chain_start_payload(
+    input_root = prepared_input_root,
+    scalar = profile_chain_start_values[[1L]],
+    profile_name = env(
+      "MFK_PROFILE_NAME",
+      env("PROFILE_NAME", "total_average_biomass")
+    ),
+    selector = env("MODEL_SELECTOR", ""),
+    dest = file.path(prepared$case_dir, "profile-chain-start.par")
+  )
+  check_start_par <- profile_chain_start$par
+  message(
+    "[checks] extending profile from completed scalar ",
+    profile_chain_start$scalar,
+    " using ", profile_chain_start$payload
+  )
 }
 start_par_name <- basename(check_start_par)
 if (!identical(normalize_loose(check_start_par), normalize_loose(prepared$start_par))) {
@@ -1638,7 +1695,27 @@ write_run_manifest <- function(extra = list()) {
       staged_start_par_source = as.character(input_manifest$start_par_source %||% ""),
       staged_start_par_selection = as.character(input_manifest$start_par_selection %||% ""),
       staged_input_file_manifest = as.character(input_manifest$input_file_manifest %||% ""),
-      staged_input_file_manifest_md5 = as.character(input_manifest$input_file_manifest_md5 %||% "")
+      staged_input_file_manifest_md5 = as.character(input_manifest$input_file_manifest_md5 %||% ""),
+      profile_chain_start_scalar = if (is.null(profile_chain_start)) {
+        NA_real_
+      } else {
+        profile_chain_start$scalar
+      },
+      profile_chain_start_payload = if (is.null(profile_chain_start)) {
+        ""
+      } else {
+        profile_chain_start$payload
+      },
+      profile_chain_start_payload_md5 = if (is.null(profile_chain_start)) {
+        ""
+      } else {
+        profile_chain_start$payload_md5
+      },
+      profile_chain_reference_quantity = if (is.null(profile_chain_start)) {
+        NA_real_
+      } else {
+        profile_chain_start$reference_quantity
+      }
     ),
     extra
   )
@@ -2110,6 +2187,19 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
       "MFK_PROFILE_BASE_QUANTITY", env("PROFILE_BASE_QUANTITY", NA_character_)
     )))
     if (!is.finite(base_quantity)) base_quantity <- NULL
+    if (!is.null(profile_chain_start)) {
+      endpoint_reference <- profile_chain_start$reference_quantity
+      if (is.null(base_quantity)) {
+        base_quantity <- endpoint_reference
+      } else if (abs(base_quantity - endpoint_reference) >
+                 1e-10 * max(1, abs(endpoint_reference))) {
+        stop(
+          "PROFILE_BASE_QUANTITY does not match the endpoint payload reference_quantity: ",
+          base_quantity, " versus ", endpoint_reference,
+          call. = FALSE
+        )
+      }
+    }
     profile_center_raw <- if (identical(profile_value_mode, "absolute")) {
       env("MFK_PROFILE_TARGET_CENTER", env("PROFILE_TARGET_CENTER", ""))
     } else {
@@ -2323,6 +2413,25 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
         "upper"
       } else {
         "both"
+      }
+    }
+    if (!is.null(profile_chain_start)) {
+      endpoint_scalar <- profile_chain_start$scalar
+      if (identical(profile_side, "lower") &&
+          any(profile_values >= endpoint_scalar)) {
+        stop(
+          "A lower profile extension must contain only values below its endpoint scalar ",
+          endpoint_scalar, ".",
+          call. = FALSE
+        )
+      }
+      if (identical(profile_side, "upper") &&
+          any(profile_values <= endpoint_scalar)) {
+        stop(
+          "An upper profile extension must contain only values above its endpoint scalar ",
+          endpoint_scalar, ".",
+          call. = FALSE
+        )
       }
     }
 
@@ -2815,17 +2924,18 @@ if (identical(check_type, "profile") && identical(profile_hbase_role, "prep")) {
   stop("Unsupported CHECK_TYPE: ", check_type, call. = FALSE)
 }
 
-# Split profile and Hessian workers only need to publish their diagnostic
-# fragments for the merge job. Building a standalone model payload in each
-# worker is redundant and can fail after the native diagnostic has completed,
-# incorrectly turning a successful worker into a failed Kflow job. The merge
-# job remains responsible for the report-ready payload and figures.
-split_diagnostic_worker <-
+# Parallel diagnostic workers only need to publish their native/compact
+# diagnostic fragments for the merge job. Building a standalone model payload
+# in each worker is redundant and can fail after the native diagnostic has
+# completed, incorrectly turning a successful worker into a failed Kflow job.
+# The merge job remains responsible for the report-ready payload and figures.
+diagnostic_unit_worker <-
+  check_type %in% c("jitter", "retro") ||
   (identical(check_type, "profile") &&
      nzchar(trimws(env("PROFILE_CHAIN_SIDE", "")))) ||
   (identical(check_type, "hessian") &&
      nzchar(trimws(env("HESSIAN_PART", env("HESSIAN_PARTS", "")))))
-if (isTRUE(split_diagnostic_worker)) {
+if (isTRUE(diagnostic_unit_worker)) {
   if (!nzchar(Sys.getenv("CHECK_BUILD_PAYLOADS", ""))) {
     Sys.setenv(CHECK_BUILD_PAYLOADS = "false")
   }
@@ -2843,18 +2953,12 @@ write_check_status_summary(model_dir, check_type)
 compact_check_outputs()
 try(mfclkit::mfk_collect_diagnostics(model_dir, write_index = TRUE), silent = TRUE)
 write_check_status_summary(model_dir, check_type)
-payload_index <- build_report_payloads()
-write_check_payload_index(payload_index)
-build_report_ready_figures()
-write_attached_model_output(
-  check_model_dir = model_dir,
-  output_dir = output_dir,
-  model_key = model_key,
-  index = prepared$row,
-  check_type = check_type
-)
-message("[checks] wrote outputs under ", model_dir)
 
+# A failed/non-converged diagnostic unit is still a valid QC observation.  If
+# the task is configured to retain failed units, do not let the subsequent
+# model-payload refresh turn that recorded outcome back into a failed Kflow
+# dependency.  The status ledger and compact diagnostic result remain in the
+# output for the merge job and mfclshiny to display.
 final_summary <- tryCatch(
   readRDS(file.path(model_dir, "check-summary.rds")),
   error = function(e) NULL
@@ -2875,6 +2979,26 @@ fail_on_failed_units <- truthy(
   ),
   fail_on_failed_units_default
 )
+if (isTRUE(has_failed_units) && !isTRUE(fail_on_failed_units)) {
+  Sys.setenv(CHECK_REQUIRE_PAYLOAD_REFRESH = "false")
+  message(
+    "[checks] retaining ", check_type,
+    " failed/non-converged unit as QC output",
+    if (is.finite(n_failed)) paste0(": ", n_failed) else ""
+  )
+}
+
+payload_index <- build_report_payloads()
+write_check_payload_index(payload_index)
+build_report_ready_figures()
+write_attached_model_output(
+  check_model_dir = model_dir,
+  output_dir = output_dir,
+  model_key = model_key,
+  index = prepared$row,
+  check_type = check_type
+)
+message("[checks] wrote outputs under ", model_dir)
 if (isTRUE(fail_on_failed_units) && isTRUE(has_failed_units)) {
   message("[checks] failing task because ", check_type, " has failed diagnostic unit(s)",
           if (is.finite(n_failed)) paste0(": ", n_failed) else "")

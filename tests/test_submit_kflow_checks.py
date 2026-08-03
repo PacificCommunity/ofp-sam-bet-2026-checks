@@ -130,6 +130,25 @@ class IntegerUnitSpecTests(unittest.TestCase):
         ("selftest", "SELFTEST_REPS", "SELFTEST_REP", "replicate"),
     )
 
+    def test_model_id_matches_selector_for_model_specific_doitall(self):
+        for check, unit_env in (("jitter", "JITTER_SEEDS"), ("retro", "RETRO_PEELS")):
+            with self.subTest(check=check):
+                payloads = run_dry_run(
+                    [
+                        "submit_kflow_checks.py",
+                        "--checks", check,
+                        "--models", "S0.90-P2",
+                        "--input-jobs", "21646",
+                        "--parallel-units", "false",
+                        "--dry-run",
+                    ],
+                    {unit_env: "1"},
+                )
+                self.assertEqual(
+                    payloads[0]["payload"]["env"]["MODEL_ID"],
+                    "S0.90-P2",
+                )
+
     def test_parallel_and_batched_specs_share_one_canonical_ledger(self):
         canonical = ["1", "2", str(submit.MAX_R_INTEGER)]
         raw = f"+001, 2 1 {submit.MAX_R_INTEGER} 02"
