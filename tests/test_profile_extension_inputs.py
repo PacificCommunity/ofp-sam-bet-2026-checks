@@ -136,6 +136,42 @@ restore_profile_chain_start_payload(
                 "No completed, converged profile payload", process.stderr
             )
 
+    def test_extension_selects_fitted_base_not_attached_profile_worker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result = root / "selected.rds"
+            expression = r'''
+args <- commandArgs(trailingOnly = TRUE)
+source(args[[1L]])
+Sys.setenv(PROFILE_CHAIN_START_SCALAR = "75")
+candidates <- data.frame(
+  candidate_type = c("full_case", "indexed"),
+  candidate_id = c(1L, 2L),
+  compact_dir = c(
+    "/inputs/base/outputs/S0.90-F2-tau2-fixed",
+    "/inputs/endpoint/outputs/models/S0.90-F2-tau2-fixed"
+  ),
+  step_id = c("S0.90-F2", "S0.90-F2"),
+  model_label = c("S0.90-F2", "S0.90-F2"),
+  model_key = c("S0.90-F2", "S0.90-F2"),
+  model_dir = c("", "models/S0.90-F2-tau2-fixed"),
+  index_file = c("", "/inputs/endpoint/outputs/model-index.csv"),
+  attached_checks = c(FALSE, TRUE),
+  stringsAsFactors = FALSE
+)
+saveRDS(select_model_output(candidates, "S0.90-F2"), args[[2L]])
+'''
+            self.run_r(expression, ADAPTER, result)
+            verify = r'''
+x <- readRDS(commandArgs(trailingOnly = TRUE)[[1L]])
+stopifnot(
+  nrow(x) == 1L,
+  identical(x$candidate_type[[1L]], "full_case"),
+  !isTRUE(x$attached_checks[[1L]])
+)
+'''
+            self.run_r(verify, result)
+
 
 if __name__ == "__main__":
     unittest.main()

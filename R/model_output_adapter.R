@@ -1203,6 +1203,18 @@ select_model_output <- function(candidates, selector = env("MODEL_SELECTOR", "")
   if (!nrow(hits)) {
     stop("No model output matched MODEL_SELECTOR=", shQuote(selector), call. = FALSE)
   }
+  # A profile extension stages two distinct inputs: the original fitted model
+  # supplies the complete MFCL case, while a prior profile worker supplies only
+  # the compact endpoint PAR. Do not let the worker's attached diagnostic model
+  # index outrank the fitted base during ordinary model selection.
+  if (nzchar(trimws(env(
+      "MFK_PROFILE_CHAIN_START_SCALAR", env("PROFILE_CHAIN_START_SCALAR", "")
+    ))) && "attached_checks" %in% names(hits)) {
+    attached <- vapply(seq_len(nrow(hits)), function(i) {
+      truthy(hits$attached_checks[[i]] %||% "", FALSE)
+    }, logical(1L))
+    if (any(!attached)) hits <- hits[!attached, , drop = FALSE]
+  }
   if (nrow(hits) > 1L) {
     hits$.candidate_score <- vapply(seq_len(nrow(hits)), function(i) {
       candidate_score(hits[i, , drop = FALSE])
