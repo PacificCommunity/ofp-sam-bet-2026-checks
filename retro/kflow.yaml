@@ -42,6 +42,7 @@ metadata:
     optional:
       - CHECK_TYPE
       - MODEL_SELECTOR
+      - MODEL_ID
       - MODEL_INPUT_ROOT
       - MODEL_SOURCE_REPO
       - MODEL_SOURCE_REF
@@ -75,6 +76,7 @@ metadata:
       - RETRO_REMOVE_PAR_FILES
       - RETRO_START_PAR_NAME
       - RETRO_REWRITE_PAR
+      - RETRO_INI_FILE
       - RETRO_COMMAND
       - MFK_RUN_MESSAGES
       - KFLOW_RUNTIME_UPDATE

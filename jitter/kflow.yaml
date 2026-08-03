@@ -43,6 +43,7 @@ metadata:
     optional:
       - CHECK_TYPE
       - MODEL_SELECTOR
+      - MODEL_ID
       - MODEL_INPUT_ROOT
       - MODEL_SOURCE_REPO
       - MODEL_SOURCE_REF

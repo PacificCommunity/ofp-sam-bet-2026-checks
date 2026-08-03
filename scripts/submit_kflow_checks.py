@@ -1581,6 +1581,10 @@ def main() -> int:
                 env = {
                     "CHECK_TYPE": check,
                     "MODEL_SELECTOR": model,
+                    # MODEL_SELECTOR identifies the fitted artifact to the
+                    # checks runner. Model-specific doitall scripts commonly
+                    # use MODEL_ID instead, so keep both identities aligned.
+                    "MODEL_ID": model,
                     "KFLOW_JOB_TITLE": title,
                     "KFLOW_JOB_DESCRIPTION": description,
                     "MODEL_SOURCE_REPO": args.model_source_repo,
@@ -1610,6 +1614,7 @@ def main() -> int:
                     "CHECK_EXPECTED_UNIT_TYPE",
                     "CHECK_EXPECTED_UNITS",
                     "MODEL_SELECTOR",
+                    "MODEL_ID",
                     "KFLOW_JOB_TITLE",
                     "KFLOW_JOB_DESCRIPTION",
                 }

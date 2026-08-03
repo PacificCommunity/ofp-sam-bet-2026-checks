@@ -6,6 +6,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class DiagnosticRunnerControlTests(unittest.TestCase):
+    def test_model_selector_is_exported_as_model_id_for_doitall(self) -> None:
+        runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
+
+        self.assertIn('Sys.setenv(MODEL_ID = model_selector_identity)', runner)
+        self.assertIn(
+            '"MODEL_ID must match MODEL_SELECTOR for a model-specific diagnostic run: "',
+            runner,
+        )
+
     def test_runtime_git_avoids_http2_stalls_and_has_a_deadline(self) -> None:
         launcher = (ROOT / "run.sh").read_text(encoding="utf-8")
 

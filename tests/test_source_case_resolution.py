@@ -9,6 +9,35 @@ ADAPTER = ROOT / "R" / "model_output_adapter.R"
 
 
 class SourceCaseResolutionTests(unittest.TestCase):
+    def test_retro_prefers_frq_basename_ini_and_isolates_generated_ini(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            case_dir = root / "case"
+            output_dir = root / "outputs"
+            case_dir.mkdir()
+            (case_dir / "bet.frq").write_text("frequency\n", encoding="utf-8")
+            (case_dir / "bet.ini").write_text("source input\n", encoding="utf-8")
+            (case_dir / "bet.model.ini").write_text("generated input\n", encoding="utf-8")
+
+            expression = (
+                f"source({str(ADAPTER)!r}); "
+                "Sys.setenv(RETRO_INI_FILE='auto'); "
+                f"audit <- prepare_retro_ini_case({str(case_dir)!r}, "
+                f"{str(case_dir / 'bet.frq')!r}, {str(output_dir)!r}); "
+                "stopifnot(identical(audit$selected_ini[[1L]], 'bet.ini')); "
+                f"stopifnot(file.exists({str(case_dir / 'bet.ini')!r})); "
+                f"stopifnot(!file.exists({str(case_dir / 'bet.model.ini')!r})); "
+                f"stopifnot(file.exists({str(case_dir / '.retro-inactive-ini' / 'bet.model.ini')!r})); "
+                f"stopifnot(file.exists({str(output_dir / 'retro-ini-selection.csv')!r}))"
+            )
+            subprocess.run(
+                ["Rscript", "-e", expression],
+                cwd=ROOT,
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+
     def test_broad_source_path_resolves_selected_model_case(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             source_root = Path(tmpdir) / "source"

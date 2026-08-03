@@ -1624,3 +1624,79 @@ prepare_model_for_check <- function(input_root = default_input_root(),
   selected <- select_model_output(candidates, env("MODEL_SELECTOR", ""))
   stage_selected_model(selected, work_dir = work_dir, output_dir = output_dir)
 }
+
+prepare_retro_ini_case <- function(case_dir, frq_file, output_dir = "outputs") {
+  case_dir <- normalize_loose(case_dir)
+  ini_files <- list.files(
+    case_dir,
+    pattern = "[.]ini$",
+    full.names = TRUE,
+    recursive = FALSE,
+    ignore.case = TRUE
+  )
+  ini_files <- ini_files[file.info(ini_files)$isdir %in% FALSE]
+  requested <- trimws(env("RETRO_INI_FILE", "auto"))
+  automatic <- !nzchar(requested) || identical(tolower(requested), "auto")
+
+  if (!length(ini_files)) {
+    stop("The staged retrospective case has no INI file.", call. = FALSE)
+  }
+
+  if (isTRUE(automatic) && length(ini_files) == 1L) {
+    selected <- ini_files
+    requested <- basename(selected)
+  } else if (isTRUE(automatic)) {
+    frq_name <- basename(as.character(frq_file[[1L]]))
+    requested <- sub("[.]frq$", ".ini", frq_name, ignore.case = TRUE)
+    selected <- ini_files[tolower(basename(ini_files)) == tolower(requested)]
+  } else {
+    requested <- basename(requested)
+    selected <- ini_files[tolower(basename(ini_files)) == tolower(requested)]
+  }
+  if (length(selected) != 1L) {
+    stop(
+      "Could not select retrospective INI ", shQuote(requested),
+      " from the staged case; found ", length(selected), ".",
+      call. = FALSE
+    )
+  }
+  selected <- selected[[1L]]
+
+  inactive <- setdiff(ini_files, selected)
+  inactive_dir <- file.path(case_dir, ".retro-inactive-ini")
+  if (length(inactive)) {
+    dir.create(inactive_dir, recursive = TRUE, showWarnings = FALSE)
+    for (path in inactive) {
+      destination <- file.path(inactive_dir, basename(path))
+      moved <- file.rename(path, destination)
+      if (!isTRUE(moved)) {
+        copied <- file.copy(path, destination, overwrite = TRUE, copy.date = TRUE)
+        removed <- if (isTRUE(copied)) unlink(path, force = TRUE) else 1L
+        if (!isTRUE(copied) || !identical(as.integer(removed), 0L)) {
+          stop(
+            "Could not isolate non-input retrospective INI ",
+            basename(path), ".",
+            call. = FALSE
+          )
+        }
+      }
+    }
+  }
+
+  audit <- data.frame(
+    selection_mode = if (!isTRUE(automatic)) {
+      "explicit"
+    } else if (length(ini_files) == 1L) {
+      "only_ini"
+    } else {
+      "frq_basename"
+    },
+    frq_file = basename(as.character(frq_file[[1L]])),
+    selected_ini = basename(selected),
+    isolated_ini = paste(basename(inactive), collapse = " "),
+    stringsAsFactors = FALSE
+  )
+  dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+  write.csv(audit, file.path(output_dir, "retro-ini-selection.csv"), row.names = FALSE)
+  audit
+}

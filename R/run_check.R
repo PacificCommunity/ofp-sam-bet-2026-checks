@@ -5,6 +5,19 @@ check_type <- tolower(check_type)
 source("R/model_output_adapter.R")
 suppressPackageStartupMessages(library(mfclkit))
 
+model_selector_identity <- trimws(env("MODEL_SELECTOR", ""))
+model_id_identity <- trimws(env("MODEL_ID", ""))
+if (!nzchar(model_id_identity) && nzchar(model_selector_identity)) {
+  Sys.setenv(MODEL_ID = model_selector_identity)
+} else if (nzchar(model_id_identity) && nzchar(model_selector_identity) &&
+           !identical(model_id_identity, model_selector_identity)) {
+  stop(
+    "MODEL_ID must match MODEL_SELECTOR for a model-specific diagnostic run: ",
+    model_id_identity, " != ", model_selector_identity, ".",
+    call. = FALSE
+  )
+}
+
 message("[checks] preparing model input")
 profile_hbase_role_initial <- tolower(trimws(env("PROFILE_HBASE_ROLE", "")))
 prepared_input_root <- default_input_root()
@@ -20,6 +33,22 @@ if (identical(profile_hbase_role_initial, "prep")) {
   prepared_input_root <- base_job_root
 }
 prepared <- prepare_model_for_check(input_root = prepared_input_root)
+if (identical(check_type, "retro")) {
+  retro_ini_selection <- prepare_retro_ini_case(
+    prepared$case_dir,
+    prepared$frq,
+    output_dir = env("OUTPUT_DIR", "outputs")
+  )
+  message(
+    "[checks] retrospective INI: ", retro_ini_selection$selected_ini[[1L]],
+    if (nzchar(retro_ini_selection$isolated_ini[[1L]])) {
+      paste0(" (isolated derived/alternate INI: ",
+             retro_ini_selection$isolated_ini[[1L]], ")")
+    } else {
+      ""
+    }
+  )
+}
 
 program_path <- env("PROGRAM_PATH", prepared$program_path)
 if (!nzchar(program_path)) program_path <- prepared$program_path

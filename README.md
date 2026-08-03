@@ -263,6 +263,11 @@ output without changing the original archive.
 - `RETRO_REWRITE_PAR`: explicit PAR-windowing override. Default `auto` lets the
   selected strategy window supplied starts and leave active-makepar starts to
   the model script.
+- `RETRO_INI_FILE`: optional source INI filename for retrospective peeling.
+  With the default `auto`, a single INI is used directly; when a staged fit
+  contains both a source INI and a generated INI, the INI sharing the FRQ
+  basename is selected and generated/alternate INIs are isolated before the
+  peel is prepared.
 - `HESSIAN_NSPLIT`: number of Hessian parts, default `30`.
 - `HESSIAN_PARTS`: comma/space list of Hessian parts. If unset, all parts are
   submitted as parallel Kflow jobs when parallel units are enabled.
