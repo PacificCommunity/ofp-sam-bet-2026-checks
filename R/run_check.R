@@ -50,8 +50,11 @@ if (identical(check_type, "retro")) {
   )
 }
 
-program_path <- env("PROGRAM_PATH", prepared$program_path)
-if (!nzchar(program_path)) program_path <- prepared$program_path
+# ``prepare_model_for_check()`` has already resolved PROGRAM_PATH against the
+# executable advertised by the selected parent artifact.  Re-reading the raw
+# environment here would discard that resolution and can mix the container
+# executable with a different, attested executable bundled by the parent.
+program_path <- prepared$program_path
 if (!nzchar(program_path)) program_path <- "/home/mfcl/mfclo64"
 
 backend <- mfk_native_backend(program_path = program_path)
