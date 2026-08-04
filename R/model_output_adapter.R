@@ -1666,7 +1666,12 @@ stage_selected_model <- function(row, work_dir = env("WORK_DIR", "work"), output
 
   row_program_path <- as.character(row$mfcl_program_path %||% "")
   requested_program_path <- Sys.getenv("PROGRAM_PATH", unset = "")
-  program_path <- if (nzchar(row_program_path) &&
+  staged_program_path <- file.path(stage_dir, "mfclo64")
+  program_path <- if (file.exists(staged_program_path) &&
+      (!nzchar(requested_program_path) ||
+       identical(requested_program_path, "/home/mfcl/mfclo64"))) {
+    staged_program_path
+  } else if (nzchar(row_program_path) &&
       (!nzchar(requested_program_path) || identical(requested_program_path, "/home/mfcl/mfclo64"))) {
     row_program_path
   } else if (nzchar(requested_program_path)) {

@@ -17,12 +17,20 @@ class DiagnosticRunnerControlTests(unittest.TestCase):
 
     def test_runner_uses_executable_resolved_from_parent_artifact(self) -> None:
         runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
+        adapter = (ROOT / "R" / "model_output_adapter.R").read_text(
+            encoding="utf-8"
+        )
 
         self.assertIn("program_path <- prepared$program_path", runner)
         self.assertNotIn(
             'program_path <- env("PROGRAM_PATH", prepared$program_path)',
             runner,
         )
+        self.assertIn(
+            'staged_program_path <- file.path(stage_dir, "mfclo64")',
+            adapter,
+        )
+        self.assertIn("file.exists(staged_program_path)", adapter)
 
     def test_runtime_git_avoids_http2_stalls_and_has_a_deadline(self) -> None:
         launcher = (ROOT / "run.sh").read_text(encoding="utf-8")
