@@ -77,6 +77,24 @@ class ModelSelectorResolutionTests(unittest.TestCase):
 
         self.assertEqual(models, ["all"])
 
+    def test_stepwise_job_key_alias_resolves_to_published_step_key(self):
+        parent = {
+            "metadata": {"job_key": "20-tau2-fixed"},
+            "tags": {
+                "job_key": "20-tau2-fixed",
+                "step": "20-Tau2Fixed",
+            },
+        }
+        with mock.patch.object(submit, "api_job", return_value=parent):
+            models = submit.resolve_input_models(
+                "https://kflow.test",
+                "token",
+                "22198",
+                ["20-tau2-fixed"],
+            )
+
+        self.assertEqual(models, ["20-Tau2Fixed"])
+
     def test_single_model_hessian_and_profile_payloads_use_canonical_identity(self):
         parent = {
             "metadata": {

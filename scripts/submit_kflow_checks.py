@@ -1182,6 +1182,10 @@ def job_model_selectors(job: dict[str, Any]) -> list[str]:
         metadata.get("model_selectors"),
         metadata.get("model_key"),
         metadata.get("model_keys"),
+        # Stepwise parent jobs expose the exact published model key as the
+        # step tag, while job_key is a separate lower-case run identifier.
+        # Diagnostics must select the published model artifact, not job_key.
+        tags.get("step"),
         tags.get("model"),
     ]
     selectors: list[str] = []
