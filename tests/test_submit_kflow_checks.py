@@ -167,6 +167,24 @@ class IntegerUnitSpecTests(unittest.TestCase):
                     "S0.90-P2",
                 )
 
+    def test_recipe_id_can_differ_from_published_sensitivity_selector(self):
+        payloads = run_dry_run(
+            [
+                "submit_kflow_checks.py",
+                "--checks", "jitter",
+                "--models", "tau-1.2",
+                "--input-jobs", "22184",
+                "--parallel-units", "false",
+                "--dry-run",
+            ],
+            {"JITTER_SEEDS": "1", "MODEL_RECIPE_ID": "Diagnostic"},
+        )
+
+        env = payloads[0]["payload"]["env"]
+        self.assertEqual(env["MODEL_SELECTOR"], "tau-1.2")
+        self.assertEqual(env["MODEL_ID"], "tau-1.2")
+        self.assertEqual(env["MODEL_RECIPE_ID"], "Diagnostic")
+
     def test_parallel_and_batched_specs_share_one_canonical_ledger(self):
         canonical = ["1", "2", str(submit.MAX_R_INTEGER)]
         raw = f"+001, 2 1 {submit.MAX_R_INTEGER} 02"

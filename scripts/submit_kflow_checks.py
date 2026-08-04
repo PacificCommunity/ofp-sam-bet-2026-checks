@@ -1612,7 +1612,7 @@ def main() -> int:
                     "BET_", "JITTER_", "RETRO_", "HESSIAN_", "PROFILE_", "ASPM_", "BUNDLE_",
                     "SELFTEST_", "MFK_", "CHECK_", "selftest_",
                 )
-                passthrough_env = {"TRIGGER_NEXT"}
+                passthrough_env = {"TRIGGER_NEXT", "MODEL_RECIPE_ID"}
                 protected_env = {
                     "CHECK_TYPE",
                     "CHECK_EXPECTED_UNIT_TYPE",

@@ -14,6 +14,11 @@ class DiagnosticRunnerControlTests(unittest.TestCase):
             '"MODEL_ID must match MODEL_SELECTOR for a model-specific diagnostic run: "',
             runner,
         )
+        self.assertIn(
+            'model_recipe_identity <- trimws(env("MODEL_RECIPE_ID", ""))',
+            runner,
+        )
+        self.assertIn("Sys.setenv(MODEL_ID = model_recipe_identity)", runner)
 
     def test_runner_uses_executable_resolved_from_parent_artifact(self) -> None:
         runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")

@@ -7,7 +7,12 @@ suppressPackageStartupMessages(library(mfclkit))
 
 model_selector_identity <- trimws(env("MODEL_SELECTOR", ""))
 model_id_identity <- trimws(env("MODEL_ID", ""))
-if (!nzchar(model_id_identity) && nzchar(model_selector_identity)) {
+model_recipe_identity <- trimws(env("MODEL_RECIPE_ID", ""))
+if (nzchar(model_recipe_identity)) {
+  # A sensitivity artifact can have a published selector such as ``tau-1.2``
+  # while retaining the parent model recipe expected by its doitall script.
+  Sys.setenv(MODEL_ID = model_recipe_identity)
+} else if (!nzchar(model_id_identity) && nzchar(model_selector_identity)) {
   Sys.setenv(MODEL_ID = model_selector_identity)
 } else if (nzchar(model_id_identity) && nzchar(model_selector_identity) &&
            !identical(model_id_identity, model_selector_identity)) {
