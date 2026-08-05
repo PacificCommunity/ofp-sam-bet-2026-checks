@@ -203,6 +203,8 @@ class DiagnosticRunnerControlTests(unittest.TestCase):
         self.assertIn('check_type %in% c("jitter", "retro")', runner)
         self.assertIn('identical(check_type, "profile")', runner)
         self.assertIn('identical(check_type, "hessian")', runner)
+        self.assertIn('identical(check_type, "aspm")', runner)
+        self.assertIn('env("ASPM_VARIANT_SUBDIR", "")', runner)
         self.assertIn('env("HESSIAN_PART", env("HESSIAN_PARTS", ""))', runner)
         self.assertIn('Sys.setenv(CHECK_BUILD_PAYLOADS = "false")', runner)
         self.assertIn('Sys.setenv(CHECK_BUILD_REPORT_FIGURES = "false")', runner)

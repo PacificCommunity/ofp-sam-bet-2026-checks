@@ -2952,7 +2952,9 @@ diagnostic_unit_worker <-
   (identical(check_type, "profile") &&
      nzchar(trimws(env("PROFILE_CHAIN_SIDE", "")))) ||
   (identical(check_type, "hessian") &&
-     nzchar(trimws(env("HESSIAN_PART", env("HESSIAN_PARTS", "")))))
+     nzchar(trimws(env("HESSIAN_PART", env("HESSIAN_PARTS", ""))))) ||
+  (identical(check_type, "aspm") &&
+     nzchar(trimws(env("ASPM_VARIANT_SUBDIR", ""))))
 if (isTRUE(diagnostic_unit_worker)) {
   if (!nzchar(Sys.getenv("CHECK_BUILD_PAYLOADS", ""))) {
     Sys.setenv(CHECK_BUILD_PAYLOADS = "false")
