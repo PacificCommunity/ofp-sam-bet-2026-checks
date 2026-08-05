@@ -233,6 +233,18 @@ class DiagnosticRunnerControlTests(unittest.TestCase):
         self.assertIn("ASPM_DIAGNOSTIC_DEFINITION: strict", task)
         self.assertIn('if ("variant" %in% names(dat))', merger)
 
+    def test_payload_tools_bind_the_mfclshiny_length_bin_helper(self) -> None:
+        for script in ("run_check.R", "merge_check.R"):
+            source = (ROOT / "R" / script).read_text(encoding="utf-8")
+            self.assertIn(
+                'getFromNamespace("mfclshiny_frq_length_bins", "mfclshiny")',
+                source,
+            )
+            self.assertIn(
+                'assign("mfclshiny_frq_length_bins", length_bins, envir = tool_env)',
+                source,
+            )
+
     def test_hessian_units_preserve_regional_scaling_for_later_stitching(self) -> None:
         runner = (ROOT / "R" / "run_check.R").read_text(encoding="utf-8")
         start = runner.index("stage_hessian_stitch_inputs <- function()")

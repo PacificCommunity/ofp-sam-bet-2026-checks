@@ -1378,6 +1378,16 @@ mfclshiny_payload_tool_env <- function(required_for) {
   }
   tool_env <- new.env(parent = globalenv())
   sys.source(tool, envir = tool_env, keep.source = FALSE)
+  # The installed standalone payload tool is sourced outside the mfclshiny
+  # namespace. Bind its package-internal age/length helper explicitly so
+  # payload construction behaves like the Shiny app and package API.
+  length_bins <- tryCatch(
+    getFromNamespace("mfclshiny_frq_length_bins", "mfclshiny"),
+    error = function(e) NULL
+  )
+  if (is.function(length_bins)) {
+    assign("mfclshiny_frq_length_bins", length_bins, envir = tool_env)
+  }
   tool_env
 }
 
