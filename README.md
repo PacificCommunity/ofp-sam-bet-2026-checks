@@ -1,3 +1,5 @@
+[![Preservation checks](https://github.com/PacificCommunity/ofp-sam-bet-2026-checks/actions/workflows/verify-preserved-results.yml/badge.svg?branch=main)](https://github.com/PacificCommunity/ofp-sam-bet-2026-checks/actions/workflows/verify-preserved-results.yml?query=branch%3Amain)
+
 # BET 2026 MFCL checks
 
 <a id="common-kflow-fields"></a>
