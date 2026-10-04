@@ -253,3 +253,30 @@ kflow-batch:
 	  --auto-merge '$(KFLOW_AUTO_MERGE)' \
 	  --job-title '$(JOB_TITLE)' \
 	  --job-description '$(JOB_DESCRIPTION)'
+
+CASE ?= jitter
+INPUT ?=
+OUT ?=
+MFCL ?= $(INPUT)/mfclo64
+export CASE INPUT OUT MFCL
+.PHONY: verify test prepare rerun refit rerun-help _check-reader-inputs
+
+rerun-help:
+	@printf '%s\n' 'make verify                      Check preserved runners' 'make test                        Run the runner test suite' 'make prepare CASE=jitter INPUT=/path/to/fitted-case OUT=/tmp/bet-check MODEL_SELECTOR=your-model-key' 'make rerun CASE=jitter INPUT=/path/to/fitted-case OUT=/tmp/bet-check MODEL_SELECTOR=your-model-key' 'This repository runs new checks; saved assessment fits live in the linked result repositories.'
+
+verify:
+	@python3 ci/verify-preserved-files.py
+
+test:
+	@python3 -m unittest discover -s tests -p 'test_*.py' -v
+
+prepare: verify _check-reader-inputs
+	@$(MAKE) --no-print-directory local CHECK_TYPE="$$CASE" MODEL_INPUT_ROOT="$$INPUT" OUTPUT_DIR="$$OUT" WORK_DIR="$$OUT/work" PROGRAM_PATH="$$MFCL" CHECK_DRY_RUN=true TRIGGER_NEXT=false KFLOW_REPO_RUNTIME_UPDATE=never KFLOW_RUNTIME_UPDATE=never TUNA_FLOW_RUNTIME_UPDATE=never
+
+rerun: verify _check-reader-inputs
+	@$(MAKE) --no-print-directory local CHECK_TYPE="$$CASE" MODEL_INPUT_ROOT="$$INPUT" OUTPUT_DIR="$$OUT" WORK_DIR="$$OUT/work" PROGRAM_PATH="$$MFCL" CHECK_DRY_RUN=false TRIGGER_NEXT=false KFLOW_REPO_RUNTIME_UPDATE=never KFLOW_RUNTIME_UPDATE=never TUNA_FLOW_RUNTIME_UPDATE=never
+
+refit: rerun
+
+_check-reader-inputs:
+	@python3 -c 'import os; from pathlib import Path; raw=os.environ.get("OUT",""); p=Path(raw); root=Path.cwd().resolve(); assert raw and p.is_absolute(), "Set OUT to an absolute, new directory"; assert not os.path.lexists(p), "OUT already exists"; q=p.resolve(); assert q != root and root not in q.parents, "OUT must be outside this repository"; native=Path(os.environ.get("INPUT","")); assert os.environ.get("INPUT") and native.is_absolute() and native.is_dir(), "Set INPUT to a complete fitted case"; assert Path(os.environ["MFCL"]).is_file(), "Set MFCL to its executable"'

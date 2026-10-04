@@ -22,14 +22,13 @@ Base-fit rows are marked `is_base_fit_reference=TRUE`.
 A dry run stages one case without executing MFCL:
 
 ```sh
-MODEL_INPUT_ROOT=/absolute/path/to/fitted-case \
-MODEL_SELECTOR=your-model-key \
-CHECK_DRY_RUN=true bash run.sh jitter
+make verify
+make prepare CASE=jitter INPUT=/absolute/path/to/fitted-case OUT=/tmp/bet-check MODEL_SELECTOR=your-model-key
 ```
 
 See [inputs, check controls and output formats](docs/reproduction.md) for the
-pinned runtime and full commands. Run the test suite with
-`python3 -m unittest discover -s tests -p 'test_*.py' -v`.
+pinned runtime and full commands. Use `make rerun` with the same arguments
+and a new `OUT` to execute the check. Run the test suite with `make test`.
 
 Assessment results are published separately:
 [Diagnostic](https://pacificcommunity.github.io/ofp-sam-bet-2026-diagnostic/bet-2026-diagnostic-report.html),
