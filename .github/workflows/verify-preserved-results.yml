@@ -28,7 +28,9 @@ jobs:
           command -v Rscript
           python3 -m unittest discover -s tests -p "test_*.py" -v
           python3 ci/verify-preserved-files.py
-          git diff --exit-code
+          test -e "$GITHUB_WORKSPACE/.git"
+          test "$(git -c safe.directory="$GITHUB_WORKSPACE" -C "$GITHUB_WORKSPACE" rev-parse HEAD)" = "$GITHUB_SHA"
+          git -c safe.directory="$GITHUB_WORKSPACE" -C "$GITHUB_WORKSPACE" diff --exit-code
       - name: Verify test fixture isolation
         if: always()
         run: Rscript ci/verify-runtime.R
