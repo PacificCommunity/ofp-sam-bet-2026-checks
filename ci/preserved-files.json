@@ -325,8 +325,10 @@
     {
       "path": "tests/test_direct_diagnostic_merges.py",
       "mode": "100644",
-      "git_blob": "e5907121ab35230fae9f7880f0db4f269a4f7a87",
-      "sha256": "4aa1e344f10f25508a78d5fada6548d0be345df8026160bf46fef426a7b3d12e"
+      "git_blob": "6efa251bef1e160f8309d7b971bf4f3696b0ce95",
+      "sha256": "09b2a488e04bdc7d7850276342df9973d102cdb99ff7d44a5e3ca032d0b0b07c",
+      "original_sha256": "4aa1e344f10f25508a78d5fada6548d0be345df8026160bf46fef426a7b3d12e",
+      "original_git_blob": "e5907121ab35230fae9f7880f0db4f269a4f7a87"
     },
     {
       "path": "tests/test_empty_hessian_merge.py",
@@ -369,6 +371,14 @@
       "mode": "100644",
       "git_blob": "92b0a387cb6ce88624e7609cd65685f1254eddfc",
       "sha256": "97c7b26d305eeb72e054f632c439e8a023a00f997ff447a725ff07fea1f245b0"
+    }
+  ],
+  "approved_updates": [
+    {
+      "path": "tests/test_direct_diagnostic_merges.py",
+      "reason": "Correct test-only R CMD INSTALL --library= argument so the temporary test double cannot overwrite genuine runtime mfclkit. All existing assertions retained; no controller/scientific changes.",
+      "original_sha256": "4aa1e344f10f25508a78d5fada6548d0be345df8026160bf46fef426a7b3d12e",
+      "expected_sha256": "09b2a488e04bdc7d7850276342df9973d102cdb99ff7d44a5e3ca032d0b0b07c"
     }
   ]
 }

@@ -161,7 +161,7 @@ mfk_close_quantity_profile <- function(
             encoding="utf-8",
         )
         subprocess.run(
-            ["R", "CMD", "INSTALL", "--library", str(library), str(package)],
+            ["R", "CMD", "INSTALL", "--library=" + str(library), str(package)],
             cwd=ROOT,
             text=True,
             capture_output=True,
