@@ -1,0 +1,374 @@
+{
+  "repository": "PacificCommunity/ofp-sam-bet-2026-checks",
+  "source_branch": "main",
+  "source_commit": "8c5980e85389227d7c14dad0da502283c63650f3",
+  "hash_algorithm": "sha256",
+  "files": [
+    {
+      "path": ".gitignore",
+      "mode": "100644",
+      "git_blob": "f1552d2841e879734436f11ccd1fc9c004b402a2",
+      "sha256": "8325f5f973828bc71b6a22989bf583ca9a8251a00202797b0f8352929149c0d1"
+    },
+    {
+      "path": "Makefile",
+      "mode": "100644",
+      "git_blob": "6483c72afe0866e82901515f3ac8163a06e6ef22",
+      "sha256": "1112844ba8201ab8c9d2746a4c1c8dace7b2329d64c7ce77a2209eeb666d01b3"
+    },
+    {
+      "path": "R/attach_checks.R",
+      "mode": "100644",
+      "git_blob": "d73bf552abbb53c7628ca719afb62c0cd43b7fd3",
+      "sha256": "17549a7b711e8c72cca95f1f0c07a989c5e86b17071a37961086bc26f4d6821f"
+    },
+    {
+      "path": "R/build_model_payload.R",
+      "mode": "100644",
+      "git_blob": "d2dda6c2f84a65d920578c8dc7193466867ab5c1",
+      "sha256": "5b8d1dceba93ac833d740bd9147f00892cd851dbe07a9437bb42d1a6f26e51a5"
+    },
+    {
+      "path": "R/export_model_bundle.R",
+      "mode": "100644",
+      "git_blob": "fbe1704e3fd0145db05c823215b42398f65a05c2",
+      "sha256": "19c76fcfc65dc745eb4faa199f7d1a7635fb5777de819d331e530fd6470956f0"
+    },
+    {
+      "path": "R/merge_check.R",
+      "mode": "100644",
+      "git_blob": "7c46da217a6c25b3ae5590211922165f0de0e9a4",
+      "sha256": "464706cdab569955d7344d88efa982a007b2c6785218d90737ce26a82b17846f"
+    },
+    {
+      "path": "R/merge_hessian.R",
+      "mode": "100644",
+      "git_blob": "8305ce4d6eb84a2e2b5689cdbb7c121964d43c67",
+      "sha256": "91c8d14d0f7ec6908b2180fcb6632e34bae81f85b9898dd3f942d576c7a2c47a"
+    },
+    {
+      "path": "R/model_output_adapter.R",
+      "mode": "100644",
+      "git_blob": "f5ffa8b62ae969ac0b9fa592a0e358144a5f6375",
+      "sha256": "5232e7ee281fd988ac906d6b8e9ba4979e186016ef05793bcab0b90ae1fdb68c"
+    },
+    {
+      "path": "R/run_check.R",
+      "mode": "100644",
+      "git_blob": "71d341d997e00ed51ad7a2bb71bfc723c08cb7cb",
+      "sha256": "6c285b3efbeb7fbcc6dff1f7e7aadcb2475c0fdb4f6a4a5a136876113723db43"
+    },
+    {
+      "path": "README.md",
+      "mode": "100644",
+      "git_blob": "9563805c02978b876746e5832d8901624be053eb",
+      "sha256": "c023cf0e98efebf5af2fc49a63e3fb2fe8e3458c2bd6185acb9c942d33b070f9"
+    },
+    {
+      "path": "aspm-merge/kflow.yaml",
+      "mode": "100644",
+      "git_blob": "c98287c6df6a462d05c986bba92f38a272115a40",
+      "sha256": "2634f714c780ef0ebabb91f77c68a75fc06076983fef44a3808a84d75322d130"
+    },
+    {
+      "path": "aspm-merge/run.sh",
+      "mode": "100755",
+      "git_blob": "06e972c72899edd4f3ad1691e1bfdc06e821e80a",
+      "sha256": "c85896d0ac1e05f8d8130828d081a6ca9d35b24c5dece0cd5ce9e469eab00000"
+    },
+    {
+      "path": "aspm/kflow.yaml",
+      "mode": "100644",
+      "git_blob": "fbe540ad5768b8d3e214fbaa7886f8a5ff77a047",
+      "sha256": "c4aac9b223705d8ad21708287c67c8f16554d1fa17c3586f40787167019c1d26"
+    },
+    {
+      "path": "aspm/run.sh",
+      "mode": "100755",
+      "git_blob": "eb13123cbebd8c0379ece1d784863323498712df",
+      "sha256": "83540cf44f62b5f21c236ac7e5d6d6842079ce915d5674f9ce90c00cf1397fc0"
+    },
+    {
+      "path": "attach-checks/kflow.yaml",
+      "mode": "100644",
+      "git_blob": "fd51e442cdf3983ca4a834c069a522cc335c7bc3",
+      "sha256": "d64a2b5c341b8d0ea76e256f7ad514988d76df6f705cec11d9422bf819fdff7d"
+    },
+    {
+      "path": "attach-checks/run.sh",
+      "mode": "100755",
+      "git_blob": "8c314256124f84c169a6bc7120c2bfdcbe670f59",
+      "sha256": "b410b1477a5d2a51b2f756c37c75df2cc04a78eca34fbc1e97d7e03cca2f364b"
+    },
+    {
+      "path": "hessian-merge/kflow.yaml",
+      "mode": "100644",
+      "git_blob": "ce6d685d819124e1284dc32e5e2453b377b3edb9",
+      "sha256": "f66dc2cb26b920e3f82df023e1e6e0e1e0534708ddff75fc2ed92842511e8d84"
+    },
+    {
+      "path": "hessian-merge/run.sh",
+      "mode": "100644",
+      "git_blob": "f14d134098b1e1c279b77e5b21d84cd44c833d98",
+      "sha256": "3c155192367463215eff2dfead6813a98010455bab0bf17e2de22c719fd4bf39"
+    },
+    {
+      "path": "hessian/kflow.yaml",
+      "mode": "100644",
+      "git_blob": "b6c4c25666b4094e4bb17334758104c50ef5974e",
+      "sha256": "3ceb1d4d0dbf6cf5e46ef983342d31a74740ecf7c2a7ae30166fd3db90ccd9be"
+    },
+    {
+      "path": "hessian/run.sh",
+      "mode": "100755",
+      "git_blob": "d42134ad86151ff2f0595fda94107b5e3e616743",
+      "sha256": "cfde00e5ed5e465f140c3394457e80687813459a9b174cf52fa5bb732e0d6534"
+    },
+    {
+      "path": "jitter-merge/kflow.yaml",
+      "mode": "100644",
+      "git_blob": "68ca375654e3db7ae544c82ca713098bc7282c75",
+      "sha256": "8e70623aeb22052e5a2672380c40b2fec7005632f64471fa06fc76662832db83"
+    },
+    {
+      "path": "jitter-merge/run.sh",
+      "mode": "100755",
+      "git_blob": "bd97c86c4e9710eca1faf966387db473393cdde1",
+      "sha256": "ee70d1152a52fa94e3c39a611d49c5b7c2a880932982670dadb53929e8de8d2b"
+    },
+    {
+      "path": "jitter/kflow.yaml",
+      "mode": "100644",
+      "git_blob": "4defbf8dad0e552fe77869c33ae9bfbbd6cc21a5",
+      "sha256": "e45da4847962252b8d39bc1416fda2dfa86aafe5dc86b6285ba66ef3e31bbc90"
+    },
+    {
+      "path": "jitter/run.sh",
+      "mode": "100755",
+      "git_blob": "e73b85f9388ae71f338e7df93a1add44cdf1bcc3",
+      "sha256": "bdb7aaeca523cae8faf549da81ae4fa8fc21a931b4b3dc415dcfc9d915d7b36e"
+    },
+    {
+      "path": "kflow-ready.svg",
+      "mode": "100644",
+      "git_blob": "277539788625a1378c71f2ed78ffc9f1e9bbdc70",
+      "sha256": "a9de3aec0416d9944dd72945248510fad5b82a1a4a9c26bff8c9f279b4c465a0"
+    },
+    {
+      "path": "local_apps.yaml",
+      "mode": "100644",
+      "git_blob": "00b4035bbd283c88c4935c8ab365c3bf3b8f9843",
+      "sha256": "f2055ea06d89c3b32be253cc954e1ccd41cb1f0e0cce5eacf07e4d6c6c672e20"
+    },
+    {
+      "path": "model-bundle/kflow.yaml",
+      "mode": "100644",
+      "git_blob": "892b567991fe57eb6fc1fb8919939d43b6ff8aa4",
+      "sha256": "fbfc2ee83d0225b5bc53012950d509bd175ca7e0e89afce4ac4626573da76fa2"
+    },
+    {
+      "path": "model-bundle/run.sh",
+      "mode": "100755",
+      "git_blob": "7f1869a31d4857a19337273befbd63cf1f64b06d",
+      "sha256": "621f262b467441a63a2d33c55daa41f61d335e4828b38d9f722d4e9fd1f46f75"
+    },
+    {
+      "path": "payload-build/kflow.yaml",
+      "mode": "100644",
+      "git_blob": "38b23fa1b84a36ff05923eb081f545bd50878bf6",
+      "sha256": "3063d2cde6c851733a6812348839a0ccd118df286110827447388c6abd15c602"
+    },
+    {
+      "path": "payload-build/run.sh",
+      "mode": "100755",
+      "git_blob": "915eb87bf59d0cbd7ca1e27b3682e48f01de9f5e",
+      "sha256": "64fadce4b0b2a412836517f99e73f307ca8a247bfbeea241a43307edc864174d"
+    },
+    {
+      "path": "profile-h-base-merge/kflow.yaml",
+      "mode": "100644",
+      "git_blob": "460901d1f3e976ecd2febe2a90d46d11c2f4fa10",
+      "sha256": "652a2dded4db5f232730868595a882219c66d657d163ed9683ab7907dfe81218"
+    },
+    {
+      "path": "profile-h-base-merge/run.sh",
+      "mode": "100755",
+      "git_blob": "92631d2ae43a656526ab20d6d326af83cac9b32e",
+      "sha256": "0c5dfd33e34f2b4d4892fd643059424ba77d9e88d47665d9ce84454c3d30c7c0"
+    },
+    {
+      "path": "profile-h-base-prep/kflow.yaml",
+      "mode": "100644",
+      "git_blob": "9c9286fa6382d4e2ff24e34b9aed591cd662518f",
+      "sha256": "6ab9240de9ee59a57592974e16eae9e6beda06f7590a34cfd372028e9fb57f9a"
+    },
+    {
+      "path": "profile-h-base-prep/run.sh",
+      "mode": "100755",
+      "git_blob": "be356edd2f0b9d4402492f7b6064cab976b2c63c",
+      "sha256": "daec5e981306704d7edfe619ea1335a783cdbb8903e1d6f9a90c745b9cddffc4"
+    },
+    {
+      "path": "profile-h-base/kflow.yaml",
+      "mode": "100644",
+      "git_blob": "c3b58c5a87a0ce7e5a53f28d06d469618efc26c2",
+      "sha256": "fc6cb62a3a7be8488743d53b6591b3470d54e10694aed13d05361748342b7b16"
+    },
+    {
+      "path": "profile-h-base/run.sh",
+      "mode": "100755",
+      "git_blob": "b9d54943f5fad3dc2699e337bb99078a4bb63844",
+      "sha256": "42675a453716838fc42f8c7ec5ebb0c30ee1d692aaca21b10c90323d426b5120"
+    },
+    {
+      "path": "profile-merge/kflow.yaml",
+      "mode": "100644",
+      "git_blob": "7cbcb41f0f19b3b1acaeb4d660574cb8f98d2e2a",
+      "sha256": "c6abc29ab9732d92bea6d9589c1130afb99ec8eea54e6577af28a9767d5af9c9"
+    },
+    {
+      "path": "profile-merge/run.sh",
+      "mode": "100755",
+      "git_blob": "f9cb482a96ad1e22e6779a28ff3b6b01846960e6",
+      "sha256": "cfa6d411c483c926400fc4c35435d64dce0937c006e1d75863d318565c24f638"
+    },
+    {
+      "path": "profile/kflow.yaml",
+      "mode": "100644",
+      "git_blob": "a1ef04b1516f418e5973c1c6438776837f9a93af",
+      "sha256": "f8e8e21348f77fecd77c8100204fcb016587262adb16e16ef52fc175e6df53c2"
+    },
+    {
+      "path": "profile/run.sh",
+      "mode": "100755",
+      "git_blob": "a24bf20c859066eb3ec1abc1b2b61203a98f1e59",
+      "sha256": "eb89532f0410ef0a358a0616a06fce982a99957db1840fd7abf02fea814b1deb"
+    },
+    {
+      "path": "retro-merge/kflow.yaml",
+      "mode": "100644",
+      "git_blob": "d374f1d177b7117da1cfc16ec9052881c1eff4c5",
+      "sha256": "d64e4f734c07c3511fdf296545ee0dade3a23cdb2123fbdfc3574d2a666aae5f"
+    },
+    {
+      "path": "retro-merge/run.sh",
+      "mode": "100755",
+      "git_blob": "5abb3c848c69fa66da0dcea268730c005db7a7e2",
+      "sha256": "b7af994d2809b3e1b420b112f1f18db05a40b1865e587c89f1e4ffeaab72e9bf"
+    },
+    {
+      "path": "retro/kflow.yaml",
+      "mode": "100644",
+      "git_blob": "8749d6d7302c8f180d194ce8fed6274014140828",
+      "sha256": "53e165ad09a7158d9ac5462cdaba3218a2bec48542e588d5f749b90e4474e211"
+    },
+    {
+      "path": "retro/run.sh",
+      "mode": "100755",
+      "git_blob": "78c5772c856292a8bb5459cc1e673455c31ea0ae",
+      "sha256": "475c2b8810fd5dcd58c84dc8624397c2349543db9566c948e8cb6cf2df6e5a79"
+    },
+    {
+      "path": "run.sh",
+      "mode": "100755",
+      "git_blob": "d8557a799c2676b670c8640286029664796fe05f",
+      "sha256": "09e0baef7741f3233fb9567871556edb6883f8009bd9acfc581cd6dc9e459dd5"
+    },
+    {
+      "path": "scripts/recover_completed_profile.sh",
+      "mode": "100755",
+      "git_blob": "9cc2693c09941b9e7117cb0d9d8cf687e18fdec0",
+      "sha256": "7357cc8a856658c293a7bab93ecf713a1f2d7e3b7661e0da8e011a3311d0d5d6"
+    },
+    {
+      "path": "scripts/register_kflow_task.py",
+      "mode": "100755",
+      "git_blob": "7f742d6f3b4683ff64181907f2b72401eb0e1df7",
+      "sha256": "2522a5b39028b05348c957f93fc9008476675c5fdf4af46a69ce53449c1c93a6"
+    },
+    {
+      "path": "scripts/submit_kflow_checks.py",
+      "mode": "100755",
+      "git_blob": "36a2307c498a40101a4ef7f2628b23efbd5be0f9",
+      "sha256": "642383c4baf88fdb75e64da0351740d7bb3a5fe7504f3c1d39778d6e310994a4"
+    },
+    {
+      "path": "selftest-merge/kflow.yaml",
+      "mode": "100644",
+      "git_blob": "625d3cd6573310a241de09ddf9aef3f343643339",
+      "sha256": "8335ab8b14a56a5832a74953998b0db9da940205a73e196add47551c7d20ba35"
+    },
+    {
+      "path": "selftest-merge/run.sh",
+      "mode": "100755",
+      "git_blob": "224d1fc7a0f566a4989f1a380dd60341494c5ab5",
+      "sha256": "ca752fe5d87c7269569deab270179a589626617bbad62276d466139211b9314d"
+    },
+    {
+      "path": "selftest/kflow.yaml",
+      "mode": "100644",
+      "git_blob": "b8039e5c94373fd5c4bd10afd59998142e3521d7",
+      "sha256": "e13de2aed1f1a735eb089a2f3e7a52e0d602d8dde267254f42fe1666900f5939"
+    },
+    {
+      "path": "selftest/run.sh",
+      "mode": "100755",
+      "git_blob": "5cd7412e4616e6656d02865db726221c7b8f24c0",
+      "sha256": "0277d195b65817f42de87b99b2f28fd789d2e349abadec9de7b8029d7a634fe3"
+    },
+    {
+      "path": "tests/test_diagnostic_runner_controls.py",
+      "mode": "100644",
+      "git_blob": "e163b3b07089a1cf714c16372895b3013593a69c",
+      "sha256": "2100004a9565270db91fdaac770d0299a1e7816e1cb0298ec4788f27f58645ac"
+    },
+    {
+      "path": "tests/test_direct_diagnostic_merges.py",
+      "mode": "100644",
+      "git_blob": "e5907121ab35230fae9f7880f0db4f269a4f7a87",
+      "sha256": "4aa1e344f10f25508a78d5fada6548d0be345df8026160bf46fef426a7b3d12e"
+    },
+    {
+      "path": "tests/test_empty_hessian_merge.py",
+      "mode": "100644",
+      "git_blob": "7e7d93d0fc5badbe1c957d604286bd6eae0855d5",
+      "sha256": "2802081bc7f6f26eae8b847ad8a5ca972822ed02b6b05f79fbdebf4d381adece"
+    },
+    {
+      "path": "tests/test_expected_unit_attachment.py",
+      "mode": "100644",
+      "git_blob": "50060e561a55e29930c892a9590556633361ebc7",
+      "sha256": "67e619ca3e9ba1f31d8eafa4e57a7700233bb9bcc14ad580d04ac2537bd1df54"
+    },
+    {
+      "path": "tests/test_jitter_dependency_inputs.py",
+      "mode": "100644",
+      "git_blob": "50b1cf6dd58d07a86281a33fdfea969aa5a189d2",
+      "sha256": "af53f022f303677d8fc2c1138ce562287b340aed5c984dade136e3fff8263bbf"
+    },
+    {
+      "path": "tests/test_profile_extension_inputs.py",
+      "mode": "100644",
+      "git_blob": "68299e16f513733c1968b6070075d5d716bd8bc0",
+      "sha256": "d5aeed3e2ff446a4af93ffe8921a23a40c118ccd2a1b8f3c00586aab7649ee33"
+    },
+    {
+      "path": "tests/test_source_case_resolution.py",
+      "mode": "100644",
+      "git_blob": "6cab3702396fafe089c460c3dadb1ea24f5c6805",
+      "sha256": "a2c7a2d84400766808ae71300eecd63162c5c5ae93186286633eb6525b5935af"
+    },
+    {
+      "path": "tests/test_submit_kflow_checks.py",
+      "mode": "100644",
+      "git_blob": "a1b412ab7b925524a6c45382b7d1df8319785e44",
+      "sha256": "9b53fc46f259cee3cb9630734a18664f66e87159e972753f5ccaa23f837480ea"
+    },
+    {
+      "path": "tests/test_submit_kflow_checks_resources.py",
+      "mode": "100644",
+      "git_blob": "92b0a387cb6ce88624e7609cd65685f1254eddfc",
+      "sha256": "97c7b26d305eeb72e054f632c439e8a023a00f997ff447a725ff07fea1f245b0"
+    }
+  ]
+}

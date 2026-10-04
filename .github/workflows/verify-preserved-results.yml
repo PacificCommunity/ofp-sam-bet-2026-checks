@@ -1,0 +1,31 @@
+name: Verify preserved BET results
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/pacificcommunity/tuna-flow-private:v2.7@sha256:4fee4c40cb6439ff920b1dd233a84bf19d5cc0e37278c99ceff3fd79cb9c8852
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify bundled R packages
+        shell: bash
+        run: |
+          Rscript -e 'expected <- c(mfclkit="44abaaa05692db7ae3e0ec0e52250c51714d1e50", mfclshiny="d76d3cebb3007c633ae64ee8f96cb75632b7d79c", FLR4MFCL="5a29a9b3246bd19dcff350ded7e0e5099145da5e"); for (name in names(expected)) { observed <- utils::packageDescription(name)$RemoteSha; if (!identical(observed, unname(expected[[name]]))) stop(name, " does not match the bundled runtime pin"); cat(name, observed, "\n") }'
+      - name: Verify preserved assessment files
+        run: python3 ci/verify-preserved-files.py
+      - name: Check preserved inputs and results
+        shell: bash
+        run: |
+          command -v Rscript
+          python3 -m unittest discover -s tests -p "test_*.py" -v
+          python3 ci/verify-preserved-files.py
+          git diff --exit-code
