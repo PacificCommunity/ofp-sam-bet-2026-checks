@@ -268,7 +268,7 @@ verify:
 	@python3 ci/verify-preserved-files.py
 
 test:
-	@python3 -m unittest discover -s tests -p 'test_*.py' -v
+	@env -u PROFILE_REPAIR_MEMORY_GB -u PROFILE_REPAIR_MEMORY_PER_WORKER_GB python3 -m unittest discover -s tests -p 'test_*.py' -v
 
 prepare: verify _check-reader-inputs
 	@$(MAKE) --no-print-directory local CHECK_TYPE="$$CASE" MODEL_INPUT_ROOT="$$INPUT" OUTPUT_DIR="$$OUT" WORK_DIR="$$OUT/work" PROGRAM_PATH="$$MFCL" CHECK_DRY_RUN=true TRIGGER_NEXT=false KFLOW_REPO_RUNTIME_UPDATE=never KFLOW_RUNTIME_UPDATE=never TUNA_FLOW_RUNTIME_UPDATE=never
