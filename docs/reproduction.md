@@ -1,0 +1,453 @@
+# BET 2026 MFCL checks — reproduction details
+
+[Repository overview](../README.md). Run all commands below from the repository root.
+
+<p align="right">
+  <a href="#kflow"><img src="../kflow-ready.svg" alt="Kflow ready checks"></a>
+</p>
+
+Kflow tasks for running `mfclkit` diagnostics on fitted MFCL model outputs:
+
+- `profile`
+- `jitter`
+- `hessian`
+- `retro`
+- `selftest`
+- `aspm`
+- `model-bundle`
+- `payload-build`
+
+The registered Kflow tasks pin `mfclkit` and
+`mfclshiny` by commit so reruns do not drift when either package's
+`main` branch changes. Kflow forwards GitHub access only to the short-lived
+runtime installer because these package repositories require authenticated
+source access.
+
+The tasks are intentionally model-output driven, not stepwise-specific. A run can
+consume either:
+
+1. a full MFCL case directory with `.frq` and a fitted `.par`, or
+2. a compact output directory with `final.par` plus a `model-index.csv` row that
+   identifies the original source case path.
+
+This means outputs from stepwise, sensitivity, or later BET model workflows can
+all feed the same checks as long as they expose the same contract.
+
+## Common Kflow fields
+
+- `MODEL_SELECTOR`: model key to pick from the input artifact. It can match
+  `step_id`, `model_label`, `job_key`, directory basename, or `model_source`.
+- `MODEL_SOURCE_REPO`: GitHub repo used to reconstruct compact outputs, for
+  example `PacificCommunity/ofp-sam-bet-2026-stepwise`.
+- `MODEL_SOURCE_REF`: branch, tag, or commit for `MODEL_SOURCE_REPO`.
+- `MODEL_SOURCE_PATH`: optional source case override. If unset, the selected
+  `model-index.csv` row supplies `model_source`.
+- `PROGRAM_PATH`: MFCL executable path inside the Docker image.
+- `CHECK_START_PAR_NAME`: staged start par filename. Default is `final.par`.
+  ASPM and the default likelihood-profile continuation start from this fitted
+  best-estimate PAR. An explicitly requested full-doitall profile instead
+  rebuilds each scalar from the model INI through its staged phase sequence.
+- `CHECK_DRY_RUN`: set `true` for a fast smoke test that stages the model and
+  exits before running MFCL.
+- `CHECK_BUILD_REPORT_FIGURES`: build mfclshiny report-ready figures after the
+  check. Default is `true`.
+- `CHECK_REPORT_FIGURE_KEYS`: optional comma/space list of report-ready item keys
+  such as `figure:jitter-diagnostics`. If unset, jitter/retro/selftest/aspm
+  checks export only their matching diagnostic figures instead of the full app
+  bundle.
+- `CHECK_RENDER_REVIEW_HTML`: render a small HTML review for check figures.
+  Default is `false`.
+
+## Output contract
+
+Each check writes one mfclshiny-compatible check folder:
+
+```text
+outputs/
+  checks/<check_type>/<model_key>/
+    model_payload.rds
+    model_payload_manifest.{json,csv}
+    check_manifest.{rds,csv}
+    check-payload-index.csv
+    jitter/ | retro/ | hessian/ | profile/ | selftest/ | aspm/
+  checks/<check_type>/model-index.csv
+  checks-index.csv
+  report-ready-checks/<check_type>/<model_key>/
+```
+
+The copied `model_payload.rds` is the fitted parent model. The check-specific
+subdirectories follow the structure mfclshiny already reads for likelihood
+profiles, jitter, Hessian, retrospective, self-test, and ASPM diagnostics. This
+lets a Kflow job open MFCL Shiny directly, and lets downstream results/report
+jobs scan the same payload folders later without needing stepwise-specific
+assumptions.
+
+Each check or merge job can also write an updated model-run-style output. In
+standalone-compatible `ATTACH_OUTPUT_MODE=full`, the output contains the full
+base case:
+
+```text
+outputs/
+  models/<model_key>/
+    model_payload.rds
+    model_payload_manifest.{json,csv}
+    final.par
+    jitter/ | retro/ | hessian/ | profile/ | selftest/ | aspm/
+    attached-checks-index.{csv,rds}
+  model-index.csv
+  attached-checks-index.csv
+  attached-model-bundle.{csv,rds}
+```
+
+This is the artifact results/report should consume. Original model-run archives
+are not modified; each check/merge job produces a new model bundle with its
+diagnostic folder attached. Kflow launches diagnostic merges independently from
+the same fitted base and composes their output overlays; merge jobs do not wait
+for one another.
+
+For Kflow attached outputs, `ATTACH_OUTPUT_MODE=delta` publishes a much smaller
+overlay instead:
+
+```text
+outputs/
+  models/<model_key>/
+    model_payload.rds
+    model_payload_manifest.{json,csv}
+    <updated-check>/
+    attached-checks-index.{csv,rds}
+  model-index.csv
+  attached-checks-index.csv
+  attached-model-bundle.{csv,rds}
+  attach-output-manifest.{csv,rds}
+```
+
+The full base case is used while rebuilding the payload, then `.frq`, `.ini`,
+`.par`, `.rep`, fit files, and static maps are removed from the published delta.
+Every diagnostic directory represented by an artifact's attached-checks index
+is retained. Independent merge deltas intentionally index only their own
+diagnostic; Kflow preserves sibling overlays during composition.
+`attached-model-bundle.csv` records
+`output_mode`, `overlay_base_required`, and the base job reference. Set
+`ATTACH_OUTPUT_MODE=full` when the artifact must remain a standalone MFCL case.
+The `attach-checks` Kflow task defaults to `full`, because a manual or legacy
+submission cannot infer Kflow's overlay metadata from the environment after the
+job has started. The submit helper opts independent diagnostic merges into
+`delta` explicitly and supplies the matching Kflow metadata at submission.
+
+When checks were run independently, use the `attach-checks` Kflow task to build
+a final compact model bundle from one base model output plus completed check
+outputs. Set `MODEL_BASE_INPUT_JOB` to the fitted model job, `CHECK_INPUT_JOBS`
+to the completed check/merge jobs, and optionally `ATTACH_CHECK_TYPES` to limit
+which diagnostic folders are copied.
+
+Each existing diagnostic merge task (`hessian-merge`, `profile-merge`,
+`jitter-merge`, `retro-merge`, `aspm-merge`, and `selftest-merge`) can also be
+the collector for its own diagnostic; no common extra merge task is required.
+Each merge is independent: it receives the original fitted model plus only its
+own unit jobs, refreshes a current-type payload for direct inspection, and
+publishes a delta containing only that diagnostic. Kflow composes those sibling
+overlays on the original model and dynamically collects all overlaid diagnostic
+directories. A failed or missing unit is retained as a status ledger instead of
+being hidden or omitted.
+
+The independent-merge environment contract is:
+
+- `MODEL_BASE_INPUT_JOB` / `BASE_MODEL_JOB`: original fitted model job;
+- `MODEL_ORIGINAL_BASE_INPUT_JOB`: the same original job that owns the overlay;
+- `CHECK_INPUT_JOBS`: only the current diagnostic's unit jobs;
+- `ATTACH_CHECK_TYPES`: the current merge diagnostic.
+
+`CHECK_SOURCE_MODEL_SELECTORS` is an optional space/comma-separated allowlist
+for recovery or hybrid merges whose completed unit archives were produced
+under an older model label. `MODEL_SELECTOR` still selects the fitted base and
+therefore the name of the published model; only diagnostic unit discovery uses
+the source allowlist. Pair it with ordered `CHECK_EXPECTED_UNITS` and
+`CHECK_INPUT_JOBS` so the recovery manifest records the exact source job for
+each seed, peel, or replicate. The default is `MODEL_SELECTOR`, so ordinary
+merges remain strict.
+
+The original fitted job remains the single owner of `.frq`, `.ini`, `.par`,
+reports, and other runnable/static files; independent deltas do not duplicate
+them or claim diagnostics produced by sibling jobs.
+
+With direct delta attachment enabled, each diagnostic merge is its own final
+collector. The submit helper marks it with `attached_output_overlay=true` and
+`attached_work_parent_job`, declares replaceable diagnostic names in
+`attached_output_overlay_replace_names`, and adds the fitted base job to the
+merge inputs. Each merge publishes its own diagnostic delta directly on the
+base job without duplicating the raw base case or `outputs/checks/...` tree.
+
+Use `model-bundle` when someone needs a portable MFCL run zip from an existing
+model job. It restores the fitted par as `11.par`, copies the `mfclo64`
+executable from the Kflow runtime, regenerates plot/report files, verifies the
+zip by extracting it and running `./make-plot-rep.sh`, and writes
+`outputs/model-bundles/<model>/<model>-mfcl-run-bundle.zip` with `.frq`, `.ini`,
+`.tag`, `mfcl.cfg`, `doitall.sh`, `run-doitall.sh`, `11.par`, `plot.rep`,
+`mfclo64`, and a manifest. The bundle keeps the final par under the doitall
+step name, e.g. `11.par`, and drops the duplicate staged `final.par` by default.
+
+
+Use `payload-build` when a completed fitted-model archive contains native MFCL
+outputs but no `model_payload.rds`. It copies the selected fitted case, builds
+and validates the payload, and publishes a full MFCL Shiny-compatible model
+output without changing the original archive.
+
+## Check-specific fields
+
+- `FLOW_SPECIES`, `FLOW_SPECIES_LABEL`, and `FLOW_ASSESSMENT_YEAR`: optional
+  input-driven report metadata. The submit helper forwards these values through
+  unit, merge, and attach jobs so mfclshiny output is not tied to the BET 2026
+  defaults used by this assessment repository.
+- `ATTACH_OUTPUT_MODE`: `delta` publishes only the refreshed payload/index plus
+  the current diagnostic folder for overlay on the base job; `full` preserves a
+  standalone base-model bundle. Direct diagnostic merges use `delta`.
+- `ATTACH_JITTER_INCLUDE_BASE_AS_RUN`: opt-in flag that adds a completed fitted
+  model as one extra jitter-series reference without rerunning or perturbing it.
+  Set `ATTACH_JITTER_BASE_SOURCE_JOB` to that fitted-model input job. The
+  reference defaults to seed `0` (configurable with
+  `ATTACH_JITTER_BASE_RUN_SEED`) and is labelled with
+  `ATTACH_JITTER_BASE_DISPLAY_LABEL`.
+  Its payload rows and manifest carry `run_role=base_fit_reference` and
+  `is_base_fit_reference=TRUE`, so viewers can give it a distinct colour or
+  line style without relying on the seed number. It is not added to the jitter
+  unit ledger or the jitter success/total counts. Compatible mfclshiny viewers
+  render it as a separate black dashed line.
+- `JITTER_SEEDS`: comma/space list of seeds, default `1`.
+- `JITTER_CV`: jitter CV, default `0.1`.
+- `JITTER_CONVERGENCE`: convergence exponent applied by replacing the last
+  model-defined mgc/pf50 line in the staged `doitall.sh`, default `-3`
+  (`1e-3`). Use `-4` for `1e-4`; unset/NA leaves the model script unchanged.
+- `JITTER_METHOD`: `phase1_doitall` by default. This reads the first MFCL
+  phase from the staged model-specific `doitall.sh`, stages or generates that
+  phase's declared input PAR, jitters its declared output PAR, then resumes
+  the remaining phases. No numeric PAR filename convention is assumed. Use
+  `simple` to run the older direct fitted-par jitter path.
+- `JITTER_SLOTS`: optional comma/space list of `MFCLPar` slots to perturb. If
+  unset, the runner uses a conservative set of continuous dev/coefficient slots
+  and leaves structural metadata untouched. This is used by the `simple`
+  method and as a conservative writer fallback.
+- `JITTER_TAG_MIXING_FIX`: `auto` by default. The tag/ini mixing-period patch is
+  applied only when the staged model has a `.tag` file.
+- `JITTER_REQUIRE_INDEPVAR`: `true` by default. Native jitter uses MFCL's
+  `indepvar.rpt` so only active independent variables are perturbed. Set it to
+  `false` only as an explicit fallback for legacy cases without that report;
+  the fallback perturbs the configured safe slots and records
+  `jitter_parameter_scope=configured_slots_fallback` in the run result.
+- `BET_JITTER_MAX_EVALS`: maximum evaluations for the final-phase jitter fit,
+  default `5000`. This applies to `JITTER_METHOD=simple`.
+- `RETRO_PEELS`: comma/space list of peels, default `1`.
+- `N_MIXING_PERIODS`: MFCL retrospective mixing periods, default `2`.
+- `RETRO_USE_DOITALL`: run each peel through the staged model-specific
+  `doitall.sh`. Default is `true`, and a missing `doitall.sh` is an error rather
+  than a silent change of retrospective method. Set it to `false` only for a
+  deliberate fitted-par warm-start sensitivity.
+- `RETRO_START_STRATEGY`: default `auto`. The runner follows the actual model
+  script: an active matching `-makepar` creates the peeled start, while a PAR
+  supplied to the first model phase is preserved and windowed to the peel.
+  Explicit alternatives are `model_phase_start`, `fresh_makepar`, and
+  `fitted_warm_start`.
+- `RETRO_MAKEPAR_START`: legacy explicit override. Default `auto` delegates to
+  `RETRO_START_STRATEGY`; `true` requests `fresh_makepar` deliberately.
+- `RETRO_REMOVE_PAR_FILES`: explicit cleanup override. Default `auto` lets
+  `mfclkit` remove stale outputs while retaining or regenerating the exact
+  Phase-1 input required by the model script.
+- `RETRO_START_PAR_NAME`: optional arbitrary Phase-1 input PAR name. Default
+  `auto` parses it from `doitall.sh`; direct fitted warm starts use
+  `retro-start.par` when no name is supplied.
+- `RETRO_REWRITE_PAR`: explicit PAR-windowing override. Default `auto` lets the
+  selected strategy window supplied starts and leave active-makepar starts to
+  the model script.
+- `RETRO_INI_FILE`: optional source INI filename for retrospective peeling.
+  With the default `auto`, a single INI is used directly; when a staged fit
+  contains both a source INI and a generated INI, the INI sharing the FRQ
+  basename is selected and generated/alternate INIs are isolated before the
+  peel is prepared.
+- `HESSIAN_NSPLIT`: number of Hessian parts, default `30`.
+- `HESSIAN_PARTS`: comma/space list of Hessian parts. If unset, all parts are
+  submitted as parallel Kflow jobs when parallel units are enabled.
+- `CHECK_EXPECTED_UNIT_TYPE` and `CHECK_EXPECTED_UNITS`: merge-side unit ledger
+  generated automatically from parallel or batched Kflow submissions for jitter
+  seeds, retro peels, self-test replicates, and ASPM. Seed, peel, and replicate
+  lists must contain positive 32-bit integers; they are canonicalized and
+  deduplicated in input order before both execution and ledger generation.
+  Expected units that publish no check manifest or diagnostic payload are
+  retained as failed `missing` rows, and the merge is marked `incomplete`.
+- `PROFILE_TYPE`: `quantity` or `fixed_parameter`.
+- `PROFILE_VALUES`: comma/space list of profile values.
+- `PROFILE_PRESET`: quantity-profile continuation preset. `robust_fast` is the
+  default; `three_stage` uses penalties `1e5, 1e6, 1e7` and evaluations
+  `50, 50, 2000`; `manual_7stage` follows the MFCL manual; `adaptive` retains
+  the distance-scaled BET sensitivity schedule. `PROFILE_STYLE` remains a
+  legacy alias (`bet` maps to `adaptive`; older three-stage aliases remain
+  accepted for compatibility).
+- `PROFILE_PENALTIES` and `PROFILE_RAMP_REPS`: optional explicit override for
+  the selected preset. Their lengths must agree for three-stage/manual profiles.
+- Each profile point stores the constrained fit separately from a one-run,
+  same-target, zero-penalty likelihood harvest. It never uses target zero to
+  "refresh" a profile result.
+- `PROFILE_PARALLEL_MODE`: `chains` remains the default and runs lower/upper
+  continuation chains that reuse neighbouring solutions. `scalars` submits one
+  independent Condor job per non-center value and gives a shorter critical path
+  when many slots are available; `scalar`, `point`, and `points` are aliases.
+- `PROFILE_EXECUTION_MODE`: `continuation` is the established fitted-PAR mode
+  (`fitted_par`, `final_par`, `ramp`, and `legacy` remain accepted aliases).
+  Set `doitall` together with `PROFILE_PARALLEL_MODE=scalars` to start every
+  scalar from the model INI and follow the complete model-specific `doitall.sh`
+  phase tuning with that profile constraint. Full scalar fan-out repeats the
+  phase sequence for every point, so total CPU use is higher even when elapsed
+  time is much lower. `doitall` with chain mode is rejected because independent
+  INI-based rebuilds have no neighbouring fitted PAR to continue from.
+- `PROFILE_DOITALL_PENALTY`: constraint weight carried through each full
+  doitall profile, default `1e7`. `PROFILE_DOITALL_SCRIPT` names the staged
+  model-specific script and defaults to `doitall.sh`.
+- `PROFILE_DOITALL_CONVERGENCE`: convergence exponent for full-doitall
+  profile jobs, default `-3` (`1e-3`). This updates only the last
+  model-defined mgc/pf50 line in the staged `doitall.sh`; use `-4` for
+  `1e-4`.
+- `PROFILE_CENTER`: profile anchor scalar, default `100`. The center is the
+  fitted base model and is not re-run as a profile unit; merge writes it once as
+  the base-anchor point. In absolute mode it is the fitted quantity itself,
+  not a percentage multiplier.
+- `PROFILE_INCLUDE_BASE_ANCHOR`: include the fitted base model as the center
+  profile point during merge. Default is `true`.
+- `PROFILE_EXPECTED_VALUES`: full expected scalar set passed to the merge job.
+  Missing points, failed convergence, and missed quantity targets are retained
+  as failed rows; the merged profile is then `incomplete`, not silently shown
+  as complete.
+- `PROFILE_MAX_GRAD_THRESHOLD`: maximum gradient accepted for a constrained
+  profile fit, default `0.001`. Reaching the requested quantity alone is not a
+  convergence result; both this gradient test and the target-tolerance test
+  must pass.
+- `PROFILE_TARGET_REL_TOLERANCE`: relative target tolerance, default `0.001`.
+  `PROFILE_RETRY_INVALID`, `PROFILE_RETRY_JAGGED`,
+  `PROFILE_CONTINUATION_REPS`, and `PROFILE_JAGGED_TOLERANCE` control the
+  selective retry policy.
+- `PROFILE_REVERSE_ONCE`: defaults to `true` for ordinary chain profiles. Each
+  lower or upper branch first completes its `60-140%` grid at 2% intervals,
+  then reruns each jagged point exactly once from the nearest valid outer-side
+  PAR. A valid, target-attained, comparable, strictly lower-NLL result is the
+  only result that can replace the original point. Failure or non-improvement
+  is retained as QC and does not fail the job.
+- `PROFILE_POST_MERGE_REPAIR`: defaults to `false`. Ordinary profile merge only
+  combines the two branches, retains the fitted anchor, builds QC, and
+  publishes outputs; it does not run MFCL.
+- `PROFILE_REPAIR_CPUS`, `PROFILE_REPAIR_MEMORY_GB`, and
+  `PROFILE_REPAIR_MEMORY_PER_WORKER_GB`: merge-repair capacity, defaulting to
+  `2`, `16`, and `8` for the opt-in advanced/h-base repair path. Ordinary
+  profile chains request 1 CPU/8 GB, while the file-only profile merge requests
+  1 CPU/4 GB.
+- `PROFILE_CHAIN`: run profile values sequentially within a job. Scalar jobs
+  force this to `false`; chain mode forces it to `true`.
+- `PROFILE_CHAIN_START_SCALAR`: extend a completed continuation chain from an
+  existing endpoint without rerunning its earlier points. Stage the endpoint
+  profile Job as an input; the runner restores that scalar's compact
+  `profile_payload.rds` PAR, requires a completed and converged endpoint, and
+  preserves its original `reference_quantity` for all new percent targets.
+- `PROFILE_NAME`: profile folder name.
+- `PROFILE_QUANTITY`: quantity profile target, for example `avg_bio` or
+  `relative_depletion`.
+- The registered quantity-profile task names its `avg_bio`, `AF172=0` profile
+  `total_average_biomass`, matching the native MFCL definition. Override
+  `PROFILE_NAME` when deliberately profiling a different quantity/flag setup.
+- `PROFILE_BASE_QUANTITY`: optional fixed base quantity. If unset, mfclkit tries
+  to read it from the staged fitted output.
+- `PROFILE_APPLY_SCRIPT`: required for `PROFILE_TYPE=fixed_parameter`; this is a
+  project-specific R script that edits copied MFCL inputs for each profile point.
+- `SELFTEST_RUNNER`: optional override for native MFCL self-test. If unset,
+  checks use the native self-test runner bundled with `mfclkit`.
+- `SELFTEST_PROGRAM_PATH`: MFCL executable used for pseudo-data generation and
+  refits. The default is `/home/mfcl/mfclo64` from the pinned Kflow image, which
+  includes the current strict-tag and DM-report fixes. Set an alternate path
+  only for a deliberately versioned sensitivity run.
+- `SELFTEST_RUN_REFIT`: run self-test refits and write
+  `selftest/refit/rep_*` outputs for mfclshiny. Default is `true`.
+- `SELFTEST_SOURCE_MODE`: source pseudo-data from the fitted best estimate.
+  Default is `last_par`.
+- `SELFTEST_REFIT_MODE`: refit each simulated data set through the complete
+  staged model-specific `doitall.sh`. Default is `doitall`.
+- `SELFTEST_REFIT_CONVERGENCE`: convergence exponent for self-test doitall
+  refits. The default `-3` updates only the last model-defined mgc/pf50 control
+  in the copied `doitall.sh`; set `-4` for a stricter 1e-4 refit.
+- `selftest_update_tags` / `SELFTEST_UPDATE_TAGS`: `auto` by default. Tag
+  pseudo-data are generated only when the staged MFCL case has a `.tag` file.
+- `selftest_require_native_tags` / `SELFTEST_REQUIRE_NATIVE_TAGS`: `auto` by
+  default. Native tag simulation output is required only when tag pseudo-data
+  are enabled for a model that actually has tag inputs.
+- `ASPM_MAX_EVALS`: maximum evaluations for the ASPM refit, default `10000`.
+- `ASPM_RECRUITMENT_MODES`: optional space- or comma-separated ASPM variants.
+  Each of `constant`, `fitted`, and `estimated` runs independently and is
+  retained under its own output folder before one combined merge. If unset,
+  the existing single `ASPM_RECRUITMENT_MODE` behaviour is unchanged.
+- `ASPM_FIX_SELECTIVITY`: fix selectivity to the fitted values before excluding
+  composition data. Default is `true`.
+- `ASPM_MIN_LF_SAMPLE_SIZE` and `ASPM_MIN_WF_SAMPLE_SIZE`: high minimum sample
+  size controls used to exclude LF/WF composition influence. Defaults are
+  `1000000`.
+- `ASPM_EXTRA_SWITCH_LINES`: optional newline- or semicolon-separated MFCL
+  control lines appended to the ASPM run. Use only for deliberate model-specific
+  diagnostics.
+- `CHECK_COMPACT_OUTPUTS`: keep check archives payload-first by removing raw
+  MFCL case copies and intermediate files after the diagnostic payloads have
+  been written. The compact jitter, retrospective, and profile `.rds` files
+  retain compressed core MFCL artifacts, including fitted `.par` and `.rep`
+  files when available. Raw files are pruned only after the matching payload
+  artifact has been verified. Default is `true`.
+- `CHECK_KEEP_RAW_OUTPUTS`: set to `true` for a one-off debugging run that needs
+  every raw `.par`, `.rep`, `.frq`, and intermediate file in the Kflow archive.
+  Default is `false`.
+- `CHECK_KEEP_UNIT_LOGS`: retain per-unit raw logs in a merged diagnostic
+  archive. Default is `false`; unit status, compact payloads, figures, and the
+  recovery manifest remain. Set it to `true` for a debugging submission that
+  must retain full unit logs. This prevents MFCLShiny from staging hundreds of
+  megabytes of logs that it does not use.
+- `CHECK_ENRICH_PAYLOADS`: build compact mfclshiny payloads before raw outputs
+  are removed. Default is `true`.
+- `CHECK_FAIL_ON_FAILED_UNITS=false`: record non-converged or failed
+  diagnostic units in the status ledger without failing the Kflow job.
+  For a failed unit, the standalone model-payload refresh is non-fatal; its
+  convergence flag, native exit code, failure reason, and compact diagnostic
+  result remain available to the merge job and mfclshiny for QC. Payload-build
+  errors likewise preserve raw unit output instead of deleting it.
+- Parallel jitter and retrospective unit jobs publish compact diagnostic
+  fragments only. Their final merge job combines those fragments with the
+  fitted base model and builds the report-ready mfclshiny payload once, so a
+  redundant standalone payload refresh cannot invalidate a completed run.
+- Merge/attach archives record payload recovery information in
+  `check-recovery-manifest.{csv,json,rds}`. mfclshiny reads the compact
+  diagnostic object directly and restores raw artifacts only on demand.
+- `SELFTEST_COMPACT_CLEANUP`: compact self-test replicate folders in the
+  mfclkit runner. Default is `1`.
+- `SELFTEST_KEEP_MODEL_PAYLOAD`: keep full self-test truth/refit
+  `model_payload.rds` files. Default is `0`; recovery tables and model-info
+  payloads are kept either way.
+- `HESSIAN_COMPACT`: compact Hessian part jobs while preserving the `.hes` files
+  required by `hessian-merge`. Default is `true`.
+- `HESSIAN_KEEP_MATRIX`: keep final merged Hessian matrix files in the
+  `hessian-merge` archive. Default is `false`; Shiny/report diagnostics use
+  `hessian_info.rds`.
+- Each merged Hessian always records compact eigenvalue diagnostics in
+  `hessian_info.rds` and `check-summary.csv`: the legacy native
+  `n_negative_eigenvalues` field (which means nonpositive, `<= 0`), plus
+  separate strictly-negative, zero, and positive counts parsed from native
+  `sorted eigenvectors`. The large raw eigenvector report can still be compacted
+  safely after those factual counts have been saved.
+
+## Local examples
+
+Provide a complete fitted case and its actual model key. From the repository root:
+
+```sh
+MODEL_INPUT_ROOT=/absolute/path/to/fitted-case \
+MODEL_SELECTOR=your-model-key \
+CHECK_DRY_RUN=true bash run.sh jitter
+```
+
+Remove `CHECK_DRY_RUN=true` only when the staged case and pinned engine have
+been checked and an actual diagnostic run is intended.
+
+## Kflow
+
+Runtime and package source pins are recorded in `kflow.yaml` and the submit
+helpers. Private package installation requires authorised source access.
+The model input contract and check controls above apply independently of a
+particular scheduler run.

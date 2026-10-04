@@ -61,8 +61,8 @@
     {
       "path": "README.md",
       "mode": "100644",
-      "git_blob": "9563805c02978b876746e5832d8901624be053eb",
-      "sha256": "c023cf0e98efebf5af2fc49a63e3fb2fe8e3458c2bd6185acb9c942d33b070f9"
+      "git_blob": "fe50dae6b02737fd95c69300960314fc77064918",
+      "sha256": "07a66e76ca32ee400b854083d2e1eeb6502dbf041a861121d73b8390474f7b18"
     },
     {
       "path": "aspm-merge/kflow.yaml",
@@ -325,8 +325,8 @@
     {
       "path": "tests/test_direct_diagnostic_merges.py",
       "mode": "100644",
-      "git_blob": "6efa251bef1e160f8309d7b971bf4f3696b0ce95",
-      "sha256": "09b2a488e04bdc7d7850276342df9973d102cdb99ff7d44a5e3ca032d0b0b07c",
+      "git_blob": "f735ed77845e69aec1cb0e925f83ea44a6f1333b",
+      "sha256": "315603ae6cfdd38b918365f7e4b2432b1a17cd0531018778bc84937f29f00344",
       "original_sha256": "4aa1e344f10f25508a78d5fada6548d0be345df8026160bf46fef426a7b3d12e",
       "original_git_blob": "e5907121ab35230fae9f7880f0db4f269a4f7a87"
     },
@@ -379,6 +379,20 @@
       "reason": "Correct test-only R CMD INSTALL --library= argument so the temporary test double cannot overwrite genuine runtime mfclkit. All existing assertions retained; no controller/scientific changes.",
       "original_sha256": "4aa1e344f10f25508a78d5fada6548d0be345df8026160bf46fef426a7b3d12e",
       "expected_sha256": "09b2a488e04bdc7d7850276342df9973d102cdb99ff7d44a5e3ca032d0b0b07c"
+    },
+    {
+      "path": "tests/test_direct_diagnostic_merges.py",
+      "reason": "Bind synthetic merge fixtures to their private mfclkit test double in every child process; verify loaded namespace path/version and expose child errors. Existing assertions and all controllers/scientific files retained.",
+      "previous_sha256": "09b2a488e04bdc7d7850276342df9973d102cdb99ff7d44a5e3ca032d0b0b07c",
+      "original_sha256": "4aa1e344f10f25508a78d5fada6548d0be345df8026160bf46fef426a7b3d12e",
+      "expected_sha256": "315603ae6cfdd38b918365f7e4b2432b1a17cd0531018778bc84937f29f00344"
+    },
+    {
+      "path": "README.md",
+      "reason": "Condense reader and runner instructions, retaining old anchors and links; detailed original methods remain under docs/. Scientific source and controller files are unchanged.",
+      "original_sha256": "c023cf0e98efebf5af2fc49a63e3fb2fe8e3458c2bd6185acb9c942d33b070f9",
+      "original_git_blob": "9563805c02978b876746e5832d8901624be053eb",
+      "expected_sha256": "07a66e76ca32ee400b854083d2e1eeb6502dbf041a861121d73b8390474f7b18"
     }
   ]
 }

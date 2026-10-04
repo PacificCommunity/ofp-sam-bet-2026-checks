@@ -269,6 +269,7 @@ mfk_close_quantity_profile <- function(
     ) -> subprocess.CompletedProcess[str]:
         env = {
             **os.environ,
+            **self.mock_env(),
             "MODEL_INPUT_ROOT": str(input_root),
             "OUTPUT_DIR": str(output_dir),
             "MODEL_SELECTOR": "model",
@@ -293,17 +294,32 @@ mfk_close_quantity_profile <- function(
                 "PROFILE_EXPECTED_VALUES": "90",
             })
         env.update(extra_env or {})
-        return subprocess.run(
-            ["Rscript", "R/merge_check.R"],
-            cwd=ROOT,
-            env=env,
-            text=True,
-            capture_output=True,
-            check=True,
+        bootstrap = (
+            "mock_library <- Sys.getenv('R_LIBS_USER'); "
+            ".libPaths(c(mock_library, .libPaths())); "
+            "namespace <- loadNamespace('mfclkit', lib.loc=mock_library); "
+            "stopifnot(identical(normalizePath(getNamespaceInfo(namespace, 'path')), "
+            "normalizePath(file.path(mock_library, 'mfclkit'))), "
+            "identical(as.character(getNamespaceVersion(namespace)), '999.0.0')); "
+            "source('R/merge_check.R')"
         )
+        try:
+            return subprocess.run(
+                ["Rscript", "--vanilla", "-e", bootstrap],
+                cwd=ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+        except subprocess.CalledProcessError as error:
+            raise AssertionError(error.stdout + error.stderr) from error
 
     def mock_env(self) -> dict[str, str]:
-        return {"R_LIBS_USER": str(self.mock_library)}
+        return {
+            "R_LIBS": str(self.mock_library),
+            "R_LIBS_USER": str(self.mock_library),
+        }
 
     def write_compact_base_payload(
         self,
