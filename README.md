@@ -14,6 +14,8 @@ Start with a complete case containing the fitted PAR, matching inputs,
 `doitall.sh` and executable. A compact payload is usable only when its native
 artifacts and original input recipe can be restored. This repository contains
 the runners and tests; it does not archive the assessment fits.
+The `attach-checks` Kflow task defaults to `full` output.
+Base-fit rows are marked `is_base_fit_reference=TRUE`.
 
 A dry run stages one case without executing MFCL:
 

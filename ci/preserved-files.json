@@ -61,8 +61,8 @@
     {
       "path": "README.md",
       "mode": "100644",
-      "git_blob": "fe50dae6b02737fd95c69300960314fc77064918",
-      "sha256": "07a66e76ca32ee400b854083d2e1eeb6502dbf041a861121d73b8390474f7b18"
+      "git_blob": "5a0d50b15f76c784054d1d49599679620fd02130",
+      "sha256": "7c8f78a252590f1cb8ed2290995d8d477215ed1f71ac25a22addfcc0e039fd27"
     },
     {
       "path": "aspm-merge/kflow.yaml",
@@ -392,7 +392,7 @@
       "reason": "Condense reader and runner instructions, retaining old anchors and links; detailed original methods remain under docs/. Scientific source and controller files are unchanged.",
       "original_sha256": "c023cf0e98efebf5af2fc49a63e3fb2fe8e3458c2bd6185acb9c942d33b070f9",
       "original_git_blob": "9563805c02978b876746e5832d8901624be053eb",
-      "expected_sha256": "07a66e76ca32ee400b854083d2e1eeb6502dbf041a861121d73b8390474f7b18"
+      "expected_sha256": "7c8f78a252590f1cb8ed2290995d8d477215ed1f71ac25a22addfcc0e039fd27"
     }
   ]
 }
