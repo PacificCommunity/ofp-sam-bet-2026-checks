@@ -28,7 +28,11 @@ make prepare CASE=jitter INPUT=/absolute/path/to/fitted-case OUT=/tmp/bet-check 
 
 See [inputs, check controls and output formats](docs/reproduction.md) for the
 pinned runtime and full commands. Use `make rerun` with the same arguments
-and a new `OUT` to execute the check. Run the test suite with `make test`.
+and a new `OUT` to execute a new check with R and MFCL on Linux x86-64.
+This may fit new profile, jitter or simulation cases; saved-PAR evaluation and
+the original complete `doitall` fit belong to the linked model repositories.
+Here `make refit` is an alias for `make rerun`. The test suite (`make test`)
+and retained Kflow/recovery management tools use Python.
 
 Assessment results are published separately:
 [Diagnostic](https://pacificcommunity.github.io/ofp-sam-bet-2026-diagnostic/bet-2026-diagnostic-report.html),
